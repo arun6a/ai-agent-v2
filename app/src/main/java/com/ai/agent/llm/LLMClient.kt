@@ -117,12 +117,49 @@ class LLMClient(private val context: Context) {
                 val response = client.newCall(request).execute()
                 val responseBody = response.body?.string() ?: ""
 
+                // v2.1.1: Smarter rate-limit + error handling.
                 if (response.code == 429) {
-                    val waitMs = attempt * 5000L
-                    Log.w("LLMClient", "Rate limited (429), waiting ${waitMs}ms before retry $attempt/3")
-                    lastError = "Rate limited (429). Daily quota may be exhausted."
-                    Thread.sleep(waitMs)
-                    continue
+                    // Gemini returns 429 for BOTH per-minute (15/min free) AND daily (1500/day) limits.
+                    // Detect which one + wait appropriately.
+                    val isDaily = responseBody.contains("quota", ignoreCase = true) ||
+                            responseBody.contains("daily", ignoreCase = true) ||
+                            responseBody.contains("exhausted", ignoreCase = true)
+                    val waitMs = if (isDaily) {
+                        // Daily quota exhausted — no point retrying, return error immediately.
+                        Log.w("LLMClient", "Daily quota exhausted (429) — not retrying")
+                        lastError = "Daily quota exhausted. Try a different provider or wait until tomorrow."
+                        return@withContext LLMResponse(
+                            "⚠️ Daily quota exhausted for ${provider.name}.\n\n" +
+                                    "What to do:\n" +
+                                    "• Switch to a different provider (Hub → LLM → Configure)\n" +
+                                    "• Or wait until tomorrow (resets at midnight Pacific time)\n" +
+                                    "• Or use Z.ai Direct (300 req/day free)",
+                            emptyList()
+                        )
+                    } else {
+                        // Per-minute limit — wait longer between retries (Gemini free tier = 15/min).
+                        attempt * 8000L  // 8s, 16s, 24s
+                    }
+                    Log.w("LLMClient", "Rate limited (429) ${if (isDaily) "[daily]" else "[per-minute]"}, waiting ${waitMs}ms before retry $attempt/3")
+                    lastError = "Rate limited (429). ${if (isDaily) "Daily quota exhausted." else "Per-minute limit — waiting..."}"
+                    if (!isDaily) {
+                        Thread.sleep(waitMs)
+                        continue
+                    }
+                }
+
+                // v2.1.1: Handle Cline 402 (insufficient credits) + other payment-required errors.
+                if (response.code == 402) {
+                    Log.w("LLMClient", "Payment required (402): $responseBody")
+                    return@withContext LLMResponse(
+                        "⚠️ Insufficient credits on ${provider.name}.\n\n" +
+                                responseBody.take(300).let {
+                                    if (it.contains("balance", ignoreCase = true)) it
+                                    else "Add credits at the provider's dashboard."
+                                } +
+                                "\n\nFor Cline: app.cline.bot/credits",
+                        emptyList()
+                    )
                 }
 
                 if (!response.isSuccessful) {

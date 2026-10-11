@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
@@ -130,7 +131,8 @@ enum class HubSection(val label: String, val icon: ImageVector, val count: Strin
     KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder, "23"),
     HISTORY("History", Icons.Outlined.History, "487"),
     FILES("Files", Icons.Outlined.Folder, "12"),
-    LLM("LLM", Icons.Outlined.Lock, "14"),
+    LLM("LLM", Icons.Outlined.Lock, "15"),
+    USAGE("Usage", Icons.Outlined.BarChart, "live"),
     VISION("Vision", Icons.Outlined.Visibility),
     AUDIO("Audio", Icons.Outlined.GraphicEq),
     PERMISSIONS("Permissions", Icons.Outlined.Verified, "14"),
@@ -243,6 +245,7 @@ fun HubScreen(
                     HubSection.HISTORY -> HistorySection()
                     HubSection.FILES -> FilesSection()
                     HubSection.LLM -> LlmSection(onOpenProviderSettings = onOpenProviderSettings)
+                    HubSection.USAGE -> UsageSection()
                     HubSection.VISION -> VisionSection()
                     HubSection.AUDIO -> AudioSection()
                     HubSection.PERMISSIONS -> PermissionsSection()
@@ -260,7 +263,7 @@ fun HubScreen(
 // open the Hub directly on the Settings section).
 // ---------------------------------------------------------------------------
 
-enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HISTORY, FILES, LLM, VISION, AUDIO, PERMISSIONS, SETTINGS
+enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HISTORY, FILES, LLM, USAGE, VISION, AUDIO, PERMISSIONS, SETTINGS
     ;
     fun toHubSection(): HubSection = when (this) {
         HubSectionArg.SKILLS -> HubSection.SKILLS
@@ -272,6 +275,7 @@ enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HIS
         HubSectionArg.HISTORY -> HubSection.HISTORY
         HubSectionArg.FILES -> HubSection.FILES
         HubSectionArg.LLM -> HubSection.LLM
+        HubSectionArg.USAGE -> HubSection.USAGE
         HubSectionArg.VISION -> HubSection.VISION
         HubSectionArg.AUDIO -> HubSection.AUDIO
         HubSectionArg.PERMISSIONS -> HubSection.PERMISSIONS
@@ -3898,6 +3902,241 @@ private fun HubFooter() {
             fontFamily = MonoFontFamily,
             fontWeight = FontWeight.SemiBold,
             fontSize = 12.sp,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v2.1.1: Usage Monitor section — port of v1 ApiUsageTracker display
+// Shows: today's calls + tokens, session stats, current task stats,
+// per-provider breakdown, and per-day history (last 7 days).
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun UsageSection() {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    // Refresh trigger — bump to re-read stats after each task
+    var refreshKey by remember { mutableStateOf(0) }
+
+    // Read all stats
+    val todayStats = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getTodayStats(context) }
+    val sessionStats = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getSessionStats() }
+    val taskStats = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getTaskStats() }
+    val fullReport = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getFullReport(context) }
+    val currentProvider = remember { com.ai.agent.llm.AIProvider.getCurrentProvider(context) }
+    val currentModel = remember { com.ai.agent.llm.AIProvider.getModel(context) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Usage Monitor",
+                subtitle = "API calls · tokens · cost tracking",
+            )
+        }
+
+        // === Current provider card ===
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.accent.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+            ) {
+                Text(
+                    text = "ACTIVE PROVIDER",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = currentProvider.name,
+                    color = m3.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "model: $currentModel",
+                    color = custom.fg2,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 11.sp,
+                )
+                Text(
+                    text = "endpoint: ${currentProvider.defaultEndpoint.take(60)}...",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        // === Today's stats (big cards) ===
+        item {
+            SectionHeader(title = "Today", subtitle = "Resets at midnight")
+        }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                StatCard(
+                    title = "Calls",
+                    value = todayStats.first.toString(),
+                    modifier = Modifier.weight(1f),
+                )
+                StatCard(
+                    title = "Tokens",
+                    value = todayStats.second.toString(),
+                    modifier = Modifier.weight(1f),
+                )
+                StatCard(
+                    title = "Est. Cost",
+                    value = "$" + String.format("%.3f", todayStats.second * 0.000002),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        // === Session stats ===
+        item {
+            SectionHeader(title = "This Session", subtitle = "Since app launched")
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+            ) {
+                Text(
+                    text = sessionStats,
+                    color = custom.fg2,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+
+        // === Current task stats ===
+        item {
+            SectionHeader(title = "Current Task", subtitle = "Since last user message")
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+            ) {
+                Text(
+                    text = taskStats,
+                    color = custom.fg2,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+
+        // === Full report ===
+        item {
+            SectionHeader(title = "Full Report", subtitle = "All-time + per-provider")
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                fullReport.split("\n").forEach { line ->
+                    Text(
+                        text = line,
+                        color = if (line.startsWith("=== ")) custom.accent else custom.fg2,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = if (line.startsWith("=== ")) FontWeight.Bold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+
+        // === Refresh button ===
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Text(
+                    text = "↻ Refresh",
+                    color = custom.accent,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .clickable { refreshKey++ }
+                        .padding(8.dp),
+                )
+            }
+        }
+
+        // === Provider quota reference ===
+        item {
+            SectionHeader(title = "Provider Quotas", subtitle = "Free tier limits")
+        }
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                QuotaRow("Groq", "30/min · 14,400/day", custom)
+                QuotaRow("Gemini", "15/min · 1,500/day (free)", custom)
+                QuotaRow("Z.ai Direct", "300/day (no key needed)", custom)
+                QuotaRow("Z.ai Proxy", "300/day (needs sandbox)", custom)
+                QuotaRow("OpenRouter", "50/day free, then paid", custom)
+                QuotaRow("Cerebras", "Free tier available", custom)
+                QuotaRow("Mistral", "Free tier (La Plateforme)", custom)
+                QuotaRow("Cline", "Pay-as-you-go credits", custom)
+                QuotaRow("APIKeys.in", "Free gateway", custom)
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuotaRow(provider: String, quota: String, custom: com.ai.agent.ui.components.CustomColors) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = provider,
+            color = com.ai.agent.ui.components.LocalCustomColors.current.onSurface,
+            fontFamily = MonoFontFamily,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = quota,
+            color = com.ai.agent.ui.components.LocalCustomColors.current.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 11.sp,
         )
     }
 }
