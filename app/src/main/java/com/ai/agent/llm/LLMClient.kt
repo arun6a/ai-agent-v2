@@ -163,14 +163,49 @@ class LLMClient(private val context: Context) {
                 }
 
                 if (!response.isSuccessful) {
-                    Log.e("LLMClient", "API error ${response.code}: ${responseBody.take(300)}")
+                    // v2.1.2: Strip HTML from error body (was showing raw HTML to user).
+                    val cleanedBody = cleanErrorBody(responseBody)
+                    val code = response.code
+                    Log.e("LLMClient", "API error $code: ${cleanedBody.take(200)}")
+
+                    // 502/503/504 = provider server down/overloaded. Retry with longer wait.
+                    if (code in setOf(500, 502, 503, 504)) {
+                        val waitMs = attempt * 4000L  // 4s, 8s, 12s
+                        Log.w("LLMClient", "Server error $code (attempt $attempt/3), waiting ${waitMs}ms")
+                        lastError = "Server error $code"
+                        if (attempt < 3) {
+                            Thread.sleep(waitMs)
+                            continue
+                        }
+                        return@withContext LLMResponse(
+                            "⚠️ ${provider.name} server error ($code).\n\n" +
+                                    "${describeServerError(code)}\n\n" +
+                                    "What to do:\n" +
+                                    "• Wait a few minutes + retry (server overloaded)\n" +
+                                    "• Or switch provider (Hub → LLM → Configure)\n" +
+                                    "• Recommended backup: Groq (fast, 14,400/day free)",
+                            emptyList()
+                        )
+                    }
+
+                    // 401 / 403 = auth error
+                    if (code == 401 || code == 403) {
+                        return@withContext LLMResponse(
+                            "⚠️ Authentication failed ($code) for ${provider.name}.\n\n" +
+                                    "Check your API key in Hub → LLM → Configure.\n" +
+                                    (if (cleanedBody.isNotBlank()) "Server: ${cleanedBody.take(150)}" else ""),
+                            emptyList()
+                        )
+                    }
+
+                    // Other errors (400, 404, etc.)
                     if (attempt < 3) {
                         Thread.sleep(2000)
-                        lastError = "API returned ${response.code}"
+                        lastError = "API returned $code"
                         continue
                     }
                     return@withContext LLMResponse(
-                        "Error: API returned ${response.code}. ${responseBody.take(200)}",
+                        "Error: API returned $code. ${cleanedBody.take(200)}",
                         emptyList()
                     )
                 }
@@ -572,5 +607,48 @@ class LLMClient(private val context: Context) {
 
         // Fallback: return everything from first { to end
         return trimmed.substring(firstBrace)
+    }
+
+    // v2.1.2: Strip HTML from error response bodies so users don't see raw <html>...
+    companion object ErrorHelpers {
+        /** Strip HTML tags + collapse whitespace. Returns plain text. */
+        fun cleanErrorBody(body: String): String {
+            if (body.isBlank()) return ""
+            // Quick check: if no HTML tags, return as-is (truncated)
+            if (!body.contains("<") || !body.contains(">")) {
+                return body.trim().take(500)
+            }
+            // Remove <head>...</head>, <style>...</style>, <script>...</script> entirely
+            var cleaned = body
+                .replace(Regex("(?is)<head>.*?</head>"), " ")
+                .replace(Regex("(?is)<style[^>]*>.*?</style>"), " ")
+                .replace(Regex("(?is)<script[^>]*>.*?</script>"), " ")
+            // Strip all remaining tags
+            cleaned = cleaned.replace(Regex("(?s)<[^>]+>"), " ")
+            // Collapse whitespace
+            cleaned = cleaned.replace(Regex("\\s+"), " ").trim()
+            // Decode common HTML entities
+            cleaned = cleaned
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#x27;", "'")
+                .replace("&#39;", "'")
+            return cleaned.take(500)
+        }
+
+        /** Human-readable description for HTTP server errors. */
+        fun describeServerError(code: Int, provider: com.ai.agent.llm.AIProvider.ProviderInfo? = null): String {
+            val providerName = provider?.name ?: "the provider"
+            return when (code) {
+                500 -> "$providerName's server had an internal error. This is usually temporary — try again in a minute."
+                502 -> "Bad Gateway — $providerName's upstream server is down. The provider may be having an outage."
+                503 -> "Service Unavailable — $providerName is temporarily overloaded or in maintenance. Try again shortly."
+                504 -> "Gateway Timeout — $providerName took too long to respond. The model may be busy; try a smaller request or wait."
+                else -> "$providerName returned an unexpected server error."
+            }
+        }
     }
 }
