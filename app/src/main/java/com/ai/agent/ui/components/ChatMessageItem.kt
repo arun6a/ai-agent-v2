@@ -62,7 +62,15 @@ fun ChatMessageItem(
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.82f)
-                    .background(custom.accent, RoundedCornerShape(16.dp).copy(bottomEnd = 4.dp)),
+                    .background(
+                        custom.accent,
+                        RoundedCornerShape(
+                            topStart = 16.dp,
+                            topEnd = 16.dp,
+                            bottomEnd = 4.dp,
+                            bottomStart = 16.dp,
+                        ),
+                    )
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Text(
@@ -121,12 +129,22 @@ fun ChatMessageItem(
                                 .fillMaxWidth()
                                 .background(
                                     if (isError) custom.error.copy(alpha = 0.12f) else custom.surface2,
-                                    RoundedCornerShape(16.dp).copy(bottomStart = 4.dp),
+                                    RoundedCornerShape(
+                                        topStart = 16.dp,
+                                        topEnd = 16.dp,
+                                        bottomEnd = 16.dp,
+                                        bottomStart = 4.dp,
+                                    ),
                                 )
                                 .border(
                                     1.dp,
                                     if (isError) custom.error.copy(alpha = 0.4f) else custom.inkBorder,
-                                    RoundedCornerShape(16.dp).copy(bottomStart = 4.dp),
+                                    RoundedCornerShape(
+                                        topStart = 16.dp,
+                                        topEnd = 16.dp,
+                                        bottomEnd = 16.dp,
+                                        bottomStart = 4.dp,
+                                    ),
                                 )
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {

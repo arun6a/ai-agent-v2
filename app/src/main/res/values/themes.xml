@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ====== AI Agent v2 — Material 3 XML theme ====== -->
+    <!-- ====== AI Agent v2 — App XML theme ====== -->
     <!-- This theme is only used for the Activity boot BEFORE Compose takes
          over with AIAgentTheme(). It just sets windowBackground + NoActionBar
          so there's no white flash on cold start. All real styling happens
          inside Compose. -->
 
-    <style name="Theme.AIAgentV2" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.AIAgentV2" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Match the Compose canvas color so there's no flicker on startup -->
         <item name="android:windowBackground">@color/canvas_light</item>
         <item name="android:statusBarColor">@color/canvas_light</item>
@@ -17,13 +17,8 @@
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <!-- Smooth keyboard transitions + edge-to-edge layout -->
         <item name="android:windowSoftInputMode">adjustResize</item>
-        <!-- Material 3 attributes (color mapping for any legacy widget that
-             still reads from theme — Compose itself uses AIAgentTheme) -->
-        <item name="colorPrimary">@color/accent</item>
-        <item name="colorOnPrimary">@color/white</item>
-        <item name="colorSurface">@color/surface_light</item>
-        <item name="colorOnSurface">@color/fg_light</item>
-        <item name="android:colorBackground">@color/canvas_light</item>
+        <!-- Remove the default window action bar shadow -->
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 
 </resources>

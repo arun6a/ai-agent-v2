@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -204,6 +205,7 @@ fun ChatScreen(
 // Top bar
 // ---------------------------------------------------------------------------
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatTopBar(
     providerName: String,
@@ -214,6 +216,7 @@ private fun ChatTopBar(
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
 
     TopAppBar(
         title = {
@@ -234,12 +237,12 @@ private fun ChatTopBar(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = "AI Agent",
-                    style = m3.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = m3.onSurface,
                 )
                 Text(
                     text = " v2",
-                    style = m3.titleMedium.copy(
+                    style = typography.titleMedium.copy(
                         fontFamily = MonoFontFamily,
                         fontWeight = FontWeight.Medium,
                     ),
@@ -433,6 +436,7 @@ private fun WelcomeEmptyState(
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
 
     Column(
         modifier = modifier.padding(horizontal = 24.dp),
@@ -457,7 +461,7 @@ private fun WelcomeEmptyState(
         Spacer(Modifier.height(20.dp))
         Text(
             text = "Hey, I'm your AI Agent",
-            style = m3.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+            style = typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
             color = m3.onSurface,
             textAlign = TextAlign.Center,
         )
@@ -465,7 +469,7 @@ private fun WelcomeEmptyState(
         Text(
             text = "Ask anything, give a command, or tap the mic to talk.\n" +
                 "I can run tools, control your phone, and remember what matters.",
-            style = m3.bodyMedium,
+            style = typography.bodyMedium,
             color = custom.fg2,
             textAlign = TextAlign.Center,
             lineHeight = 20.sp,
@@ -489,6 +493,7 @@ private fun WelcomeEmptyState(
 private fun SuggestionChip(text: String, onClick: (String) -> Unit) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
 
     Row(
         modifier = Modifier
@@ -506,7 +511,7 @@ private fun SuggestionChip(text: String, onClick: (String) -> Unit) {
         Spacer(Modifier.width(10.dp))
         Text(
             text = text,
-            style = m3.bodyMedium,
+            style = typography.bodyMedium,
             color = m3.onSurface,
         )
     }
@@ -525,6 +530,7 @@ private fun ChatInputBar(
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
 
     Row(
         modifier = Modifier
@@ -564,7 +570,7 @@ private fun ChatInputBar(
             if (text.isEmpty()) {
                 Text(
                     text = "Ask or command…",
-                    style = m3.bodyMedium,
+                    style = typography.bodyMedium,
                     color = custom.fg3,
                 )
             }
@@ -572,7 +578,7 @@ private fun ChatInputBar(
                 value = text,
                 onValueChange = onTextChange,
                 singleLine = true,
-                textStyle = m3.bodyMedium.copy(color = m3.onSurface),
+                textStyle = typography.bodyMedium.copy(color = m3.onSurface),
                 cursorBrush = SolidColor(custom.accent),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -707,6 +713,7 @@ private fun ChatScreenDarkPreview() {
 private fun ChatScreenPreviewBody() {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -730,7 +737,7 @@ private fun ChatScreenPreviewBody() {
                     Text("A", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text("AI Agent", style = m3.titleMedium, color = m3.onSurface)
+                Text("AI Agent", style = typography.titleMedium, color = m3.onSurface)
                 Text(" v2", color = custom.accent, fontFamily = MonoFontFamily)
             }
             Box(modifier = Modifier.weight(1f)) {

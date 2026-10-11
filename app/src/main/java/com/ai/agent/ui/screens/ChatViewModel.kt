@@ -63,7 +63,7 @@ data class ChatUiState(
     val isThinking: Boolean = false,
     val isExecuting: Boolean = false,
     val currentIteration: Int = 0,
-    val maxIterations: Int = MAX_ITERATIONS,
+    val maxIterations: Int = 50,
     val apiCallCount: Int = 0,
     val providerName: String = "",
     val modelName: String = "",

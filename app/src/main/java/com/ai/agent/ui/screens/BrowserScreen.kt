@@ -35,6 +35,7 @@ import com.ai.agent.ui.theme.MonoFontFamily
 fun BrowserScreen() {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val typography = MaterialTheme.typography
 
     Column(
         modifier = Modifier
@@ -60,7 +61,7 @@ fun BrowserScreen() {
         Spacer(Modifier.height(20.dp))
         Text(
             text = "Browser coming soon",
-            style = m3.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+            style = typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
             color = m3.onSurface,
             textAlign = TextAlign.Center,
         )
@@ -68,7 +69,7 @@ fun BrowserScreen() {
         Text(
             text = "The in-app WebView (visible browsing mode) will be wired in here. " +
                 "For now, the agent can already drive Chrome via Accessibility from the chat screen.",
-            style = m3.bodyMedium,
+            style = typography.bodyMedium,
             color = custom.fg2,
             textAlign = TextAlign.Center,
             lineHeight = 20.sp,

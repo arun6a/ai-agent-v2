@@ -74,7 +74,7 @@ import com.ai.agent.ui.theme.MonoFontFamily
 //   - Status footer: agent ready · API calls today · success rate
 // ============================================================================
 
-private enum class HubSection(val label: String, val icon: ImageVector, val count: String? = null) {
+enum class HubSection(val label: String, val icon: ImageVector, val count: String? = null) {
     SKILLS("Skills", Icons.Outlined.Psychology, "20"),
     RULES("Rules", Icons.Outlined.Rule, "36"),
     TOOLS("Tools", Icons.Outlined.Build, "100+"),
@@ -136,7 +136,7 @@ fun HubScreen(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
                 )
-            )
+            }
             Text(
                 text = "SECTIONS · 13",
                 color = custom.fg3,

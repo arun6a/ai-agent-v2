@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImageButton xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/overlayButton"
+    android:layout_width="56dp"
+    android:layout_height="56dp"
+    android:src="@drawable/ic_eye"
+    android:background="@drawable/overlay_button_bg"
+    android:elevation="6dp"
+    android:contentDescription="AI Agent — tap to read screen" />
