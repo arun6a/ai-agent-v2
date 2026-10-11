@@ -42,12 +42,12 @@ import com.ai.agent.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
 // ============================================================================
-// SplashScreen — v2.0.2 cold-start splash.
+// SplashScreen — v2.0.3 cold-start splash.
 // ----------------------------------------------------------------------------
 // - Canvas-color background (matches Theme.AIAgentV2.Splash so there's no flash)
 // - Emerald orb icon (vector drawable ic_launcher_foreground) centered ~120dp
 // - "AI Agent v2" title with emerald "v2" accent (semibold 28sp)
-// - "v2.0.2 · build 2" mono caption below
+// - "v2.0.3 · build 3" mono caption below
 // - Fade-in icon, then slide-up title (AnimatedVisibility)
 // - After ~1500ms, navigates to chat (or onboarding if no provider configured)
 // ============================================================================
@@ -70,16 +70,15 @@ fun SplashScreen(
         delay(150)
         showTitle = true
         delay(1500)
-        val configured = try {
-            AIProvider.isConfigured(context)
-        } catch (_: Exception) {
-            false
-        }
-        // Show onboarding only on true first-run (no provider chosen yet AND
-        // user has never finished onboarding before). We treat "zai" sandbox
-        // proxy default as "not configured yet" — the default preference.
-        val providerId = AIProvider.getProviderId(context)
-        val needsOnboarding = !configured && providerId == "zai"
+
+        // v2.0.3: Use a "has_completed_onboarding" SharedPreferences flag
+        // to track true first-run. Previously we relied on `isConfigured()`
+        // which returns true for the default "zai" proxy (no API key needed),
+        // so onboarding NEVER triggered. Now it triggers once, until the user
+        // finishes onboarding (regardless of provider choice).
+        val prefs = context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE)
+        val hasCompletedOnboarding = prefs.getBoolean("has_completed_onboarding", false)
+        val needsOnboarding = !hasCompletedOnboarding
         onFinished(needsOnboarding)
     }
 
@@ -139,7 +138,7 @@ fun SplashScreen(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "v2.0.2 · build 2",
+                        text = "v2.0.3 · build 3",
                         color = custom.fg3,
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,

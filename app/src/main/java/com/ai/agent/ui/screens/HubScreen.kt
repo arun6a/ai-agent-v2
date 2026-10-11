@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
@@ -139,6 +141,7 @@ fun HubScreen(
     initialSection: HubSectionArg = HubSectionArg.SKILLS,
     onBackToChat: () -> Unit = {},
     onOpenProviderSettings: () -> Unit = {},
+    onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit = { _, _ -> },
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -222,7 +225,7 @@ fun HubScreen(
                     .fillMaxWidth(),
             ) {
                 when (selected) {
-                    HubSection.SKILLS -> SkillsSection()
+                    HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
                     HubSection.RULES -> RulesSection()
                     HubSection.TOOLS -> ToolsSection()
                     HubSection.PLUGINS -> PluginsSection()
@@ -272,13 +275,21 @@ enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HIS
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun SkillsSection() {
+private fun SkillsSection(
+    onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit,
+) {
     val context = LocalContext.current
+    val custom = LocalCustomColors.current
 
     var skills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
+    // Long-press menu state — when non-null, an AlertDialog is shown.
+    var menuSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
+    // Delete-confirmation dialog state.
+    var deleteSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
+
+    fun reload() {
         skills = try {
             SkillManager(context).loadSkills()
         } catch (e: Exception) {
@@ -287,6 +298,8 @@ private fun SkillsSection() {
         loaded = true
     }
 
+    LaunchedEffect(Unit) { reload() }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -294,8 +307,40 @@ private fun SkillsSection() {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
-            SectionHeader(title = "Skills", subtitle = "${skills.size} loaded · ${if (loaded) "ready" else "loading…"}")
+            SectionHeader(
+                title = "Skills",
+                subtitle = "${skills.size} loaded · ${if (loaded) "ready" else "loading…"}",
+            )
         }
+
+        // ---- "New Skill" button (Create mode) ----
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.accent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .clickable { onEditSkill(null, false) }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Add, contentDescription = null, tint = custom.accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "New Skill",
+                    color = custom.accent,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "create from scratch",
+                    color = custom.fg3,
+                    fontSize = 11.sp,
+                )
+            }
+        }
+
         if (skills.isEmpty() && loaded) {
             item {
                 PlaceholderCard(
@@ -307,22 +352,198 @@ private fun SkillsSection() {
             item { LoadingCard() }
         } else {
             items(skills) { skill ->
-                SkillRow(skill = skill)
+                SkillRow(
+                    skill = skill,
+                    onLongPress = { menuSkill = skill },
+                    onClick = {
+                        // Tap = quick view (read-only for built-in, edit for user).
+                        val ro = !isUserCreatedSkill(skill.fileName)
+                        onEditSkill(skill.name, ro)
+                    },
+                )
             }
         }
     }
+
+    // ---- Long-press options dialog ----
+    menuSkill?.let { skill ->
+        val isUser = isUserCreatedSkill(skill.fileName)
+        SkillOptionsDialog(
+            skillName = skill.name,
+            isUserCreated = isUser,
+            onView = {
+                menuSkill = null
+                onEditSkill(skill.name, true)
+            },
+            onEdit = {
+                menuSkill = null
+                onEditSkill(skill.name, false)
+            },
+            onDelete = {
+                menuSkill = null
+                deleteSkill = skill
+            },
+            onDismiss = { menuSkill = null },
+        )
+    }
+
+    // ---- Delete confirmation dialog ----
+    deleteSkill?.let { skill ->
+        SkillDeleteConfirmDialog(
+            skillName = skill.name,
+            onConfirm = {
+                deleteFile(skill)
+                Toast.makeText(context, "Skill deleted: ${skill.name}", Toast.LENGTH_SHORT).show()
+                deleteSkill = null
+                reload()
+            },
+            onDismiss = { deleteSkill = null },
+        )
+    }
+}
+
+/** Delete the underlying .md file for a user-created skill. */
+private fun deleteFile(skill: SkillManager.Skill) {
+    val file = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills/${skill.fileName}")
+    if (file.exists()) file.delete()
 }
 
 @Composable
-private fun SkillRow(skill: SkillManager.Skill) {
+private fun SkillOptionsDialog(
+    skillName: String,
+    isUserCreated: Boolean,
+    onView: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = m3.surface,
+        title = {
+            Column {
+                Text(
+                    text = skillName,
+                    color = m3.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (isUserCreated) "User-created · editable" else "Built-in · read-only",
+                    color = if (isUserCreated) custom.accent else custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+            }
+        },
+        text = {
+            Column {
+                DialogOptionRow(label = "View", onClick = onView)
+                if (isUserCreated) {
+                    DialogOptionRow(label = "Edit", onClick = onEdit)
+                    DialogOptionRow(
+                        label = "Delete",
+                        onClick = onDelete,
+                        textColor = custom.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = custom.fg2, fontSize = 13.sp)
+            }
+        },
+    )
+}
+
+@Composable
+private fun SkillDeleteConfirmDialog(
+    skillName: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = m3.surface,
+        title = {
+            Text(
+                text = "Delete skill?",
+                color = m3.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
+        },
+        text = {
+            Text(
+                text = "Permanently delete \"$skillName\"? This cannot be undone.",
+                color = custom.fg2,
+                fontSize = 13.sp,
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onConfirm) {
+                Text("Delete", color = custom.error, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = custom.fg2, fontSize = 13.sp)
+            }
+        },
+    )
+}
+
+@Composable
+private fun DialogOptionRow(label: String, onClick: () -> Unit, textColor: Color? = null) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+    ) {
+        Text(
+            text = label,
+            color = textColor ?: m3.onSurface,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SkillRow(
+    skill: SkillManager.Skill,
+    onLongPress: () -> Unit,
+    onClick: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val isUser = isUserCreatedSkill(skill.fileName)
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(custom.ink2, RoundedCornerShape(8.dp))
             .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(
+                        androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress
+                    )
+                    onLongPress()
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -336,12 +557,46 @@ private fun SkillRow(skill: SkillManager.Skill) {
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = skill.name,
-                color = m3.onSurface,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = skill.name,
+                    color = m3.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.width(6.dp))
+                // Source badge — emerald dot for user, gray "built-in" pill
+                if (isUser) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(custom.accent, CircleShape),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "user",
+                        color = custom.accent,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .background(custom.surface3, RoundedCornerShape(4.dp))
+                            .border(1.dp, custom.border, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            text = "built-in",
+                            color = custom.fg3,
+                            fontFamily = MonoFontFamily,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
             Text(
                 text = skill.description,
                 color = custom.fg2,
@@ -359,12 +614,20 @@ private fun SkillRow(skill: SkillManager.Skill) {
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text(
-            text = "v${skill.version}",
-            color = custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 10.sp,
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = "v${skill.version}",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "⋯",
+                color = custom.fg3,
+                fontSize = 12.sp,
+            )
+        }
     }
 }
 
@@ -2219,8 +2482,8 @@ private fun AboutCard() {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        AboutRow(label = "version", value = "2.0.2")
-        AboutRow(label = "build", value = "2")
+        AboutRow(label = "version", value = "2.0.3")
+        AboutRow(label = "build", value = "3")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")

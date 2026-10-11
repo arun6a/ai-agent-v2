@@ -42,7 +42,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
@@ -505,13 +504,6 @@ private fun ChatTopBar(
                     tint = custom.fg2,
                 )
             }
-            IconButton(onClick = { /* overflow menu placeholder */ }) {
-                Icon(
-                    imageVector = Icons.Filled.MoreVert,
-                    contentDescription = "More",
-                    tint = custom.fg2,
-                )
-            }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = m3.surface,
@@ -889,7 +881,7 @@ private fun ChatInputBar(
 }
 
 // ---------------------------------------------------------------------------
-// Status footer — "v2.0.2 · 47/14400 calls · 847ms avg"
+// Status footer — "v2.0.3 · 47/14400 calls · 847ms avg"
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -907,7 +899,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.2",
+            text = "v2.0.3",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,

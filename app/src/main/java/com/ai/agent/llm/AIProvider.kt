@@ -64,13 +64,19 @@ object AIProvider {
             defaultEndpoint = "https://api.groq.com/openai/v1/chat/completions",
             needsApiKey = true,
             models = listOf(
-                ModelInfo("llama-3.3-70b-versatile", "Llama 3.3 70B (Recommended)", "Meta's 70B model. Smart, capable. Free tier."),
-                ModelInfo("llama-3.1-8b-instant", "Llama 3.1 8B Instant", "Very fast, good for chat. Free tier."),
-                ModelInfo("llama-3.2-11b-vision-preview", "Llama 3.2 11B Vision (Vision!)", "VISION-capable — can analyze screenshots. Free."),
-                ModelInfo("llama-3.2-90b-vision-preview", "Llama 3.2 90B Vision", "Most capable Groq vision model. Free."),
-                ModelInfo("mixtral-8x7b-32768", "Mixtral 8x7B", "MoE model, fast. 32k context. Free."),
-                ModelInfo("qwen-2.5-72b", "Qwen 2.5 72B", "Great for coding + multilingual. Free."),
-                ModelInfo("deepseek-r1-distill-llama-70b", "DeepSeek R1 (Reasoning)", "Reasoning model. Free.")
+                // === Featured (OpenAI open-weight on GroqCloud) ===
+                ModelInfo("openai/gpt-oss-120b", "GPT-OSS 120B (Featured, Newest)", "OpenAI's flagship open-weight model. 120B params. Built-in browser search + code execution + reasoning. 131K context, 65K completion. ~500 tps."),
+                ModelInfo("openai/gpt-oss-20b", "GPT-OSS 20B (Fast Featured)", "Smaller OpenAI open-weight. 20B params. ~1000 tps (fastest). 131K context, 65K completion. Cheap."),
+                // === Production (Meta Llama) ===
+                ModelInfo("llama-3.3-70b-versatile", "Llama 3.3 70B (Recommended)", "Meta's 70B model. Smart, capable. 131K context. ~280 tps. Free tier."),
+                ModelInfo("llama-3.1-8b-instant", "Llama 3.1 8B Instant (Fast)", "Very fast, good for chat. 131K context. ~560 tps. Free tier. Enterprise-grade."),
+                // === Preview ===
+                ModelInfo("qwen/qwen3.8-27b", "Qwen 3.8 27B (Multilingual)", "Alibaba's Qwen 3.8. Great for coding + multilingual. 131K context. ~450 tps. 20MB file upload."),
+                ModelInfo("openai/gpt-oss-safeguard-20b", "GPT-OSS Safeguard 20B", "OpenAI safety model. Use for content moderation/filtering."),
+                ModelInfo("minimaxai/minimax-m2.7", "MiniMax M2.7 (Enterprise)", "MiniMax M2.7. 196K context (longest!), 131K completion. ~260 tps."),
+                // === Audio (Whisper) — for ASR / transcription ===
+                ModelInfo("whisper-large-v3-turbo", "Whisper Large V3 Turbo (ASR)", "OpenAI Whisper for speech-to-text. ~$0.04/hour. 100MB file. NOT for chat — for audio transcription only."),
+                ModelInfo("whisper-large-v3", "Whisper Large V3 (ASR)", "OpenAI Whisper (full). ~$0.111/hour. 100MB file. NOT for chat — for audio transcription only.")
             )
         ),
         ProviderInfo(

@@ -16,10 +16,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.ai.agent.ui.components.BottomNav
 import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.components.Routes
@@ -29,6 +31,7 @@ import com.ai.agent.ui.screens.HubScreen
 import com.ai.agent.ui.screens.HubSectionArg
 import com.ai.agent.ui.screens.OnboardingScreen
 import com.ai.agent.ui.screens.ProviderSettingsScreen
+import com.ai.agent.ui.screens.SkillEditorScreen
 import com.ai.agent.ui.screens.SplashScreen
 
 // ============================================================================
@@ -123,6 +126,13 @@ fun AppNavigation() {
                 ) {
                     OnboardingScreen(
                         onFinished = {
+                            // v2.0.3: Persist first-run completion so onboarding
+                            // doesn't trigger again on next launch.
+                            val ctx = nav.context.applicationContext
+                            ctx.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE)
+                                .edit()
+                                .putBoolean("has_completed_onboarding", true)
+                                .apply()
                             nav.navigate(Routes.CHAT) {
                                 popUpTo(Routes.ONBOARDING) { inclusive = true }
                             }
@@ -171,6 +181,9 @@ fun AppNavigation() {
                     HubScreen(
                         initialSection = HubSectionArg.SKILLS,
                         onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
+                        onEditSkill = { skillName, isReadOnly ->
+                            nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
+                        },
                     )
                 }
 
@@ -184,6 +197,33 @@ fun AppNavigation() {
                     HubScreen(
                         initialSection = HubSectionArg.SETTINGS,
                         onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
+                        onEditSkill = { skillName, isReadOnly ->
+                            nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
+                        },
+                    )
+                }
+
+                // ---- Skill Editor ----
+                // Route pattern: "skill_editor/{skillName}/{isReadOnly}"
+                // skillName = "__new__" for create mode (avoids nullable path segments).
+                composable(
+                    route = Routes.SKILL_EDITOR,
+                    arguments = listOf(
+                        navArgument("skillName") { type = NavType.StringType },
+                        navArgument("isReadOnly") { type = NavType.StringType },
+                    ),
+                    enterTransition = { slideInVertically(tween(300)) { it / 3 } + fadeIn(tween(300)) },
+                    exitTransition = { slideOutVertically(tween(250)) { it / 3 } + fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) },
+                    popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
+                ) { backStackEntry ->
+                    val rawName = backStackEntry.arguments?.getString("skillName") ?: "__new__"
+                    val rawRo = backStackEntry.arguments?.getString("isReadOnly") == "1"
+                    val skillName = if (rawName == "__new__") null else rawName
+                    SkillEditorScreen(
+                        skillName = skillName,
+                        isReadOnly = rawRo,
+                        onBack = { nav.popBackStack() },
                     )
                 }
 

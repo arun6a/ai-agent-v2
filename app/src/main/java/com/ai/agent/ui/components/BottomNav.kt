@@ -34,6 +34,17 @@ object Routes {
     const val HUB = "hub"
     const val HUB_SETTINGS = "hub/settings"
     const val PROVIDER_SETTINGS = "provider_settings"
+
+    // Skill editor — argument pattern: "skill_editor/{skillName}/{isReadOnly}"
+    // skillName = "__new__" for create mode (avoids nullable path segments).
+    // isReadOnly = "1" or "0".
+    const val SKILL_EDITOR = "skill_editor/{skillName}/{isReadOnly}"
+    const val SKILL_EDITOR_NEW = "skill_editor/__new__/0"
+    fun skillEditorRoute(skillName: String?, isReadOnly: Boolean): String {
+        val name = if (skillName == null) "__new__" else skillName
+        val ro = if (isReadOnly) "1" else "0"
+        return "skill_editor/$name/$ro"
+    }
 }
 
 private data class NavItem(
