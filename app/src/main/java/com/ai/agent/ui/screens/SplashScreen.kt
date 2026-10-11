@@ -42,12 +42,12 @@ import com.ai.agent.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
 // ============================================================================
-// SplashScreen — v2.0.6 cold-start splash (Aira rebrand).
+// SplashScreen — v2.0.9 cold-start splash (Aira rebrand).
 // ----------------------------------------------------------------------------
 // - Canvas-color background (matches Theme.AIAgentV2.Splash so there's no flash)
 // - Aira logo (PNG, drawable/aira_logo.png) centered ~120dp
 // - "Aira" title (semibold 28sp) + "Personal AI Assistant" subtitle (gray)
-// - "v2.0.6 · build 6" mono caption below
+// - "v2.0.9 · build 9" mono caption below
 // - Fade-in icon, then slide-up title (AnimatedVisibility)
 // - After ~1500ms, navigates to chat (or onboarding if first-run)
 // ============================================================================
@@ -133,7 +133,7 @@ fun SplashScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "v2.0.7 · build 7",
+                        text = "v2.0.9 · build 9",
                         color = custom.fg3,
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,

@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Icon
@@ -325,6 +326,11 @@ private fun PermissionsStep(
         return enabled.contains(context.packageName, ignoreCase = true)
     }
 
+    // v2.0.9 Task 92: Notification Listener access — required for
+    // NotificationListenerService (reading + auto-replying to WhatsApp / SMS
+    // notifications, mirroring v1 behavior).
+    fun notificationListenerGranted(): Boolean = isNotificationListenerEnabled(context)
+
     val items = listOf(
         PermissionItem(
             title = "Accessibility Service",
@@ -383,6 +389,24 @@ private fun PermissionsStep(
                 runtimePermLauncher.launch(perms.toTypedArray())
             },
             isGranted = ::storageGranted,
+        ),
+        // v2.0.9 Task 92: Notification Access row — required for the
+        // NotificationListenerService (read + auto-reply to WhatsApp / SMS,
+        // mirror of v1 behavior).
+        PermissionItem(
+            title = "Notification Access",
+            description = "Required to read + reply to notifications (WhatsApp, SMS, etc.)",
+            icon = Icons.Outlined.Notifications,
+            grantAction = {
+                try {
+                    val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) { }
+                refreshTick()
+            },
+            isGranted = ::notificationListenerGranted,
         ),
     )
 
@@ -847,4 +871,22 @@ private fun SecondaryButton(
             fontWeight = FontWeight.Medium,
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// v2.0.9 Task 92: Notification-listener-enabled helper.
+// Mirrors v1 — reads the system "enabled_notification_listeners" Secure
+// setting and checks whether our package appears in the flat ComponentName
+// list. The OS sets this when the user toggles our NotificationListener
+// service in the system "Notification access" screen.
+// ---------------------------------------------------------------------------
+
+private fun isNotificationListenerEnabled(context: android.content.Context): Boolean {
+    val flat = try {
+        android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners",
+        )
+    } catch (_: Exception) { null } ?: return false
+    return flat.contains(context.packageName)
 }

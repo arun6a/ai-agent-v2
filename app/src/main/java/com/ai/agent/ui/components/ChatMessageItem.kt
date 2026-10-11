@@ -21,7 +21,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ai.agent.ui.screens.ChatMessage
@@ -168,7 +174,7 @@ fun ChatMessageItem(
                                     Spacer(Modifier.height(4.dp))
                                 }
                                 Text(
-                                    text = message.text,
+                                    text = renderMarkdown(message.text),
                                     color = if (isError) custom.error else m3.onSurface,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp,
@@ -229,4 +235,76 @@ fun ChatMessageItem(
 
 private fun formatTime(timestamp: Long): String {
     return SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(timestamp))
+}
+
+// ============================================================================
+// renderMarkdown — lightweight inline-markdown → AnnotatedString converter.
+// ----------------------------------------------------------------------------
+// v2.0.9 Task 94: Renders **bold**, *italic*, and `inline code` spans on top
+// of plain text, preserving newlines. No external markdown libraries — uses
+// Compose's `buildAnnotatedString` + `withStyle`.
+//
+// Supported syntax:
+//   **bold**        → FontWeight.Bold
+//   *italic*        → FontStyle.Italic
+//   `inline code`   → FontFamily.Monospace
+//
+// Only applied to AI message bubbles — user bubbles + tool cards stay plain
+// Text (so the existing styling / mono layout isn't disturbed).
+//
+// Implementation notes:
+//   - Line-by-line iteration so that an unclosed marker doesn't bleed across
+//     paragraph boundaries (matches the v1 reference implementation).
+//   - The `**` check is performed BEFORE the `*` check so that the bold
+//     delimiter wins (otherwise the leading `*` would be consumed as the
+//     start of an italic span).
+//   - Fallback for an unclosed / empty marker: append the literal character
+//     and continue scanning one char at a time.
+// ============================================================================
+private fun renderMarkdown(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        val lines = text.split("\n")
+        for ((lineIdx, line) in lines.withIndex()) {
+            var i = 0
+            while (i < line.length) {
+                // **bold**
+                if (line.startsWith("**", i)) {
+                    val end = line.indexOf("**", i + 2)
+                    if (end > 0) {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(line.substring(i + 2, end))
+                        }
+                        i = end + 2
+                        continue
+                    }
+                }
+                // `code`
+                if (line.startsWith("`", i)) {
+                    val end = line.indexOf("`", i + 1)
+                    if (end > 0) {
+                        withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
+                            append(line.substring(i + 1, end))
+                        }
+                        i = end + 1
+                        continue
+                    }
+                }
+                // *italic* (NOT **bold** — that's already handled above)
+                if (line.startsWith("*", i) && !line.startsWith("**", i)) {
+                    val end = line.indexOf("*", i + 1)
+                    if (end > 0) {
+                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                            append(line.substring(i + 1, end))
+                        }
+                        i = end + 1
+                        continue
+                    }
+                }
+                // Regular character — fall through.
+                append(line[i])
+                i++
+            }
+            if (lineIdx < lines.size - 1) append("\n")
+        }
+    }
 }

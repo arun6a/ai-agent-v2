@@ -33,6 +33,7 @@ import com.ai.agent.ui.screens.OnboardingScreen
 import com.ai.agent.ui.screens.ProviderSettingsScreen
 import com.ai.agent.ui.screens.SkillEditorScreen
 import com.ai.agent.ui.screens.SplashScreen
+import com.ai.agent.ui.screens.SystemPromptEditorScreen
 
 // ============================================================================
 // AppNavigation — root nav graph for the v2 app.
@@ -191,6 +192,7 @@ fun AppNavigation() {
                         onEditSkill = { skillName, isReadOnly ->
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
                         },
+                        onOpenSystemPromptEditor = { nav.navigate(Routes.SYSTEM_PROMPT_EDITOR) },
                     )
                 }
 
@@ -207,6 +209,7 @@ fun AppNavigation() {
                         onEditSkill = { skillName, isReadOnly ->
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
                         },
+                        onOpenSystemPromptEditor = { nav.navigate(Routes.SYSTEM_PROMPT_EDITOR) },
                     )
                 }
 
@@ -243,6 +246,20 @@ fun AppNavigation() {
                     popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
                 ) {
                     ProviderSettingsScreen(
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+
+                // ---- System Prompt Editor (v2.0.9 Task 95) ----
+                composable(
+                    route = Routes.SYSTEM_PROMPT_EDITOR,
+                    enterTransition = { slideInVertically(tween(300)) { it / 3 } + fadeIn(tween(300)) },
+                    exitTransition = { slideOutVertically(tween(250)) { it / 3 } + fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) },
+                    popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
+                ) {
+                    SystemPromptEditorScreen(
+                        initialMode = "custom",
                         onBack = { nav.popBackStack() },
                     )
                 }

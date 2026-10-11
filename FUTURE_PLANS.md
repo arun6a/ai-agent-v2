@@ -2,7 +2,62 @@
 
 **Date**: 2026-10-11
 **Merged by**: Sandbox-2 (combining Sandbox-1 + Sandbox-2 visions)
-**Current version**: v6.3.2
+**Current version**: v2.0.9 (Android Jetpack Compose rebuild)
+
+---
+
+## v2 Status (as of v2.0.9)
+
+The v1 app has been fully rebuilt on Jetpack Compose (Material 3) as **Aira**.
+Backend parity with v1 is 100% — every tool, rule, skill, plugin, and provider
+that shipped in v1 is wired up and reachable from the new Compose UI.
+
+### ✅ Completed v2 work
+
+- ✅ Jetpack Compose UI (Material 3, dark mode + emerald accent theme)
+- ✅ Splash + Onboarding flow (3 steps: welcome → 5 permissions → provider setup)
+- ✅ Provider Settings screen (with Test button + per-provider model picker)
+- ✅ Skill Editor (View / Edit / Create modes — built-in & user skills)
+- ✅ In-app Browser (WebView with toolbar / quick-switch to chat)
+- ✅ Animations + dark mode (next-themes-style theme manager + persisted toggle)
+- ✅ Memory / Knowledge / Skill management in Hub
+- ✅ All 14 providers (13 v1 providers + apikeys.in aggregator)
+- ✅ Skill editor + delete (built-in skills get a `.deleted_*` marker; user
+  skills get a hard delete)
+- ✅ Rebrand to **Aira** (orb logo, copy, package id `com.ai.agent.v2`)
+- ✅ Overlay toggle in Settings (no more duplicate floating buttons)
+- ✅ TTS toggle (default off — user must opt-in)
+- ✅ Storage permission grant buttons (14 grouped perms + "Grant all" pill)
+- ✅ PluginManager + SkillManager wired into ChatViewModel
+  (`PluginManager.getEnabledPluginsPrompt()` + `SkillManager.loadSkills()`
+  + `generatePromptSection()` + `matchTrigger(userMessage)` are now injected
+  into the system prompt on every agent run)
+- ✅ Notification access prompt in onboarding (Task 92) — 5th permission row
+  opens `ACTION_NOTIFICATION_LISTENER_SETTINGS`, status auto-refreshes via
+  the on-`ON_RESUME` lifecycle observer. Enables NotificationListenerService
+  to read + auto-reply to WhatsApp / SMS notifications.
+- ✅ Timeout system (Task 93) — `runAgentLoop` now wraps each LLM call +
+  tool execution in `withTimeoutOrNull(30_000)` and breaks the loop when the
+  overall task budget (`180_000ms` = 3 minutes) is exceeded. Timed-out steps
+  surface a `[Step X timed out]` message in chat so the user knows the loop
+  is still alive.
+- ✅ Markdown rendering in chat (Task 94) — AI message bubbles now render
+  `**bold**`, `*italic*`, and `` `inline code` `` spans via a lightweight
+  `AnnotatedString` builder (no external markdown libraries — uses only
+  Compose's `buildAnnotatedString` + `withStyle`). User bubbles + tool cards
+  stay plain `Text` so their existing styling is preserved.
+- ✅ System Prompt Editor (Task 95) — full-screen editor for the user's
+  custom system prompt (`/storage/.../system_prompt_custom.txt`), with
+  read-only views of the four built-in prompts (Smart / Balanced / Fast /
+  Default) and a one-tap "Restore Original" that copies the Smart prompt
+  back over the custom file. Shows live char + token estimate at the bottom.
+  Reachable from Hub → Settings → PROMPT MODE → "Edit System Prompt".
+
+### Build verification (v2.0.9)
+
+- `./gradlew assembleDebug` → BUILD SUCCESSFUL
+- APK path: `ai-agent-v2.0.9-debug.apk` (served from `/home/z/my-project/public/`)
+- `versionCode = 9`, `versionName = "2.0.9"`
 
 ---
 
@@ -37,6 +92,10 @@
 | 4 | Ask user for help (after 3 failures) | 🟡 Medium | Sandbox-1 |
 | 5 | Stop button polish | 🟢 Low | Both |
 | 6 | Empty catch blocks logging | 🟢 Low | Sandbox-1 |
+
+> **v2.0.9 note**: Item #2 (timeout system) is now **DONE** in v2 — see the
+> v2 Status section above. It remains open for v1's legacy Android-View UI
+> if anyone still maintains that path.
 
 ---
 

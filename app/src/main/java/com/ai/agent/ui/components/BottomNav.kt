@@ -32,6 +32,7 @@ object Routes {
     const val HUB = "hub"
     const val HUB_SETTINGS = "hub/settings"
     const val PROVIDER_SETTINGS = "provider_settings"
+    const val SYSTEM_PROMPT_EDITOR = "system_prompt_editor"
 
     // Skill editor — argument pattern: "skill_editor/{skillName}/{isReadOnly}"
     // skillName = "__new__" for create mode (avoids nullable path segments).

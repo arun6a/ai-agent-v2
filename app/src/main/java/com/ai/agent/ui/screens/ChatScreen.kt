@@ -904,7 +904,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.7",
+            text = "v2.0.9",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,

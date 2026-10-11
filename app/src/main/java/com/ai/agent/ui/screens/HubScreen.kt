@@ -143,6 +143,7 @@ fun HubScreen(
     onBackToChat: () -> Unit = {},
     onOpenProviderSettings: () -> Unit = {},
     onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit = { _, _ -> },
+    onOpenSystemPromptEditor: () -> Unit = {},
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -245,7 +246,7 @@ fun HubScreen(
                     HubSection.VISION -> VisionSection()
                     HubSection.AUDIO -> AudioSection()
                     HubSection.PERMISSIONS -> PermissionsSection()
-                    HubSection.SETTINGS -> SettingsSection()
+                    HubSection.SETTINGS -> SettingsSection(onOpenSystemPromptEditor = onOpenSystemPromptEditor)
                 }
             }
 
@@ -2254,7 +2255,7 @@ private fun AudioCard(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun SettingsSection() {
+private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -2296,6 +2297,40 @@ private fun SettingsSection() {
                         toast = "Prompt mode: $it"
                     },
                 )
+                // v2.0.9 Task 95: Open the full-screen System Prompt editor
+                // (Custom edit + Smart / Balanced / Fast / Default read-only views).
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.surface2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+                        .clickable {
+                            onOpenSystemPromptEditor()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Edit System Prompt",
+                            color = m3.onSurface,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = "Open the prompt editor (custom + built-in views)",
+                            color = custom.fg3,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                        )
+                    }
+                    Text(
+                        text = "Open →",
+                        color = custom.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
         }
         item {
@@ -2656,8 +2691,8 @@ private fun AboutCard() {
         }
         AboutRow(label = "subtitle", value = "Personal AI Assistant")
         AboutRow(label = "tagline", value = "Your intelligent companion for seamless device control and daily tasks.")
-        AboutRow(label = "version", value = "2.0.7")
-        AboutRow(label = "build", value = "7")
+        AboutRow(label = "version", value = "2.0.9")
+        AboutRow(label = "build", value = "9")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")
