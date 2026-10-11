@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Agent v2 — Design System</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          // Warm off-white (light mode)
+          canvas:    '#FAFAF9',
+          surface:   '#FFFFFF',
+          surface2:  '#F5F5F4',
+          surface3:  '#EBEBE9',
+          border:    '#E7E7E3',
+          // Deep slate (dark mode)
+          ink:       '#0F0F12',
+          ink2:      '#18181B',
+          ink3:      '#232328',
+          inkBorder: '#2A2A30',
+          // Accent: emerald (warm + smart)
+          accent:    '#10B981',
+          accent2:   '#059669',
+          accent3:   '#34D399',
+          accentBg:  'rgba(16,185,129,0.10)',
+          // Status
+          warn:      '#F59E0B',
+          err:       '#EF4444',
+          ok:        '#10B981',
+          info:      '#3B82F6',
+          // Text
+          txt:       '#1C1C1F',
+          txt2:      '#52525B',
+          txt3:      '#A1A1AA',
+          txtInv:    '#FAFAF9',
+          txtInv2:   '#A1A1AA',
+        },
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+          mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+        },
+        fontSize: {
+          '2xs': ['11px', '14px'],
+          xs:   ['12px', '16px'],
+          sm:   ['13px', '18px'],
+          base: ['14px', '20px'],
+          md:   ['16px', '22px'],
+          lg:   ['18px', '24px'],
+          xl:   ['22px', '28px'],
+          '2xl':['28px', '34px'],
+          '3xl':['36px', '40px'],
+        },
+        borderRadius: {
+          'xs': '4px',
+          'sm': '6px',
+          'md': '8px',
+          'lg': '12px',
+          'xl': '16px',
+          '2xl': '20px',
+        }
+      }
+    }
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  /* Toggle between light/dark manually */
+  html.light { background: #FAFAF9; color: #1C1C1F; }
+  html.light .bg-canvas { background: #FAFAF9; }
+  html.light .bg-surface { background: #FFFFFF; }
+  html.light .bg-surface2 { background: #F5F5F4; }
+  html.light .bg-surface3 { background: #EBEBE9; }
+  html.light .border-token { border-color: #E7E7E3; }
+  html.light .text-token { color: #1C1C1F; }
+  html.light .text-token2 { color: #52525B; }
+  html.light .text-token3 { color: #A1A1AA; }
+
+  html.dark { background: #0F0F12; color: #FAFAF9; }
+  html.dark .bg-canvas { background: #0F0F12; }
+  html.dark .bg-surface { background: #18181B; }
+  html.dark .bg-surface2 { background: #232328; }
+  html.dark .bg-surface3 { background: #2A2A30; }
+  html.dark .border-token { border-color: #2A2A30; }
+  html.dark .text-token { color: #FAFAF9; }
+  html.dark .text-token2 { color: #A1A1AA; }
+  html.dark .text-token3 { color: #71717A; }
+
+  /* Status dot pulse */
+  @keyframes pulse-accent {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+    50%      { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+  }
+  .pulse-accent { animation: pulse-accent 1.8s ease-in-out infinite; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2A2A30; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3F3F46; }
+
+  /* Kbd styling */
+  kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 5px;
+    background: #232328;
+    border: 1px solid #2A2A30;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    color: #A1A1AA;
+    line-height: 1;
+  }
+
+  /* Tab active underline */
+  .tab-active { color: #10B981; border-bottom: 2px solid #10B981; }
+
+  /* Tool card hover */
+  .tool-card { transition: all 0.15s ease; }
+  .tool-card:hover { border-color: #10B981; background: rgba(16,185,129,0.04); }
+
+  /* Phone shell respects theme */
+  html.light .phone-shell { background: #FAFAF9; border-color: #E7E7E3; }
+  html.dark .phone-shell { background: #0F0F12; border-color: #2A2A30; }
+</style>
+</head>
+<body class="bg-canvas text-token min-h-screen">
+
+<!-- ============ HEADER ============ -->
+<header class="border-b border-token sticky top-0 z-50 bg-surface/95 backdrop-blur">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <!-- Logo mark -->
+      <div class="w-9 h-9 rounded-lg bg-accent flex items-center justify-center shadow-lg shadow-accent/20">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="3" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-md font-semibold leading-tight">AI Agent <span class="text-accent">v2</span></h1>
+        <p class="text-2xs text-token3 mono leading-tight">design system · friendly + dense</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-2xs text-token3 mono">v2.0.0 · build 1</span>
+      <button id="themeBtn" class="text-xs px-3 py-1.5 rounded-md border border-token hover:bg-surface2 transition">
+        <span id="themeLabel">☀ Light</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Section nav -->
+  <div class="max-w-7xl mx-auto px-6 flex items-center gap-6 text-xs border-t border-token">
+    <a href="#colors"    class="py-2.5 text-token2 hover:text-accent transition">Colors</a>
+    <a href="#typography" class="py-2.5 text-token2 hover:text-accent transition">Typography</a>
+    <a href="#buttons"   class="py-2.5 text-token2 hover:text-accent transition">Buttons</a>
+    <a href="#cards"     class="py-2.5 text-token2 hover:text-accent transition">Cards</a>
+    <a href="#chat"      class="py-2.5 text-token2 hover:text-accent transition">Chat Bubbles</a>
+    <a href="#tool"      class="py-2.5 text-token2 hover:text-accent transition">Tool Calls</a>
+    <a href="#status"    class="py-2.5 text-token2 hover:text-accent transition">Status</a>
+    <a href="#dense"     class="py-2.5 text-token2 hover:text-accent transition">Dense Panel</a>
+    <a href="#phone"     class="py-2.5 text-token2 hover:text-accent transition">Phone Frame</a>
+    <a href="02-chat-screen.html" class="py-2.5 text-accent font-medium">View Chat Screen →</a>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-10 space-y-16">
+
+  <!-- ============ INTRO ============ -->
+  <section>
+    <div class="flex items-baseline gap-3 mb-2">
+      <span class="text-2xs mono text-accent bg-accentBg px-2 py-0.5 rounded">v2.0.0</span>
+      <span class="text-2xs mono text-token3">2025-10-11</span>
+    </div>
+    <h2 class="text-3xl font-bold tracking-tight">Friendly AI assistant meets power-user dense.</h2>
+    <p class="text-base text-token2 mt-2 max-w-3xl">
+      Warm emerald accent + approachable rounded surfaces, but packed with dense info:
+      tool-call cards, status indicators, keyboard shortcuts, monospace technical bits.
+      Think <span class="text-token">ChatGPT</span> warmth × <span class="text-token">Linear/Raycast</span> density.
+    </p>
+  </section>
+
+  <!-- ============ COLORS ============ -->
+  <section id="colors">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">01</span>
+      <h3 class="text-xl font-semibold">Color Palette</h3>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Accent (emerald) -->
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-sm font-semibold">Accent · Emerald</h4>
+          <span class="mono text-2xs text-token3">#10B981</span>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md" style="background:#34D399"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">accent3</p>
+              <p class="mono text-2xs text-token3">#34D399 · hover/active</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md" style="background:#10B981"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">accent</p>
+              <p class="mono text-2xs text-token3">#10B981 · primary</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md" style="background:#059669"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">accent2</p>
+              <p class="mono text-2xs text-token3">#059669 · pressed</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md border border-token" style="background:rgba(16,185,129,0.10)"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">accentBg</p>
+              <p class="mono text-2xs text-token3">rgba(16,185,129,0.10) · tint</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Surfaces -->
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-sm font-semibold">Surfaces</h4>
+          <span class="mono text-2xs text-token3">warm off-white · deep slate</span>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md border border-token" style="background:#FAFAF9"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">canvas</p>
+              <p class="mono text-2xs text-token3">#FAFAF9 · page bg (light)</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md border border-token" style="background:#FFFFFF"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">surface</p>
+              <p class="mono text-2xs text-token3">#FFFFFF · card bg (light)</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md border border-token" style="background:#0F0F12"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">ink</p>
+              <p class="mono text-2xs text-token3">#0F0F12 · page bg (dark)</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-md border border-token" style="background:#18181B"></div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">ink2</p>
+              <p class="mono text-2xs text-token3">#18181B · card bg (dark)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-sm font-semibold">Status Colors</h4>
+          <span class="mono text-2xs text-token3">semantic</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" style="background:#10B981"></span>
+            <span class="text-xs">success</span>
+            <span class="mono text-2xs text-token3 ml-auto">#10B981</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" style="background:#F59E0B"></span>
+            <span class="text-xs">warning</span>
+            <span class="mono text-2xs text-token3 ml-auto">#F59E0B</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" style="background:#EF4444"></span>
+            <span class="text-xs">error</span>
+            <span class="mono text-2xs text-token3 ml-auto">#EF4444</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" style="background:#3B82F6"></span>
+            <span class="text-xs">info</span>
+            <span class="mono text-2xs text-token3 ml-auto">#3B82F6</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" style="background:#A1A1AA"></span>
+            <span class="text-xs">idle</span>
+            <span class="mono text-2xs text-token3 ml-auto">#A1A1AA</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full pulse-accent" style="background:#10B981"></span>
+            <span class="text-xs">thinking</span>
+            <span class="mono text-2xs text-token3 ml-auto">pulse</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Text scale -->
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h4 class="text-sm font-semibold">Text Hierarchy</h4>
+          <span class="mono text-2xs text-token3">4 weights</span>
+        </div>
+        <div class="space-y-1.5">
+          <p class="text-base font-semibold">Primary text · semibold</p>
+          <p class="text-sm text-token2">Secondary text · regular</p>
+          <p class="text-xs text-token3">Tertiary text · captions, meta</p>
+          <p class="mono text-2xs text-token3">mono · timestamps, ids</p>
+          <p class="text-accent text-sm font-medium">Accent · links, active</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TYPOGRAPHY ============ -->
+  <section id="typography">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">02</span>
+      <h3 class="text-xl font-semibold">Typography</h3>
+    </div>
+    <div class="bg-surface border border-token rounded-lg p-6 space-y-4">
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-3xl font-bold">Display</span>
+        <span class="mono text-2xs text-token3">36px / 700 · Inter</span>
+      </div>
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-2xl font-semibold">Heading</span>
+        <span class="mono text-2xs text-token3">28px / 600</span>
+      </div>
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-xl font-semibold">Title</span>
+        <span class="mono text-2xs text-token3">22px / 600</span>
+      </div>
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-lg font-medium">Subtitle</span>
+        <span class="mono text-2xs text-token3">18px / 500</span>
+      </div>
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-base">Body text — used for AI replies and chat messages.</span>
+        <span class="mono text-2xs text-token3 ml-auto">14px / 400</span>
+      </div>
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-sm text-token2">Small text — captions, helper text.</span>
+        <span class="mono text-2xs text-token3 ml-auto">13px / 400</span>
+      </div>
+      <div class="flex items-baseline gap-4 border-b border-token pb-3">
+        <span class="text-xs text-token3">Extra small — metadata, timestamps.</span>
+        <span class="mono text-2xs text-token3 ml-auto">12px / 400</span>
+      </div>
+      <div class="flex items-baseline gap-4">
+        <span class="mono text-2xs text-token3">mono · 11px · tool args, ids, paths</span>
+        <span class="mono text-2xs text-token3 ml-auto">11px / 400 · JetBrains Mono</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ BUTTONS ============ -->
+  <section id="buttons">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">03</span>
+      <h3 class="text-xl font-semibold">Buttons</h3>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Variants</h4>
+        <div class="flex flex-wrap items-center gap-3">
+          <button class="px-4 py-2 rounded-md bg-accent hover:bg-accent2 text-white text-sm font-medium transition shadow-sm shadow-accent/20">
+            Primary
+          </button>
+          <button class="px-4 py-2 rounded-md bg-surface2 hover:bg-surface3 text-token text-sm font-medium border border-token transition">
+            Secondary
+          </button>
+          <button class="px-4 py-2 rounded-md hover:bg-surface2 text-token2 text-sm font-medium transition">
+            Ghost
+          </button>
+          <button class="px-4 py-2 rounded-md bg-err/10 hover:bg-err/20 text-err text-sm font-medium border border-err/30 transition">
+            Destructive
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Icon Buttons</h4>
+        <div class="flex flex-wrap items-center gap-3">
+          <button class="w-9 h-9 rounded-md bg-accent hover:bg-accent2 flex items-center justify-center transition">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
+          </button>
+          <button class="w-9 h-9 rounded-md bg-surface2 hover:bg-surface3 border border-token flex items-center justify-center transition">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </button>
+          <button class="w-9 h-9 rounded-md hover:bg-surface2 flex items-center justify-center transition">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
+          <button class="w-9 h-9 rounded-md bg-surface2 hover:bg-surface3 border border-token flex items-center justify-center transition">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button class="w-9 h-9 rounded-md bg-err/10 hover:bg-err/20 border border-err/30 flex items-center justify-center transition">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Sizes</h4>
+        <div class="flex flex-wrap items-center gap-3">
+          <button class="px-2.5 py-1 rounded bg-accent hover:bg-accent2 text-white text-2xs font-medium transition">XS</button>
+          <button class="px-3 py-1.5 rounded-md bg-accent hover:bg-accent2 text-white text-xs font-medium transition">Small</button>
+          <button class="px-4 py-2 rounded-md bg-accent hover:bg-accent2 text-white text-sm font-medium transition">Default</button>
+          <button class="px-5 py-2.5 rounded-md bg-accent hover:bg-accent2 text-white text-base font-medium transition">Large</button>
+        </div>
+      </div>
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">With Shortcut</h4>
+        <div class="space-y-2">
+          <button class="w-full flex items-center justify-between px-3 py-2 rounded-md hover:bg-surface2 border border-token transition">
+            <span class="text-sm text-token2">New task</span>
+            <kbd>⌘ N</kbd>
+          </button>
+          <button class="w-full flex items-center justify-between px-3 py-2 rounded-md hover:bg-surface2 border border-token transition">
+            <span class="text-sm text-token2">Command palette</span>
+            <kbd>⌘ K</kbd>
+          </button>
+          <button class="w-full flex items-center justify-between px-3 py-2 rounded-md hover:bg-surface2 border border-token transition">
+            <span class="text-sm text-token2">Stop AI</span>
+            <kbd>Esc</kbd>
+          </button>
+          <button class="w-full flex items-center justify-between px-3 py-2 rounded-md hover:bg-surface2 border border-token transition">
+            <span class="text-sm text-token2">Voice input</span>
+            <kbd>⌘ V</kbd>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CARDS ============ -->
+  <section id="cards">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">04</span>
+      <h3 class="text-xl font-semibold">Cards &amp; Surfaces</h3>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <span class="text-2xs mono text-token3">surface</span>
+        <h4 class="text-base font-semibold mt-2 mb-1">Default Card</h4>
+        <p class="text-sm text-token2">Flat surface with border. Used for most content blocks.</p>
+      </div>
+      <div class="bg-surface border border-token rounded-lg p-5 shadow-lg shadow-black/5">
+        <span class="text-2xs mono text-token3">elevated</span>
+        <h4 class="text-base font-semibold mt-2 mb-1">Elevated Card</h4>
+        <p class="text-sm text-token2">Subtle shadow for important content (active AI state).</p>
+      </div>
+      <div class="bg-accentBg border border-accent/30 rounded-lg p-5">
+        <span class="text-2xs mono text-accent">accent tint</span>
+        <h4 class="text-base font-semibold mt-2 mb-1">Active Card</h4>
+        <p class="text-sm text-token2">Emerald tint — used for selected/active state.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CHAT BUBBLES ============ -->
+  <section id="chat">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">05</span>
+      <h3 class="text-xl font-semibold">Chat Bubbles</h3>
+    </div>
+
+    <div class="bg-surface border border-token rounded-lg p-6 space-y-4">
+
+      <!-- User message (right-aligned, accent) -->
+      <div class="flex justify-end">
+        <div class="max-w-md">
+          <div class="bg-accent text-white rounded-2xl rounded-br-sm px-4 py-2.5">
+            <p class="text-sm">Open YouTube and play BLACKPINK</p>
+          </div>
+          <div class="flex items-center gap-2 justify-end mt-1">
+            <span class="mono text-2xs text-token3">12:42:18</span>
+            <span class="text-2xs text-token3">·</span>
+            <span class="mono text-2xs text-token3">voice</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI message (left-aligned, surface) -->
+      <div class="flex justify-start gap-2">
+        <div class="w-7 h-7 rounded-full bg-accent flex items-center justify-center flex-shrink-0 mt-0.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+        </div>
+        <div class="max-w-md">
+          <div class="bg-surface2 border border-token rounded-2xl rounded-bl-sm px-4 py-2.5">
+            <p class="text-sm">I'll open YouTube and search for BLACKPINK. Let me start by launching the app.</p>
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <span class="mono text-2xs text-token3">12:42:19</span>
+            <span class="text-2xs text-token3">·</span>
+            <span class="mono text-2xs text-accent">gemini-3.8-flash</span>
+            <span class="text-2xs text-token3">·</span>
+            <span class="mono text-2xs text-token3">847ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tool call card -->
+      <div class="flex justify-start gap-2">
+        <div class="w-7 h-7 flex-shrink-0"></div>
+        <div class="max-w-md w-full">
+          <div class="bg-ink2 border border-inkBorder rounded-lg overflow-hidden tool-card">
+            <div class="flex items-center justify-between px-3 py-2 bg-surface3 border-b border-inkBorder">
+              <div class="flex items-center gap-2">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                <span class="mono text-xs text-accent font-medium">launchApp</span>
+                <span class="text-2xs text-token3">·</span>
+                <span class="mono text-2xs text-token3">280ms</span>
+              </div>
+              <span class="text-2xs text-ok flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-ok"></span> ok
+              </span>
+            </div>
+            <div class="px-3 py-2 mono text-2xs text-token2 space-y-0.5">
+              <div><span class="text-token3">package:</span> <span class="text-token">com.google.android.youtube</span></div>
+              <div><span class="text-token3">result:</span> <span class="text-ok">YouTube launched</span></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <span class="mono text-2xs text-token3">12:42:20</span>
+            <span class="text-2xs text-token3">·</span>
+            <span class="mono text-2xs text-token3">tool call #1</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error bubble -->
+      <div class="flex justify-start gap-2">
+        <div class="w-7 h-7 rounded-full bg-err/20 border border-err/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        </div>
+        <div class="max-w-md">
+          <div class="bg-err/5 border border-err/30 rounded-2xl rounded-bl-sm px-4 py-2.5">
+            <p class="text-sm text-token">Rate limited (429). Daily quota may be exhausted.</p>
+            <p class="mono text-2xs text-token3 mt-1">retrying in 5s · attempt 1/3</p>
+          </div>
+          <div class="flex items-center gap-2 mt-1">
+            <span class="mono text-2xs text-err">12:42:25 · error</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thinking indicator -->
+      <div class="flex justify-start gap-2">
+        <div class="w-7 h-7 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+        </div>
+        <div class="bg-surface2 border border-token rounded-2xl rounded-bl-sm px-4 py-3">
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-accent"></span>
+            <span class="text-xs text-token2">thinking…</span>
+            <span class="mono text-2xs text-token3">· 2.3s</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ TOOL CALL DENSE CARDS ============ -->
+  <section id="tool">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">06</span>
+      <h3 class="text-xl font-semibold">Tool Call Cards (Dense)</h3>
+    </div>
+
+    <div class="space-y-2">
+      <!-- Tool: tap -->
+      <div class="bg-ink2 border border-inkBorder rounded-lg overflow-hidden tool-card">
+        <div class="flex items-center justify-between px-3 py-2 bg-surface3 border-b border-inkBorder">
+          <div class="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><path d="M9 11.24V7.5a2.5 2.5 0 1 1 5 0v3.74"/><path d="M9 11.24c-.69-.69-1.5-1.24-2.5-1.24C5 10 4 11 4 12.5S5 15 6.5 15c1.07 0 1.83-.46 2.5-1.24"/><path d="M15 11.24V7.5a2.5 2.5 0 0 0-5 0"/></svg>
+            <span class="mono text-xs text-accent font-medium">tap</span>
+            <span class="text-2xs text-token3">#2 · 12:42:21</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="mono text-2xs text-token3">142ms</span>
+            <span class="text-2xs text-ok flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-ok"></span> ok
+            </span>
+          </div>
+        </div>
+        <div class="px-3 py-2 mono text-2xs text-token2 flex items-center gap-6">
+          <div><span class="text-token3">x:</span> <span class="text-token">540</span></div>
+          <div><span class="text-token3">y:</span> <span class="text-token">1280</span></div>
+          <div><span class="text-token3">element:</span> <span class="text-token">"Search"</span></div>
+        </div>
+      </div>
+
+      <!-- Tool: type -->
+      <div class="bg-ink2 border border-inkBorder rounded-lg overflow-hidden tool-card">
+        <div class="flex items-center justify-between px-3 py-2 bg-surface3 border-b border-inkBorder">
+          <div class="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2.5"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+            <span class="mono text-xs text-info font-medium">type</span>
+            <span class="text-2xs text-token3">#3 · 12:42:22</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="mono text-2xs text-token3">89ms</span>
+            <span class="text-2xs text-ok flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-ok"></span> ok
+            </span>
+          </div>
+        </div>
+        <div class="px-3 py-2 mono text-2xs text-token2 flex items-center gap-6">
+          <div><span class="text-token3">text:</span> <span class="text-token">"BLACKPINK"</span></div>
+          <div><span class="text-token3">field:</span> <span class="text-token">search_box</span></div>
+        </div>
+      </div>
+
+      <!-- Tool: analyzeScreen -->
+      <div class="bg-ink2 border border-inkBorder rounded-lg overflow-hidden tool-card">
+        <div class="flex items-center justify-between px-3 py-2 bg-surface3 border-b border-inkBorder">
+          <div class="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span class="mono text-xs text-warn font-medium">analyzeScreen</span>
+            <span class="text-2xs text-token3">#5 · 12:42:25</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="mono text-2xs text-token3">2.4s</span>
+            <span class="text-2xs text-warn flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-warn"></span> vlm
+            </span>
+          </div>
+        </div>
+        <div class="px-3 py-2 mono text-2xs text-token2 space-y-0.5">
+          <div><span class="text-token3">tier:</span> <span class="text-warn">vlm (mlkit ocr failed)</span></div>
+          <div><span class="text-token3">found:</span> <span class="text-token">3 video thumbnails</span></div>
+          <div><span class="text-token3">first:</span> <span class="text-token">"BLACKPINK - Pink Venom" · pos(540, 412)</span></div>
+        </div>
+      </div>
+
+      <!-- Tool: failed -->
+      <div class="bg-ink2 border border-err/40 rounded-lg overflow-hidden tool-card">
+        <div class="flex items-center justify-between px-3 py-2 bg-err/5 border-b border-err/30">
+          <div class="flex items-center gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+            <span class="mono text-xs text-err font-medium">browserClickText</span>
+            <span class="text-2xs text-token3">#7 · 12:42:31</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="mono text-2xs text-token3">1.2s</span>
+            <span class="text-2xs text-err flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-err"></span> fail
+            </span>
+          </div>
+        </div>
+        <div class="px-3 py-2 mono text-2xs text-token2 space-y-0.5">
+          <div><span class="text-token3">text:</span> <span class="text-token">"Subscribe"</span></div>
+          <div><span class="text-token3">error:</span> <span class="text-err">element not found (4-pass search exhausted)</span></div>
+          <div><span class="text-token3">fallback:</span> <span class="text-warn">switching to accessibility tap</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STATUS INDICATORS ============ -->
+  <section id="status">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">07</span>
+      <h3 class="text-xl font-semibold">Status &amp; Chips</h3>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Agent State</h4>
+        <div class="flex flex-wrap gap-2">
+          <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-surface2 border border-token text-2xs">
+            <span class="w-1.5 h-1.5 rounded-full bg-token3"></span> idle
+          </span>
+          <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-accentBg border border-accent/30 text-2xs text-accent">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-accent"></span> thinking
+          </span>
+          <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-accent/20 border border-accent/40 text-2xs text-accent">
+            <span class="w-1.5 h-1.5 rounded-full bg-accent"></span> executing
+          </span>
+          <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-ok/10 border border-ok/30 text-2xs text-ok">
+            <span class="w-1.5 h-1.5 rounded-full bg-ok"></span> done
+          </span>
+          <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-err/10 border border-err/30 text-2xs text-err">
+            <span class="w-1.5 h-1.5 rounded-full bg-err"></span> error
+          </span>
+          <span class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-warn/10 border border-warn/30 text-2xs text-warn">
+            <span class="w-1.5 h-1.5 rounded-full bg-warn"></span> retry
+          </span>
+        </div>
+      </div>
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Provider Chips</h4>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="mono text-2xs px-2 py-0.5 rounded bg-accent/15 text-accent border border-accent/30">zai_direct · glm-5.3</span>
+          <span class="mono text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">groq · llama-3.3-70b</span>
+          <span class="mono text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">gemini · 3.8-flash</span>
+          <span class="mono text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">openrouter · nemotron-120b</span>
+          <span class="mono text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">together · llama-405b</span>
+        </div>
+      </div>
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Tool Categories</h4>
+        <div class="flex flex-wrap gap-1.5">
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">accessibility</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">browser</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">apps</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">media</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">files</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">system</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">memory</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">knowledge</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-surface2 text-token2 border border-token">vision</span>
+          <span class="text-2xs px-2 py-0.5 rounded bg-accent/15 text-accent border border-accent/30">terminal</span>
+        </div>
+      </div>
+
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-4">Quick Stats</h4>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-token2">API calls today</span>
+            <span class="mono text-token">47 / 14400</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-token2">Tools used</span>
+            <span class="mono text-token">12</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-token2">Avg latency</span>
+            <span class="mono text-ok">847ms</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-token2">Success rate</span>
+            <span class="mono text-ok">94.2%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DENSE PANEL ============ -->
+  <section id="dense">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">08</span>
+      <h3 class="text-xl font-semibold">Power-User Dense Panel</h3>
+      <span class="text-2xs text-token3 mono">command palette · raycast-style</span>
+    </div>
+
+    <div class="bg-ink2 border border-inkBorder rounded-lg overflow-hidden max-w-2xl mx-auto">
+      <!-- Search input -->
+      <div class="flex items-center gap-3 px-4 py-3 border-b border-inkBorder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" placeholder="Type a command or ask AI…" class="flex-1 bg-transparent outline-none text-sm placeholder:text-token3 text-token" value="open youtube"/>
+        <kbd>esc</kbd>
+      </div>
+
+      <!-- Section header -->
+      <div class="px-4 py-1.5 text-2xs mono text-token3 uppercase tracking-wider bg-surface3/50">
+        Actions · 3 results
+      </div>
+
+      <!-- Items -->
+      <div class="divide-y divide-inkBorder">
+        <div class="flex items-center gap-3 px-4 py-2.5 bg-accent/5 border-l-2 border-accent">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M5 12l5 5L20 7"/></svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium">Open YouTube app</p>
+            <p class="mono text-2xs text-token3">launchApp · package=com.google.android.youtube</p>
+          </div>
+          <kbd>↵</kbd>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface3/50">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm">Search YouTube for "open youtube"</p>
+            <p class="mono text-2xs text-token3">browserOpen · youtube.com/results</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-surface3/50">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm">Run skill: "Open YouTube and play music"</p>
+            <p class="mono text-2xs text-token3">skill · play_music.md · last used 2h ago</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: recent -->
+      <div class="px-4 py-1.5 text-2xs mono text-token3 uppercase tracking-wider bg-surface3/50 border-t border-inkBorder">
+        Recent · 4
+      </div>
+      <div class="divide-y divide-inkBorder">
+        <div class="flex items-center gap-3 px-4 py-2 hover:bg-surface3/50">
+          <span class="mono text-2xs text-token3 w-12">12:34</span>
+          <span class="text-xs flex-1 truncate text-token2">Read screen of WhatsApp</span>
+          <kbd>⌘1</kbd>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-2 hover:bg-surface3/50">
+          <span class="mono text-2xs text-token3 w-12">12:18</span>
+          <span class="text-xs flex-1 truncate text-token2">Send message to Mom</span>
+          <kbd>⌘2</kbd>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-2 hover:bg-surface3/50">
+          <span class="mono text-2xs text-token3 w-12">11:52</span>
+          <span class="text-xs flex-1 truncate text-token2">Order food on Swiggy</span>
+          <kbd>⌘3</kbd>
+        </div>
+        <div class="flex items-center gap-3 px-4 py-2 hover:bg-surface3/50">
+          <span class="mono text-2xs text-token3 w-12">10:09</span>
+          <span class="text-xs flex-1 truncate text-token2">Backup photos to Drive</span>
+          <kbd>⌘4</kbd>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="flex items-center justify-between px-4 py-2 border-t border-inkBorder bg-surface3/30">
+        <div class="flex items-center gap-3 text-2xs text-token3">
+          <span class="flex items-center gap-1"><kbd>↑↓</kbd> navigate</span>
+          <span class="flex items-center gap-1"><kbd>↵</kbd> select</span>
+          <span class="flex items-center gap-1"><kbd>⌘K</kbd> palette</span>
+        </div>
+        <span class="mono text-2xs text-token3">13 providers · 100+ tools</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PHONE FRAME ============ -->
+  <section id="phone">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">09</span>
+      <h3 class="text-xl font-semibold">Phone Frame Preview</h3>
+      <span class="text-2xs text-token3 mono">375×812 viewport</span>
+    </div>
+
+    <div class="flex justify-center">
+      <!-- Phone shell -->
+      <div class="phone-shell w-[375px] h-[760px] rounded-[36px] border-4 shadow-2xl shadow-black/40 overflow-hidden flex flex-col">
+
+        <!-- Status bar -->
+        <div class="flex items-center justify-between px-6 pt-3 pb-2 text-2xs text-token">
+          <span class="mono">12:42</span>
+          <div class="flex items-center gap-1">
+            <span class="mono text-token3">5G</span>
+            <span class="mono">87%</span>
+            <div class="w-5 h-2.5 rounded-sm border border-token3 relative">
+              <div class="absolute inset-0.5 bg-accent rounded-[1px]" style="width:80%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- App top bar -->
+        <div class="flex items-center justify-between px-4 py-2.5 border-b border-inkBorder">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-accent flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+            </div>
+            <div>
+              <p class="text-sm font-semibold leading-tight">AI Agent</p>
+              <p class="mono text-2xs text-accent leading-tight">● glm-5.3 · 847ms</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button class="w-8 h-8 rounded-md hover:bg-surface2 flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          <div class="flex justify-end">
+            <div class="bg-accent text-white rounded-2xl rounded-br-sm px-3 py-2 max-w-[75%]">
+              <p class="text-xs">Open YouTube and play BLACKPINK</p>
+            </div>
+          </div>
+          <div class="flex justify-start gap-1.5">
+            <div class="w-6 h-6 rounded-full bg-accent flex-shrink-0 flex items-center justify-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+            </div>
+            <div class="max-w-[80%]">
+              <div class="bg-surface2 border border-inkBorder rounded-2xl rounded-bl-sm px-3 py-2">
+                <p class="text-xs">Launching YouTube now…</p>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-start gap-1.5">
+            <div class="w-6 flex-shrink-0"></div>
+            <div class="max-w-[85%] w-full">
+              <div class="bg-surface3 border border-inkBorder rounded-lg overflow-hidden">
+                <div class="flex items-center justify-between px-2.5 py-1.5 border-b border-inkBorder">
+                  <span class="mono text-2xs text-accent">▶ launchApp</span>
+                  <span class="mono text-2xs text-token3">280ms</span>
+                </div>
+                <div class="px-2.5 py-1.5 mono text-2xs text-token2">
+                  <span class="text-token3">pkg:</span> youtube
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-start gap-1.5">
+            <div class="w-6 flex-shrink-0"></div>
+            <div class="max-w-[85%] w-full">
+              <div class="bg-surface3 border border-inkBorder rounded-lg overflow-hidden">
+                <div class="flex items-center justify-between px-2.5 py-1.5 border-b border-inkBorder">
+                  <span class="mono text-2xs text-info">⌕ analyzeScreen</span>
+                  <span class="mono text-2xs text-warn">2.4s · vlm</span>
+                </div>
+                <div class="px-2.5 py-1.5 mono text-2xs text-token2">
+                  found: 3 videos
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-start gap-1.5">
+            <div class="w-6 h-6 rounded-full bg-accent flex-shrink-0 flex items-center justify-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+            </div>
+            <div class="bg-surface2 border border-inkBorder rounded-2xl rounded-bl-sm px-3 py-2">
+              <div class="flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-accent pulse-accent"></span>
+                <span class="text-2xs text-token2">tapping first video…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input bar -->
+        <div class="border-t border-inkBorder px-3 py-2.5 bg-surface">
+          <div class="flex items-center gap-2">
+            <button class="w-9 h-9 rounded-full bg-surface2 hover:bg-surface3 border border-inkBorder flex items-center justify-center flex-shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+            </button>
+            <div class="flex-1 bg-surface2 border border-inkBorder rounded-full px-3 py-1.5 flex items-center gap-2">
+              <input type="text" placeholder="Ask or command…" class="flex-1 bg-transparent outline-none text-xs text-token placeholder:text-token3">
+              <button class="text-token3 hover:text-token">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+            </div>
+            <button class="w-9 h-9 rounded-full bg-accent hover:bg-accent2 flex items-center justify-center flex-shrink-0 shadow-md shadow-accent/30">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="m22 2-7 20-4-9-9-4Z"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Bottom safe area -->
+        <div class="h-4 flex items-center justify-center">
+          <div class="w-24 h-1 bg-token3 rounded-full"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NAVIGATION ============ -->
+  <section id="nav">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xs mono text-token3">10</span>
+      <h3 class="text-xl font-semibold">Navigation Patterns</h3>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Bottom nav (mobile) -->
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-3">Bottom Nav · Mobile</h4>
+        <div class="bg-ink rounded-lg p-2 flex items-center justify-around">
+          <button class="flex flex-col items-center gap-0.5 py-1 px-3 text-accent">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span class="text-2xs font-medium">Chat</span>
+          </button>
+          <button class="flex flex-col items-center gap-0.5 py-1 px-3 text-token3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span class="text-2xs">Browse</span>
+          </button>
+          <button class="flex flex-col items-center gap-0.5 py-1 px-3 text-token3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span class="text-2xs">Hub</span>
+          </button>
+          <button class="flex flex-col items-center gap-0.5 py-1 px-3 text-token3">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82"/></svg>
+            <span class="text-2xs">Settings</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Side rail (tablet) -->
+      <div class="bg-surface border border-token rounded-lg p-5">
+        <h4 class="text-sm font-semibold mb-3">Side Rail · Tablet</h4>
+        <div class="bg-ink rounded-lg p-2 w-44 flex flex-col gap-1">
+          <button class="flex items-center gap-2 px-2 py-2 rounded-md bg-accent/15 text-accent">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span class="text-xs font-medium">Chat</span>
+          </button>
+          <button class="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-surface3 text-token2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span class="text-xs">Browse</span>
+          </button>
+          <button class="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-surface3 text-token2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span class="text-xs">Hub</span>
+          </button>
+          <button class="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-surface3 text-token2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+            <span class="text-xs">Skills</span>
+          </button>
+          <button class="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-surface3 text-token2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+            <span class="text-xs">Settings</span>
+          </button>
+          <div class="border-t border-inkBorder my-1"></div>
+          <button class="flex items-center gap-2 px-2 py-2 rounded-md hover:bg-surface3 text-token3">
+            <kbd>⌘K</kbd>
+            <span class="text-2xs">command</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FOOTER ============ -->
+  <section class="border-t border-token pt-6 pb-10">
+    <div class="flex items-center justify-between text-2xs text-token3 mono">
+      <span>ai-agent v2 · design system 01</span>
+      <span>10 sections · 60+ components</span>
+    </div>
+    <div class="mt-4">
+      <a href="02-chat-screen.html" class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-accent hover:bg-accent2 text-white text-sm font-medium transition">
+        Next: View Chat Screen →
+      </a>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Theme toggle
+  const html = document.documentElement;
+  const btn = document.getElementById('themeBtn');
+  const label = document.getElementById('themeLabel');
+  btn.addEventListener('click', () => {
+    if (html.classList.contains('light')) {
+      html.classList.remove('light');
+      html.classList.add('dark');
+      label.textContent = '🌙 Dark';
+    } else {
+      html.classList.remove('dark');
+      html.classList.add('light');
+      label.textContent = '☀ Light';
+    }
+  });
+</script>
+
+</body>
+</html>

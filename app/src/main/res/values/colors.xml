@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- ====== AI Agent v2 — Color resources ====== -->
+    <!-- Light-mode tokens (used by themes.xml + adaptive icon background) -->
+
+    <color name="canvas_light">#FAFAF9</color>
+    <color name="surface_light">#FFFFFF</color>
+    <color name="surface2_light">#F5F5F4</color>
+    <color name="surface3_light">#EBEBE9</color>
+    <color name="border_light">#E7E7E3</color>
+    <color name="fg_light">#1C1C1F</color>
+    <color name="fg2_light">#52525B</color>
+    <color name="fg3_light">#A1A1AA</color>
+
+    <!-- Dark-mode tokens -->
+    <color name="ink_dark">#0F0F12</color>
+    <color name="ink2_dark">#18181B</color>
+    <color name="ink3_dark">#232328</color>
+    <color name="ink_border_dark">#2A2A30</color>
+    <color name="text_dark">#FAFAF9</color>
+
+    <!-- Accent + status (same in light + dark) -->
+    <color name="accent">#10B981</color>
+    <color name="accent2">#059669</color>
+    <color name="accent3">#34D399</color>
+    <color name="status_success">#10B981</color>
+    <color name="status_warn">#F59E0B</color>
+    <color name="status_error">#EF4444</color>
+    <color name="status_info">#3B82F6</color>
+
+    <!-- Common -->
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+
+</resources>

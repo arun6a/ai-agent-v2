@@ -1,0 +1,38 @@
+{
+  "name": "Calendar Extended",
+  "description": "Extended calendar tools for event management",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {
+      "name": "getTodayEvents",
+      "description": "Get all calendar events for today",
+      "args": []
+    },
+    {
+      "name": "getTomorrowEvents",
+      "description": "Get all calendar events for tomorrow",
+      "args": []
+    },
+    {
+      "name": "getWeekEvents",
+      "description": "Get all events for this week",
+      "args": []
+    },
+    {
+      "name": "deleteCalendarEvent",
+      "description": "Delete a calendar event by ID",
+      "args": ["eventId"]
+    },
+    {
+      "name": "updateCalendarEvent",
+      "description": "Update an existing calendar event",
+      "args": ["eventId", "title", "startTime", "durationMinutes"]
+    },
+    {
+      "name": "getEventReminders",
+      "description": "Get upcoming event reminders",
+      "args": []
+    }
+  ]
+}

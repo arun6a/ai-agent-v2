@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ====== Permissions (carried over from v1 — do NOT modify) ====== -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.SET_ALARM" />
+    <!-- Bluetooth -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!-- Wake lock (keeps CPU alive for background rules + waitAndContinue) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- All files access (Android 11+) -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- Foreground service type (Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Exact-time rule scheduling -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Reschedule rules after device reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Incoming SMS rules -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- Incoming call rules -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.AIAgentV2"
+        android:supportsRtl="true"
+        android:extractNativeLibs="true">
+
+        <!-- ===== Main activity (Compose) ===== -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ===== Accessibility service (carried over from v1) ===== -->
+        <service
+            android:name=".accessibility.AgentAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- ===== Foreground agent service ===== -->
+        <service
+            android:name=".service.AgentService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- ===== Notification listener service ===== -->
+        <service
+            android:name=".rules.NotificationListener"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- ===== Rule receivers (carried over from v1) ===== -->
+
+        <!-- AlarmManager-triggered time rules -->
+        <receiver
+            android:name=".rules.RuleTriggerReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.RULE_TRIGGER_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Reschedule time rules after phone reboot -->
+        <receiver
+            android:name=".rules.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Battery + charging triggers -->
+        <receiver
+            android:name=".rules.BatteryRuleReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_CHANGED" />
+                <action android:name="android.intent.action.POWER_CONNECTED" />
+                <action android:name="android.intent.action.POWER_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Incoming SMS triggers -->
+        <receiver
+            android:name=".rules.SMSReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Headset plug/unplug -->
+        <receiver
+            android:name=".rules.HeadsetReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.HEADSET_PLUG" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WiFi state change -->
+        <receiver
+            android:name=".rules.WiFiReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.wifi.STATE_CHANGE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- App install/uninstall -->
+        <receiver
+            android:name=".rules.PackageReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Bluetooth connected/disconnected -->
+        <receiver
+            android:name=".rules.BluetoothReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.bluetooth.adapter.action.CONNECTION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- System events: airplane mode, storage low, locale, timezone, shutdown, data saver -->
+        <receiver
+            android:name=".rules.SystemEventReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.AIRPLANE_MODE" />
+                <action android:name="android.intent.action.DEVICE_STORAGE_LOW" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.SHUTDOWN" />
+                <action android:name="android.net.action.DATA_SAVIER_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- USB device attached/detached -->
+        <receiver
+            android:name=".rules.UsbReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+                <action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Dock event -->
+        <receiver
+            android:name=".rules.DockReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOCK_EVENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Day change (midnight) -->
+        <receiver
+            android:name=".rules.DayChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.DAY_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Music / audio playback -->
+        <receiver
+            android:name=".rules.MusicReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.media.AUDIO_BECOMING_NOISY" />
+                <action android:name="com.android.music.playstatechanged" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Battery full (100%) -->
+        <receiver
+            android:name=".rules.BatteryFullReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Calendar event check -->
+        <receiver
+            android:name=".rules.CalendarReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.CALENDAR_CHECK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- App open/close (triggered by accessibility service) -->
+        <receiver
+            android:name=".rules.AppOpenReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.APP_OPENED" />
+                <action android:name="com.ai.agent.APP_CLOSED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Location check (periodic) -->
+        <receiver
+            android:name=".rules.LocationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.LOCATION_CHECK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Brightness check (periodic) -->
+        <receiver
+            android:name=".rules.BrightnessReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.BRIGHTNESS_CHECK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Storage low (standalone) -->
+        <receiver
+            android:name=".rules.StorageReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DEVICE_STORAGE_LOW" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Alarm dismissed (best-effort) -->
+        <receiver
+            android:name=".rules.AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.android.deskclock.action.ALARM_DISMISS" />
+                <action android:name="com.samsung.android.alarm.action.ALARM_DISMISS" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Incoming call (phone state) -->
+        <receiver
+            android:name=".rules.IncomingCallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Screen on/off -->
+        <receiver
+            android:name=".rules.ScreenReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.SCREEN_ON" />
+                <action android:name="android.intent.action.SCREEN_OFF" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ===== FileProvider for secure file sharing (shareFile tool) ===== -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- External storage (where screenshots, downloads live) -->
+    <external-path name="external" path="." />
+    <external-files-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <!-- Internal files dir -->
+    <files-path name="files" path="." />
+    <cache-path name="cache" path="." />
+    <!-- Allow sharing from /sdcard/Download, /sdcard/Documents, etc. -->
+    <root-path name="root" path="." />
+</paths>

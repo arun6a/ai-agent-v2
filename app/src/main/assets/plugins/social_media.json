@@ -1,0 +1,14 @@
+{
+  "name": "Social Media",
+  "description": "Instagram, Telegram, YouTube direct access",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {"name": "openInstagramProfile", "params": ["username"], "description": "Open Instagram profile"},
+    {"name": "openTelegramChat", "params": ["username"], "description": "Open Telegram chat"},
+    {"name": "openYouTubeVideo", "params": ["videoId"], "description": "Open specific YouTube video"},
+    {"name": "playSpotify", "params": ["query"], "description": "Search and play on Spotify"},
+    {"name": "searchInApp", "params": ["package", "query"], "description": "Search within YouTube/Spotify/Instagram/Chrome"}
+  ],
+  "prompt_section": "### Social Media Tools\n- openInstagramProfile(username) — open Instagram profile\n- openTelegramChat(username) — open Telegram chat\n- openYouTubeVideo(videoId) — open YouTube video by ID\n- playSpotify(query) — search and play on Spotify\n- searchInApp(package, query) — search in YouTube/Spotify/Instagram/Chrome"
+}

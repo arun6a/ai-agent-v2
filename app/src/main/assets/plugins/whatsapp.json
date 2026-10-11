@@ -1,0 +1,11 @@
+{
+  "name": "WhatsApp",
+  "description": "Open WhatsApp chats, send messages, auto-reply",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {"name": "openWhatsAppChat", "params": ["phone", "message"], "description": "Open WhatsApp chat with phone number, optionally pre-fill message"},
+    {"name": "sendWhatsAppMessage", "params": ["phone", "message"], "description": "Open WhatsApp with message pre-filled (user taps send)"}
+  ],
+  "prompt_section": "### WhatsApp Tools\n- openWhatsAppChat(phone, message?) — open chat with phone (international format: +919001234567), optionally pre-fill message\n- sendWhatsAppMessage(phone, message) — open WhatsApp with message pre-filled"
+}

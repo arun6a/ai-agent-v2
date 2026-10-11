@@ -1,0 +1,28 @@
+# Built artifacts
+*.iml
+.gradle/
+.idea/
+.kotlin/
+build/
+captures/
+.cxx/
+local.properties
+
+# Keystore
+*.jks
+*.keystore
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# APKs (built, not tracked)
+*.apk
+*.aab
+*.ap_
+
+# Native build artifacts
+*.so

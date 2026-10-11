@@ -1,0 +1,20 @@
+{
+  "name": "Communication",
+  "description": "Contacts, SMS, email, calls, sharing",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {"name": "readContacts", "params": [], "description": "List all contacts"},
+    {"name": "searchContacts", "params": ["name"], "description": "Search contacts by name"},
+    {"name": "callContact", "params": ["number"], "description": "Make a phone call"},
+    {"name": "sendSMS", "params": ["number", "message"], "description": "Send SMS message"},
+    {"name": "getCallLog", "params": [], "description": "Get recent call history"},
+    {"name": "sendEmail", "params": ["to", "subject", "body"], "description": "Send email"},
+    {"name": "composeEmail", "params": ["to", "subject", "body"], "description": "Open email composer"},
+    {"name": "shareText", "params": ["text"], "description": "Share text via system share"},
+    {"name": "shareFile", "params": ["path", "mimeType"], "description": "Share a file"},
+    {"name": "makePhoneCall", "params": ["number"], "description": "Make phone call directly"},
+    {"name": "openDialer", "params": ["number"], "description": "Open dialer with number"}
+  ],
+  "prompt_section": "### Communication Tools\n- readContacts() / searchContacts(name) — contacts\n- callContact(number) / makePhoneCall(number) — call\n- openDialer(number) — open dialer (no auto-call)\n- sendSMS(number, message) — send SMS\n- getCallLog() — recent calls\n- sendEmail(to, subject, body) / composeEmail(to, subject, body) — email\n- shareText(text) / shareFile(path, mimeType?) — share"
+}

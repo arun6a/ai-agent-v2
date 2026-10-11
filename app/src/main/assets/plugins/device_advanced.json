@@ -1,0 +1,48 @@
+{
+  "name": "Device Advanced",
+  "description": "Advanced device control tools",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {
+      "name": "toggleBluetooth",
+      "description": "Turn Bluetooth on or off",
+      "args": ["state: on/off"]
+    },
+    {
+      "name": "getStorageInfo",
+      "description": "Get available + total storage space",
+      "args": []
+    },
+    {
+      "name": "getRamInfo",
+      "description": "Get available + total RAM",
+      "args": []
+    },
+    {
+      "name": "getScreenBrightness",
+      "description": "Get current screen brightness (0-255)",
+      "args": []
+    },
+    {
+      "name": "setScreenTimeout",
+      "description": "Set screen timeout in seconds",
+      "args": ["seconds"]
+    },
+    {
+      "name": "getBatteryInfo",
+      "description": "Get detailed battery info (level, temp, voltage, health, charging)",
+      "args": []
+    },
+    {
+      "name": "vibrate",
+      "description": "Vibrate the phone for N milliseconds",
+      "args": ["milliseconds"]
+    },
+    {
+      "name": "getOrientation",
+      "description": "Get screen orientation (portrait/landscape)",
+      "args": []
+    }
+  ]
+}

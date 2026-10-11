@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Agent v2 — Hub Screen</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  html.light { background: #FAFAF9; color: #1C1C1F; }
+  html.light .bg-canvas { background: #FAFAF9; }
+  html.light .bg-surface { background: #FFFFFF; }
+  html.light .bg-surface2 { background: #F5F5F4; }
+  html.light .bg-surface3 { background: #EBEBE9; }
+  html.light .border-token { border-color: #E7E7E3; }
+  html.light .text-token { color: #1C1C1F; }
+  html.light .text-token2 { color: #52525B; }
+  html.light .text-token3 { color: #A1A1AA; }
+  html.light .bg-ink2 { background: #FFFFFF; }
+  html.light .border-inkBorder { border-color: #E7E7E3; }
+  html.light .divide-inkBorder > * + * { border-color: #E7E7E3; }
+
+  html.dark { background: #0F0F12; color: #FAFAF9; }
+  html.dark .bg-canvas { background: #0F0F12; }
+  html.dark .bg-surface { background: #18181B; }
+  html.dark .bg-surface2 { background: #232328; }
+  html.dark .bg-surface3 { background: #2A2A30; }
+  html.dark .border-token { border-color: #2A2A30; }
+  html.dark .text-token { color: #FAFAF9; }
+  html.dark .text-token2 { color: #A1A1AA; }
+  html.dark .text-token3 { color: #71717A; }
+  html.dark .bg-ink2 { background: #18181B; }
+  html.dark .border-inkBorder { border-color: #2A2A30; }
+  html.dark .divide-inkBorder > * + * { border-color: #2A2A30; }
+
+  @keyframes pulse-accent {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+    50%      { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+  }
+  .pulse-accent { animation: pulse-accent 1.8s ease-in-out infinite; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2A2A30; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3F3F46; }
+
+  kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 5px;
+    background: #232328;
+    border: 1px solid #2A2A30;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    color: #A1A1AA;
+    line-height: 1;
+  }
+
+  html.light kbd { background: #F5F5F4; border-color: #E7E7E3; color: #52525B; }
+
+  .nav-item { transition: all 0.15s ease; }
+  .nav-item.active { background: rgba(16,185,129,0.10); color: #10B981; border-left: 2px solid #10B981; }
+  .nav-item:hover:not(.active) { background: rgba(255,255,255,0.03); }
+  html.light .nav-item:hover:not(.active) { background: rgba(0,0,0,0.03); }
+
+  .tool-card { transition: all 0.15s ease; }
+  .tool-card:hover { border-color: #10B981; }
+
+  .phone-shell {
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+  }
+  html.dark .phone-shell {
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+  }
+
+  /* Progress bar */
+  .progress-bar { background: linear-gradient(90deg, #10B981 0%, #34D399 100%); }
+</style>
+</head>
+<body class="bg-canvas text-token min-h-screen">
+
+<!-- ============ HEADER ============ -->
+<header class="border-b border-token sticky top-0 z-50 bg-surface/95 backdrop-blur">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:#10B981">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="3" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-md font-semibold leading-tight">Hub <span style="color:#10B981">v2</span></h1>
+        <p class="text-2xs text-token3 mono leading-tight">all sections · tablet-first</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="01-design-system.html" class="text-xs text-token2 hover:text-accent transition">← Design</a>
+      <a href="02-chat-screen.html" class="text-xs text-token2 hover:text-accent transition">← Chat</a>
+      <button id="themeBtn" class="text-xs px-3 py-1.5 rounded-md border border-token hover:bg-surface2 transition">
+        <span id="themeLabel">☀ Light</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-6">
+
+  <!-- Intro -->
+  <section class="mb-6">
+    <h2 class="text-2xl font-bold tracking-tight">Hub — all 13 sections, dense + scannable.</h2>
+    <p class="text-sm text-token2 mt-1 max-w-2xl">
+      One screen, side navigation, dense content cards. Tablet-first (1280px+), stacks gracefully on mobile.
+    </p>
+  </section>
+
+  <!-- ============ TABLET LAYOUT ============ -->
+  <div class="phone-shell bg-surface border border-token rounded-xl overflow-hidden grid grid-cols-[200px_1fr] h-[820px]">
+
+    <!-- Side nav -->
+    <aside class="border-r border-token bg-canvas overflow-y-auto">
+      <div class="px-3 py-3 border-b border-token">
+        <p class="text-2xs mono text-token3 uppercase tracking-wider">Sections · 13</p>
+      </div>
+      <nav class="py-1">
+        <button class="nav-item active w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium" data-section="skills">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Skills
+          <span class="ml-auto mono text-2xs text-token3">20</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="rules">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Rules
+          <span class="ml-auto mono text-2xs text-token3">36</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="tools">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          Tools
+          <span class="ml-auto mono text-2xs text-token3">100+</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="plugins">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Plugins
+          <span class="ml-auto mono text-2xs text-token3">8</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="memory">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          Memory
+          <span class="ml-auto mono text-2xs text-token3">142</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="knowledge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Knowledge
+          <span class="ml-auto mono text-2xs text-token3">23</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="history">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+          History
+          <span class="ml-auto mono text-2xs text-token3">487</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="files">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          Files
+          <span class="ml-auto mono text-2xs text-token3">12</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="llm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          LLM
+          <span class="ml-auto mono text-2xs text-token3">13</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="vision">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Vision
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="audio">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+          Audio
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="permissions">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Permissions
+          <span class="ml-auto mono text-2xs text-warn">3/7</span>
+        </button>
+        <button class="nav-item w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-token2" data-section="settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </button>
+      </nav>
+
+      <!-- Quick stats footer -->
+      <div class="border-t border-token px-3 py-3 mt-2">
+        <p class="text-2xs mono text-token3 uppercase tracking-wider mb-2">Status</p>
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-2xs">
+            <span class="text-token2 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full" style="background:#10B981"></span>
+              Agent
+            </span>
+            <span class="mono text-token3">ready</span>
+          </div>
+          <div class="flex items-center justify-between text-2xs">
+            <span class="text-token2">API today</span>
+            <span class="mono text-token">47/14K</span>
+          </div>
+          <div class="flex items-center justify-between text-2xs">
+            <span class="text-token2">Success</span>
+            <span class="mono" style="color:#10B981">94.2%</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content area -->
+    <section class="overflow-y-auto" id="contentArea">
+
+      <!-- ============ SKILLS SECTION (default visible) ============ -->
+      <div data-content="skills">
+        <div class="px-5 py-4 border-b border-token flex items-center justify-between sticky top-0 bg-surface z-10">
+          <div>
+            <h3 class="text-lg font-semibold">Skills</h3>
+            <p class="text-2xs text-token3 mono mt-0.5">20 skills · 17 built-in · 3 user-created</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="px-3 py-1.5 rounded-md border border-token hover:bg-surface2 text-xs flex items-center gap-1.5 text-token2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              Search
+              <kbd>⌘F</kbd>
+            </button>
+            <button class="px-3 py-1.5 rounded-md text-white text-xs flex items-center gap-1.5" style="background:#10B981">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              New skill
+            </button>
+          </div>
+        </div>
+
+        <div class="p-5 space-y-4">
+          <!-- Category filter -->
+          <div class="flex flex-wrap gap-1.5">
+            <button class="text-2xs px-2.5 py-1 rounded-full text-white" style="background:#10B981">All · 20</button>
+            <button class="text-2xs px-2.5 py-1 rounded-full bg-surface2 border border-token text-token2 hover:bg-surface3">Media · 4</button>
+            <button class="text-2xs px-2.5 py-1 rounded-full bg-surface2 border border-token text-token2 hover:bg-surface3">Food · 2</button>
+            <button class="text-2xs px-2.5 py-1 rounded-full bg-surface2 border border-token text-token2 hover:bg-surface3">Travel · 3</button>
+            <button class="text-2xs px-2.5 py-1 rounded-full bg-surface2 border border-token text-token2 hover:bg-surface3">Comms · 4</button>
+            <button class="text-2xs px-2.5 py-1 rounded-full bg-surface2 border border-token text-token2 hover:bg-surface3">Productivity · 5</button>
+            <button class="text-2xs px-2.5 py-1 rounded-full bg-surface2 border border-token text-token2 hover:bg-surface3">Utility · 2</button>
+          </div>
+
+          <!-- Skills grid -->
+          <div class="grid grid-cols-2 gap-2">
+            <!-- Skill card -->
+            <div class="bg-surface border border-token rounded-lg p-3 hover:border-accent transition">
+              <div class="flex items-start justify-between">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(239,68,68,0.10)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                </div>
+                <span class="mono text-2xs text-token3">used 2h ago</span>
+              </div>
+              <p class="text-sm font-semibold mt-2">Play Music</p>
+              <p class="text-2xs text-token3 mono mt-0.5">play_music.md · built-in</p>
+              <div class="flex items-center gap-2 mt-2 text-2xs text-token3">
+                <span>4 steps</span>
+                <span>·</span>
+                <span>avg 18s</span>
+                <span class="ml-auto" style="color:#10B981">94%</span>
+              </div>
+            </div>
+
+            <div class="bg-surface border border-token rounded-lg p-3 hover:border-accent transition">
+              <div class="flex items-start justify-between">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(245,158,11,0.10)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <span class="mono text-2xs text-token3">used 5h ago</span>
+              </div>
+              <p class="text-sm font-semibold mt-2">Order Food</p>
+              <p class="text-2xs text-token3 mono mt-0.5">order_food.md · built-in</p>
+              <div class="flex items-center gap-2 mt-2 text-2xs text-token3">
+                <span>7 steps</span>
+                <span>·</span>
+                <span>avg 42s</span>
+                <span class="ml-auto" style="color:#10B981">88%</span>
+              </div>
+            </div>
+
+            <div class="bg-surface border border-token rounded-lg p-3 hover:border-accent transition">
+              <div class="flex items-start justify-between">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(59,130,246,0.10)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                </div>
+                <span class="mono text-2xs text-token3">used 1d ago</span>
+              </div>
+              <p class="text-sm font-semibold mt-2">Book Cab</p>
+              <p class="text-2xs text-token3 mono mt-0.5">book_cab.md · built-in</p>
+              <div class="flex items-center gap-2 mt-2 text-2xs text-token3">
+                <span>5 steps</span>
+                <span>·</span>
+                <span>avg 24s</span>
+                <span class="ml-auto" style="color:#10B981">91%</span>
+              </div>
+            </div>
+
+            <div class="bg-surface border border-token rounded-lg p-3 hover:border-accent transition">
+              <div class="flex items-start justify-between">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(16,185,129,0.10)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                </div>
+                <span class="mono text-2xs text-token3">never used</span>
+              </div>
+              <p class="text-sm font-semibold mt-2">Send Email</p>
+              <p class="text-2xs text-token3 mono mt-0.5">send_email.md · built-in</p>
+              <div class="flex items-center gap-2 mt-2 text-2xs text-token3">
+                <span>6 steps</span>
+                <span>·</span>
+                <span>avg —</span>
+                <span class="ml-auto text-token3">—</span>
+              </div>
+            </div>
+
+            <div class="bg-surface border border-token rounded-lg p-3 hover:border-accent transition">
+              <div class="flex items-start justify-between">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(139,92,246,0.10)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2"><path d="M3 5h12M9 3v2c0 4.418-2.239 8-5 8M5 9c0 2.144 2.952 3.908 6.7 4M12 20l4-9 4 9M13.5 17h5"/></svg>
+                </div>
+                <span class="mono text-2xs text-token3">user-created</span>
+              </div>
+              <p class="text-sm font-semibold mt-2">Translate Screen</p>
+              <p class="text-2xs text-token3 mono mt-0.5">translate_screen.md · user</p>
+              <div class="flex items-center gap-2 mt-2 text-2xs text-token3">
+                <span>3 steps</span>
+                <span>·</span>
+                <span>avg 8s</span>
+                <span class="ml-auto" style="color:#10B981">96%</span>
+              </div>
+            </div>
+
+            <div class="bg-surface border border-token rounded-lg p-3 hover:border-accent transition">
+              <div class="flex items-start justify-between">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(236,72,153,0.10)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EC4899" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </div>
+                <span class="mono text-2xs text-token3">used 3d ago</span>
+              </div>
+              <p class="text-sm font-semibold mt-2">Research Topic</p>
+              <p class="text-2xs text-token3 mono mt-0.5">research_topic.md · built-in</p>
+              <div class="flex items-center gap-2 mt-2 text-2xs text-token3">
+                <span>9 steps</span>
+                <span>·</span>
+                <span>avg 2m 14s</span>
+                <span class="ml-auto" style="color:#F59E0B">76%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ RULES SECTION (hidden by default) ============ -->
+      <div data-content="rules" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <div>
+            <h3 class="text-lg font-semibold">Rules · Triggers</h3>
+            <p class="text-2xs text-token3 mono mt-0.5">36 trigger types · 12 active</p>
+          </div>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-xs font-semibold text-token">Active Triggers</span>
+              <span class="mono text-2xs text-token3">12 / 36</span>
+            </div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-3 px-2 py-2 rounded hover:bg-surface2">
+                <div class="w-2 h-2 rounded-full" style="background:#10B981"></div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium">Battery Low</p>
+                  <p class="mono text-2xs text-token3">battery_low · &lt; 15% → save work + notify</p>
+                </div>
+                <span class="mono text-2xs text-token3">2h ago</span>
+                <span class="text-xs">✓</span>
+              </div>
+              <div class="flex items-center gap-3 px-2 py-2 rounded hover:bg-surface2">
+                <div class="w-2 h-2 rounded-full" style="background:#10B981"></div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium">App Opened</p>
+                  <p class="mono text-2xs text-token3">app_opened · YouTube → ready for media tasks</p>
+                </div>
+                <span class="mono text-2xs text-token3">5h ago</span>
+                <span class="text-xs">✓</span>
+              </div>
+              <div class="flex items-center gap-3 px-2 py-2 rounded hover:bg-surface2">
+                <div class="w-2 h-2 rounded-full" style="background:#10B981"></div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium">Day Change</p>
+                  <p class="mono text-2xs text-token3">day_change · 06:00 → daily summary + plan</p>
+                </div>
+                <span class="mono text-2xs text-token3">today</span>
+                <span class="text-xs">✓</span>
+              </div>
+              <div class="flex items-center gap-3 px-2 py-2 rounded hover:bg-surface2">
+                <div class="w-2 h-2 rounded-full" style="background:#10B981"></div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium">Calendar Reminder</p>
+                  <p class="mono text-2xs text-token3">calendar · 15min before → read aloud</p>
+                </div>
+                <span class="mono text-2xs text-token3">12:30</span>
+                <span class="text-xs">✓</span>
+              </div>
+            </div>
+            <button class="mt-3 w-full px-3 py-2 rounded-md border border-token hover:bg-surface2 text-xs text-token2 flex items-center justify-center gap-1.5">
+              View all 36 trigger types →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ LLM SECTION ============ -->
+      <div data-content="llm" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <div>
+            <h3 class="text-lg font-semibold">LLM Providers</h3>
+            <p class="text-2xs text-token3 mono mt-0.5">13 providers · 1 active</p>
+          </div>
+        </div>
+        <div class="p-5 space-y-3">
+          <!-- Active provider card -->
+          <div class="bg-surface rounded-lg p-4 border-2" style="border-color:#10B981">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:#10B981">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5z"/></svg>
+                </div>
+                <div>
+                  <p class="text-sm font-semibold">Z.ai Direct <span class="text-2xs text-token3 font-normal">· active</span></p>
+                  <p class="mono text-2xs text-token3">glm-5.3 · direct (no proxy)</p>
+                </div>
+              </div>
+              <span class="text-2xs px-2 py-0.5 rounded-full" style="background:rgba(16,185,129,0.10); color:#10B981; border:1px solid rgba(16,185,129,0.30)">CURRENT</span>
+            </div>
+            <div class="grid grid-cols-4 gap-3 text-xs">
+              <div>
+                <p class="mono text-2xs text-token3">Calls today</p>
+                <p class="font-semibold mono">47</p>
+              </div>
+              <div>
+                <p class="mono text-2xs text-token3">Avg latency</p>
+                <p class="font-semibold mono" style="color:#10B981">847ms</p>
+              </div>
+              <div>
+                <p class="mono text-2xs text-token3">Tokens</p>
+                <p class="font-semibold mono">12.4K</p>
+              </div>
+              <div>
+                <p class="mono text-2xs text-token3">Success</p>
+                <p class="font-semibold mono" style="color:#10B981">94.2%</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Other providers (compact list) -->
+          <p class="text-2xs mono text-token3 uppercase tracking-wider mt-4 mb-2">Available · 12</p>
+          <div class="bg-surface border border-token rounded-lg divide-y divide-inkBorder">
+            <div class="flex items-center gap-3 px-3 py-2.5 hover:bg-surface2">
+              <span class="w-2 h-2 rounded-full bg-token3"></span>
+              <div class="flex-1">
+                <p class="text-xs font-medium">Groq</p>
+                <p class="mono text-2xs text-token3">llama-3.3-70b · 14,400/day · native tools</p>
+              </div>
+              <span class="mono text-2xs text-token3">configured</span>
+            </div>
+            <div class="flex items-center gap-3 px-3 py-2.5 hover:bg-surface2">
+              <span class="w-2 h-2 rounded-full bg-token3"></span>
+              <div class="flex-1">
+                <p class="text-xs font-medium">Gemini</p>
+                <p class="mono text-2xs text-token3">gemini-3.8-flash · 20/day · manual json</p>
+              </div>
+              <span class="mono text-2xs text-token3">configured</span>
+            </div>
+            <div class="flex items-center gap-3 px-3 py-2.5 hover:bg-surface2">
+              <span class="w-2 h-2 rounded-full" style="background:#F59E0B"></span>
+              <div class="flex-1">
+                <p class="text-xs font-medium">OpenRouter</p>
+                <p class="mono text-2xs text-token3">nemotron-120b · 50/day · native tools</p>
+              </div>
+              <span class="mono text-2xs text-warn">low quota</span>
+            </div>
+            <div class="flex items-center gap-3 px-3 py-2.5 hover:bg-surface2">
+              <span class="w-2 h-2 rounded-full bg-token3"></span>
+              <div class="flex-1">
+                <p class="text-xs font-medium">Z.ai Proxy</p>
+                <p class="mono text-2xs text-token3">glm-4.6 · 300/day · needs sandbox</p>
+              </div>
+              <span class="mono text-2xs text-token3">fallback</span>
+            </div>
+            <div class="flex items-center gap-3 px-3 py-2.5 hover:bg-surface2">
+              <span class="w-2 h-2 rounded-full" style="background:#71717A"></span>
+              <div class="flex-1">
+                <p class="text-xs font-medium text-token2">Cerebras</p>
+                <p class="mono text-2xs text-token3">llama-3.3-70b · ultra fast · no key set</p>
+              </div>
+              <button class="text-2xs px-2 py-0.5 rounded border border-token hover:bg-surface3 text-token2">Setup</button>
+            </div>
+            <div class="flex items-center gap-3 px-3 py-2.5 hover:bg-surface2">
+              <span class="w-2 h-2 rounded-full" style="background:#71717A"></span>
+              <div class="flex-1">
+                <p class="text-xs font-medium text-token2">Mistral</p>
+                <p class="mono text-2xs text-token3">mistral-large · native tools · no key set</p>
+              </div>
+              <button class="text-2xs px-2 py-0.5 rounded border border-token hover:bg-surface3 text-token2">Setup</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ MEMORY SECTION ============ -->
+      <div data-content="memory" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <div>
+            <h3 class="text-lg font-semibold">Memory</h3>
+            <p class="text-2xs text-token3 mono mt-0.5">142 entries · auto-saved</p>
+          </div>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-xs font-semibold">Recent Memories</p>
+              <button class="text-2xs text-accent hover:underline">View all 142 →</button>
+            </div>
+            <div class="space-y-2">
+              <div class="px-3 py-2 rounded bg-surface2 border border-token">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="mono text-2xs text-token3">2h ago</span>
+                  <span class="mono text-2xs px-1.5 py-0.5 rounded" style="background:rgba(16,185,129,0.10); color:#10B981">preference</span>
+                </div>
+                <p class="text-xs text-token">User likes BLACKPINK music — auto-detected from YouTube activity</p>
+              </div>
+              <div class="px-3 py-2 rounded bg-surface2 border border-token">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="mono text-2xs text-token3">5h ago</span>
+                  <span class="mono text-2xs px-1.5 py-0.5 rounded" style="background:rgba(59,130,246,0.10); color:#3B82F6">context</span>
+                </div>
+                <p class="text-xs text-token">YouTube account logged in as arun6a@gmail.com</p>
+              </div>
+              <div class="px-3 py-2 rounded bg-surface2 border border-token">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="mono text-2xs text-token3">1d ago</span>
+                  <span class="mono text-2xs px-1.5 py-0.5 rounded" style="background:rgba(245,158,11,0.10); color:#F59E0B">preference</span>
+                </div>
+                <p class="text-xs text-token">Preferred video quality: 1080p (set via YouTube settings)</p>
+              </div>
+              <div class="px-3 py-2 rounded bg-surface2 border border-token">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="mono text-2xs text-token3">2d ago</span>
+                  <span class="mono text-2xs px-1.5 py-0.5 rounded" style="background:rgba(139,92,246,0.10); color:#8B5CF6">workflow</span>
+                </div>
+                <p class="text-xs text-token">Order food flow: Open Swiggy → search → select first → COD payment</p>
+              </div>
+              <div class="px-3 py-2 rounded bg-surface2 border border-token">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="mono text-2xs text-token3">3d ago</span>
+                  <span class="mono text-2xs px-1.5 py-0.5 rounded" style="background:rgba(236,72,153,0.10); color:#EC4899">failure</span>
+                </div>
+                <p class="text-xs text-token">browserClickText fails on Swiggy — fallback to accessibility tap works</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div class="bg-surface border border-token rounded-lg p-3 text-center">
+              <p class="text-2xl font-bold mono">142</p>
+              <p class="text-2xs text-token3 mono">total entries</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3 text-center">
+              <p class="text-2xl font-bold mono" style="color:#10B981">38</p>
+              <p class="text-2xs text-token3 mono">this week</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3 text-center">
+              <p class="text-2xl font-bold mono">7</p>
+              <p class="text-2xs text-token3 mono">categories</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PERMISSIONS SECTION ============ -->
+      <div data-content="permissions" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <div>
+            <h3 class="text-lg font-semibold">Permissions</h3>
+            <p class="text-2xs text-token3 mono mt-0.5">3 of 7 granted · agent limited without all</p>
+          </div>
+        </div>
+        <div class="p-5 space-y-2">
+          <!-- Granted -->
+          <div class="bg-surface border border-token rounded-lg p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(16,185,129,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Accessibility Service</p>
+              <p class="mono text-2xs text-token3">required for screen control · tap, type, read</p>
+            </div>
+            <span class="mono text-2xs" style="color:#10B981">granted</span>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(16,185,129,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Overlay / Display over apps</p>
+              <p class="mono text-2xs text-token3">floating button + status orb</p>
+            </div>
+            <span class="mono text-2xs" style="color:#10B981">granted</span>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3 flex items-center gap-3">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(16,185,129,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Internet</p>
+              <p class="mono text-2xs text-token3">LLM API calls</p>
+            </div>
+            <span class="mono text-2xs" style="color:#10B981">granted</span>
+          </div>
+          <!-- Missing -->
+          <div class="bg-surface border-2 rounded-lg p-3 flex items-center gap-3" style="border-color:rgba(245,158,11,0.40)">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(245,158,11,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Microphone</p>
+              <p class="mono text-2xs text-token3">voice input (Google Voice Intent)</p>
+            </div>
+            <button class="text-2xs px-2.5 py-1 rounded text-white" style="background:#10B981">Grant</button>
+          </div>
+          <div class="bg-surface border-2 rounded-lg p-3 flex items-center gap-3" style="border-color:rgba(245,158,11,0.40)">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(245,158,11,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Storage / Files</p>
+              <p class="mono text-2xs text-token3">attachments + knowledge base</p>
+            </div>
+            <button class="text-2xs px-2.5 py-1 rounded text-white" style="background:#10B981">Grant</button>
+          </div>
+          <div class="bg-surface border-2 rounded-lg p-3 flex items-center gap-3" style="border-color:rgba(245,158,11,0.40)">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(245,158,11,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Notifications</p>
+              <p class="mono text-2xs text-token3">triggers + task completion alerts</p>
+            </div>
+            <button class="text-2xs px-2.5 py-1 rounded text-white" style="background:#10B981">Grant</button>
+          </div>
+          <div class="bg-surface border-2 rounded-lg p-3 flex items-center gap-3" style="border-color:rgba(245,158,11,0.40)">
+            <div class="w-8 h-8 rounded-md flex items-center justify-center" style="background:rgba(245,158,11,0.10)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="flex-1">
+              <p class="text-xs font-medium">Battery Optimization (Disable)</p>
+              <p class="mono text-2xs text-token3">so agent doesn't get killed in background</p>
+            </div>
+            <button class="text-2xs px-2.5 py-1 rounded text-white" style="background:#10B981">Grant</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ GENERIC PLACEHOLDER FOR OTHER SECTIONS ============ -->
+      <div data-content="tools" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Tools · 100+</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">18 categories · all executable</p>
+        </div>
+        <div class="p-5">
+          <div class="grid grid-cols-2 gap-2">
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Accessibility · 12</p>
+              <p class="mono text-2xs text-token3 mt-1">tap · type · swipe · readScreen · scroll · pressBack · pressHome · pressEnter · submitInput · readScreenStructured · findElement · gesture</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Browser · 11</p>
+              <p class="mono text-2xs text-token3 mt-1">browserOpen · browserClick · browserClickText · browserFill · browserFillForm · browserEval · browserGetText · browserGetUrl · browserGetLinks · browserGetForms · browserListClickable</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Apps · 6</p>
+              <p class="mono text-2xs text-token3 mt-1">launchApp · closeApp · listApps · searchInApp · appInfo · installApp</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">System · 14</p>
+              <p class="mono text-2xs text-token3 mt-1">setBrightness · getBattery · setVolume · getWifi · setBluetooth · get Location · vibrate · toast · notification · sleep · restartAgent · openSettings · takeScreenshot · clipboard</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Media · 8</p>
+              <p class="mono text-2xs text-token3 mt-1">playMusic · pauseMusic · skipTrack · volumeUp · volumeDown · searchVideo · playVideo · cast</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Files · 7</p>
+              <p class="mono text-2xs text-token3 mt-1">readFile · writeFile · listFiles · downloadFile · uploadFile · sendAttachment · shareFile</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Memory · 5</p>
+              <p class="mono text-2xs text-token3 mt-1">saveMemory · recallMemory · forgetMemory · listMemory · clearMemory</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Knowledge · 5</p>
+              <p class="mono text-2xs text-token3 mt-1">saveKnowledge · recallKnowledge · listKnowledge · deleteKnowledge · searchKnowledge</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3" style="border-color:#10B981">
+              <p class="text-xs font-semibold" style="color:#10B981">Terminal · 8</p>
+              <p class="mono text-2xs text-token3 mt-1">shell · pm · am · input · settings · getprop · dumpsys · logcat</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Vision · 4</p>
+              <p class="mono text-2xs text-token3 mt-1">analyzeScreen · findElement · ocr · vlmDescribe</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Search · 3</p>
+              <p class="mono text-2xs text-token3 mt-1">webSearch · webReader · webFetch</p>
+            </div>
+            <div class="bg-surface border border-token rounded-lg p-3">
+              <p class="text-xs font-semibold">Skills · 4</p>
+              <p class="mono text-2xs text-token3 mt-1">createSkill · deleteSkill · getSkill · listSkills</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Other sections (compact placeholders showing dense content) -->
+      <div data-content="plugins" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Plugins</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">8 installed · device / media / system / calendar</p>
+        </div>
+        <div class="p-5 grid grid-cols-2 gap-2">
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold">device_advanced</p>
+            <p class="mono text-2xs text-token3 mt-1">14 tools · battery, brightness, location, usb, dock</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold">media_advanced</p>
+            <p class="mono text-2xs text-token3 mt-1">9 tools · music, bluetooth audio, now playing</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold">system</p>
+            <p class="mono text-2xs text-token3 mt-1">11 tools · day change, alarm, storage events</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold">calendar_extended</p>
+            <p class="mono text-2xs text-token3 mt-1">7 tools · events, reminders, attendees</p>
+          </div>
+        </div>
+      </div>
+
+      <div data-content="knowledge" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Knowledge Base</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">23 documents · Jaccard similarity search</p>
+        </div>
+        <div class="p-5 space-y-2">
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <div class="flex items-center justify-between">
+              <p class="text-xs font-medium">appliance_manual_idiyappam.pdf</p>
+              <span class="mono text-2xs text-token3">2.4MB</span>
+            </div>
+            <p class="mono text-2xs text-token3 mt-1">12 chunks · added 3d ago</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <div class="flex items-center justify-between">
+              <p class="text-xs font-medium">swiggy_restaurants.md</p>
+              <span class="mono text-2xs text-token3">8KB</span>
+            </div>
+            <p class="mono text-2xs text-token3 mt-1">4 chunks · added 1w ago</p>
+          </div>
+        </div>
+      </div>
+
+      <div data-content="history" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">History</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">487 tasks · last 30 days</p>
+        </div>
+        <div class="p-5 space-y-1">
+          <div class="bg-surface border border-token rounded-md px-3 py-2 flex items-center gap-3">
+            <span class="mono text-2xs text-token3 w-12">12:42</span>
+            <span class="text-xs flex-1">Open YouTube and play BLACKPINK</span>
+            <span class="mono text-2xs" style="color:#10B981">success · 12 steps · 47s</span>
+          </div>
+          <div class="bg-surface border border-token rounded-md px-3 py-2 flex items-center gap-3">
+            <span class="mono text-2xs text-token3 w-12">11:30</span>
+            <span class="text-xs flex-1">Send WhatsApp message to Mom</span>
+            <span class="mono text-2xs" style="color:#10B981">success · 5 steps · 18s</span>
+          </div>
+          <div class="bg-surface border border-token rounded-md px-3 py-2 flex items-center gap-3">
+            <span class="mono text-2xs text-token3 w-12">10:09</span>
+            <span class="text-xs flex-1">Backup photos to Google Drive</span>
+            <span class="mono text-2xs" style="color:#F59E0B">partial · 7 / 12 uploaded</span>
+          </div>
+        </div>
+      </div>
+
+      <div data-content="files" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Files · Attachments</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">12 files · /storage/emulated/0/ai-agent/attachments/</p>
+        </div>
+        <div class="p-5 grid grid-cols-2 gap-2">
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-medium">screenshot_001.png</p>
+            <p class="mono text-2xs text-token3 mt-1">540KB · attached to chat 2h ago</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-medium">recipe_idiyappam.txt</p>
+            <p class="mono text-2xs text-token3 mt-1">2KB · knowledge base · 3d ago</p>
+          </div>
+        </div>
+      </div>
+
+      <div data-content="vision" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Vision · VLM</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">3-tier fallback · accessibility → mlkit → vlm</p>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold mb-2">Fallback Chain</p>
+            <div class="space-y-2">
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-5 h-5 rounded-full flex items-center justify-center text-2xs mono" style="background:rgba(16,185,129,0.10); color:#10B981">1</span>
+                <span class="flex-1">Accessibility text</span>
+                <span class="mono text-2xs text-token3">free · instant · 80% of cases</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-5 h-5 rounded-full flex items-center justify-center text-2xs mono" style="background:rgba(245,158,11,0.10); color:#F59E0B">2</span>
+                <span class="flex-1">ML Kit OCR</span>
+                <span class="mono text-2xs text-token3">free · offline · 200ms</span>
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="w-5 h-5 rounded-full flex items-center justify-center text-2xs mono" style="background:rgba(59,130,246,0.10); color:#3B82F6">3</span>
+                <span class="flex-1">VLM API</span>
+                <span class="mono text-2xs text-token3">1 call · 2-5s · gemini-3.8-flash</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div data-content="audio" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Audio</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">voice input + TTS · ML Kit coming soon</p>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold">Voice Input</p>
+            <p class="mono text-2xs text-token3 mt-1">Google Voice Intent · works offline</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3">
+            <p class="text-xs font-semibold">TTS</p>
+            <p class="mono text-2xs text-token3 mt-1">Android TextToSpeech · tap overlay to stop</p>
+          </div>
+          <div class="bg-surface border border-token rounded-lg p-3 opacity-60">
+            <p class="text-xs font-semibold">ASR (coming soon)</p>
+            <p class="mono text-2xs text-token3 mt-1">ML Kit Speech Recognition · offline</p>
+          </div>
+        </div>
+      </div>
+
+      <div data-content="settings" class="hidden">
+        <div class="px-5 py-4 border-b border-token sticky top-0 bg-surface z-10">
+          <h3 class="text-lg font-semibold">Settings</h3>
+          <p class="text-2xs text-token3 mono mt-0.5">v2.0.0 · build 1</p>
+        </div>
+        <div class="p-5 space-y-3">
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <p class="text-xs font-semibold mb-3">Prompt Mode</p>
+            <div class="space-y-1">
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs" style="background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30)">
+                <span>Smart (full · 11K tokens)</span>
+                <span class="mono text-2xs" style="color:#10B981">● active</span>
+              </button>
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs hover:bg-surface2">
+                <span class="text-token2">Dynamic (auto-select · 800-4K)</span>
+                <span class="mono text-2xs text-token3">recommended</span>
+              </button>
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs hover:bg-surface2">
+                <span class="text-token2">Balanced (1.5K)</span>
+                <span class="mono text-2xs text-token3">save tokens</span>
+              </button>
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs hover:bg-surface2">
+                <span class="text-token2">Fast (750)</span>
+                <span class="mono text-2xs text-token3">min latency</span>
+              </button>
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs hover:bg-surface2">
+                <span class="text-token2">Custom (edit)</span>
+                <span class="mono text-2xs text-token3">user-defined</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <p class="text-xs font-semibold mb-3">Browser Mode</p>
+            <div class="space-y-1">
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs" style="background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30)">
+                <span>Auto (try in-app → suggest Chrome)</span>
+                <span class="mono text-2xs" style="color:#10B981">● active</span>
+              </button>
+              <button class="w-full text-left px-3 py-2 rounded-md text-xs hover:bg-surface2 text-token2">In-app WebView (visible)</button>
+              <button class="w-full text-left px-3 py-2 rounded-md text-xs hover:bg-surface2 text-token2">Chrome app (uses login state)</button>
+            </div>
+          </div>
+
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <p class="text-xs font-semibold mb-3">Search Method</p>
+            <div class="space-y-1">
+              <button class="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs" style="background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.30)">
+                <span>DuckDuckGo (direct · no proxy)</span>
+                <span class="mono text-2xs" style="color:#10B981">● active</span>
+              </button>
+              <button class="w-full text-left px-3 py-2 rounded-md text-xs hover:bg-surface2 text-token2">Google (may be blocked)</button>
+              <button class="w-full text-left px-3 py-2 rounded-md text-xs hover:bg-surface2 text-token2">Bing</button>
+              <button class="w-full text-left px-3 py-2 rounded-md text-xs hover:bg-surface2 text-token2">Sandbox proxy</button>
+            </div>
+          </div>
+
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-xs font-semibold">Dynamic Prompt</p>
+              <div class="w-9 h-5 rounded-full p-0.5 cursor-pointer" style="background:#10B981">
+                <div class="w-4 h-4 rounded-full bg-white ml-auto"></div>
+              </div>
+            </div>
+            <p class="text-2xs text-token3 mono">Auto-select relevant tools per task (saves tokens)</p>
+          </div>
+
+          <div class="bg-surface border border-token rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-xs font-semibold">Always Learn</p>
+              <div class="w-9 h-5 rounded-full p-0.5 cursor-pointer" style="background:#10B981">
+                <div class="w-4 h-4 rounded-full bg-white ml-auto"></div>
+              </div>
+            </div>
+            <p class="text-2xs text-token3 mono">Save workflows on success + failure</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- ============ FOOTER ============ -->
+  <section class="mt-6 border-t border-token pt-4">
+    <div class="flex items-center justify-between text-2xs text-token3 mono">
+      <span>13 sections · click left nav to switch</span>
+      <span>all sections use same design language</span>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Theme toggle
+  const html = document.documentElement;
+  const btn = document.getElementById('themeBtn');
+  const label = document.getElementById('themeLabel');
+  btn.addEventListener('click', () => {
+    if (html.classList.contains('light')) {
+      html.classList.remove('light');
+      html.classList.add('dark');
+      label.textContent = '🌙 Dark';
+    } else {
+      html.classList.remove('dark');
+      html.classList.add('light');
+      label.textContent = '☀ Light';
+    }
+  });
+
+  // Section switcher
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      item.classList.add('active');
+      const target = item.dataset.section;
+      document.querySelectorAll('[data-content]').forEach(c => c.classList.add('hidden'));
+      const el = document.querySelector(`[data-content="${target}"]`);
+      if (el) el.classList.remove('hidden');
+    });
+  });
+</script>
+
+</body>
+</html>

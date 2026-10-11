@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Agent v2 — App Icons</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  html.light { background: #FAFAF9; color: #1C1C1F; }
+  html.light .bg-surface { background: #FFFFFF; }
+  html.light .border-token { border-color: #E7E7E3; }
+  html.light .text-token2 { color: #52525B; }
+  html.light .text-token3 { color: #A1A1AA; }
+  html.light .bg-surface2 { background: #F5F5F4; }
+  html.dark { background: #0F0F12; color: #FAFAF9; }
+  html.dark .bg-surface { background: #18181B; }
+  html.dark .border-token { border-color: #2A2A30; }
+  html.dark .text-token2 { color: #A1A1AA; }
+  html.dark .text-token3 { color: #71717A; }
+  html.dark .bg-surface2 { background: #232328; }
+
+  .icon-shell {
+    width: 192px; height: 192px;
+    border-radius: 44px;
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    box-shadow: 0 12px 32px -8px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.04);
+  }
+  .icon-shell svg { width: 110px; height: 110px; }
+
+  /* Concept 1: Emerald Orb */
+  .concept-1 { background: radial-gradient(circle at 30% 30%, #1F2937 0%, #0F0F12 100%); }
+
+  /* Concept 2: Chat Hex */
+  .concept-2 { background: #FFFFFF; }
+
+  /* Concept 3: Agent Core */
+  .conceent-3 { background: radial-gradient(circle at 50% 50%, #18181B 0%, #0F0F12 100%); }
+  .concept-3 { background: radial-gradient(circle at 50% 50%, #18181B 0%, #0F0F12 100%); }
+
+  /* Concept 4: Minimal Glyph */
+  .concept-4 { background: linear-gradient(135deg, #10B981 0%, #059669 100%); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="border-b border-token sticky top-0 z-50 bg-surface/95 backdrop-blur">
+  <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:#10B981">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="3" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-md font-semibold leading-tight">App Icons <span style="color:#10B981">v2</span></h1>
+        <p class="text-2xs text-token3 mono leading-tight">4 concepts · 1024×1024 source · adaptive</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="01-design-system.html" class="text-xs text-token2 hover:text-accent transition">← Design</a>
+      <a href="02-chat-screen.html" class="text-xs text-token2 hover:text-accent transition">Chat</a>
+      <a href="03-hub-screen.html" class="text-xs text-token2 hover:text-accent transition">Hub</a>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-10">
+
+  <section class="mb-8">
+    <h2 class="text-2xl font-bold tracking-tight">App Icon Concepts</h2>
+    <p class="text-sm text-token2 mt-1 max-w-2xl">
+      4 SVG concepts (instant preview). When image-gen API quota resets, I'll render photoreal PNG versions
+      for the actual APK build. All concepts use emerald accent + Material 3 adaptive icon shape.
+    </p>
+    <div class="mt-3 px-3 py-2 rounded-md border border-token bg-surface2 inline-flex items-center gap-2">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      <span class="text-2xs text-token2 mono">Note: AI image gen API rate-limited (429). SVG concepts below are placeholders — photoreal PNGs queued for later.</span>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-12">
+
+    <!-- Concept 1: Emerald Orb -->
+    <div class="bg-surface border border-token rounded-xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Concept 1</h3>
+          <p class="text-2xs text-token3 mono">emerald orb · dark</p>
+        </div>
+        <span class="mono text-2xs px-2 py-0.5 rounded-full" style="background:rgba(16,185,129,0.10); color:#10B981; border:1px solid rgba(16,185,129,0.30)">recommended</span>
+      </div>
+
+      <div class="flex items-center justify-center py-6">
+        <div class="icon-shell concept-1">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="g1" cx="35%" cy="35%">
+                <stop offset="0%" stop-color="#34D399"/>
+                <stop offset="60%" stop-color="#10B981"/>
+                <stop offset="100%" stop-color="#059669"/>
+              </radialGradient>
+              <filter id="glow1">
+                <feGaussianBlur stdDeviation="3" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <!-- Hexagon outline -->
+            <polygon points="50,12 84,32 84,68 50,88 16,68 16,32" fill="none" stroke="#10B981" stroke-width="1.5" opacity="0.4"/>
+            <!-- Brain orb -->
+            <circle cx="50" cy="50" r="26" fill="url(#g1)" filter="url(#glow1)"/>
+            <!-- Brain circuit lines -->
+            <path d="M50 32 L50 68 M38 42 L62 58 M38 58 L62 42" stroke="white" stroke-width="1.5" opacity="0.7" fill="none"/>
+            <circle cx="50" cy="50" r="4" fill="white"/>
+            <!-- Outer dots -->
+            <circle cx="50" cy="14" r="2" fill="#34D399"/>
+            <circle cx="84" cy="32" r="2" fill="#34D399"/>
+            <circle cx="84" cy="68" r="2" fill="#34D399"/>
+            <circle cx="50" cy="86" r="2" fill="#34D399"/>
+            <circle cx="16" cy="68" r="2" fill="#34D399"/>
+            <circle cx="16" cy="32" r="2" fill="#34D399"/>
+          </svg>
+        </div>
+      </div>
+
+      <p class="text-xs text-token2 mt-3">
+        Hexagonal AI brain with emerald glow on dark slate. Friendly + powerful.
+      </p>
+      <div class="flex items-center gap-2 mt-3 text-2xs text-token3 mono">
+        <span>hexagon · orb · glow · circuit</span>
+      </div>
+    </div>
+
+    <!-- Concept 2: Chat Hex -->
+    <div class="bg-surface border border-token rounded-xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Concept 2</h3>
+          <p class="text-2xs text-token3 mono">chat + hex · light</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center py-6">
+        <div class="icon-shell concept-2">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#10B981"/>
+                <stop offset="100%" stop-color="#059669"/>
+              </linearGradient>
+            </defs>
+            <!-- Chat bubble -->
+            <path d="M20 28 L20 64 Q20 72 28 72 L42 72 L50 84 L58 72 L72 72 Q80 72 80 64 L80 28 Q80 20 72 20 L28 20 Q20 20 20 28 Z" fill="url(#g2)"/>
+            <!-- Hex circuit node inside -->
+            <polygon points="50,32 60,38 60,52 50,58 40,52 40,38" fill="none" stroke="white" stroke-width="2"/>
+            <circle cx="50" cy="45" r="3" fill="white"/>
+            <!-- Sparkle -->
+            <circle cx="68" cy="30" r="2" fill="white" opacity="0.8"/>
+            <circle cx="32" cy="60" r="1.5" fill="white" opacity="0.6"/>
+          </svg>
+        </div>
+      </div>
+
+      <p class="text-xs text-token2 mt-3">
+        Chat bubble with hexagonal AI node. White background, approachable.
+      </p>
+      <div class="flex items-center gap-2 mt-3 text-2xs text-token3 mono">
+        <span>chat · hex · friendly · light</span>
+      </div>
+    </div>
+
+    <!-- Concept 3: Agent Core -->
+    <div class="bg-surface border border-token rounded-xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Concept 3</h3>
+          <p class="text-2xs text-token3 mono">agent core · dark</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center py-6">
+        <div class="icon-shell concept-3">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="g3" cx="50%" cy="50%">
+                <stop offset="0%" stop-color="#34D399"/>
+                <stop offset="50%" stop-color="#10B981"/>
+                <stop offset="100%" stop-color="#064E3B"/>
+              </radialGradient>
+              <filter id="glow3">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feMerge>
+                  <feMergeNode in="blur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            <!-- Outer rings -->
+            <circle cx="50" cy="50" r="38" fill="none" stroke="#10B981" stroke-width="0.8" opacity="0.3"/>
+            <circle cx="50" cy="50" r="32" fill="none" stroke="#10B981" stroke-width="0.8" opacity="0.5"/>
+            <!-- Core sphere -->
+            <circle cx="50" cy="50" r="22" fill="url(#g3)" filter="url(#glow3)"/>
+            <!-- Circuit rays -->
+            <g stroke="#10B981" stroke-width="1.5" opacity="0.7">
+              <line x1="50" y1="18" x2="50" y2="28"/>
+              <line x1="50" y1="72" x2="50" y2="82"/>
+              <line x1="18" y1="50" x2="28" y2="50"/>
+              <line x1="72" y1="50" x2="82" y2="50"/>
+              <line x1="27" y1="27" x2="34" y2="34"/>
+              <line x1="66" y1="66" x2="73" y2="73"/>
+              <line x1="27" y1="73" x2="34" y2="66"/>
+              <line x1="66" y1="34" x2="73" y2="27"/>
+            </g>
+            <!-- Center dot -->
+            <circle cx="50" cy="50" r="6" fill="white"/>
+            <circle cx="50" cy="50" r="3" fill="#10B981"/>
+          </svg>
+        </div>
+      </div>
+
+      <p class="text-xs text-token2 mt-3">
+        Glowing AI core with circuit rays radiating. Powerful + sci-fi.
+      </p>
+      <div class="flex items-center gap-2 mt-3 text-2xs text-token3 mono">
+        <span>core · rays · circuit · sci-fi</span>
+      </div>
+    </div>
+
+    <!-- Concept 4: Minimal Glyph -->
+    <div class="bg-surface border border-token rounded-xl p-6">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="text-sm font-semibold">Concept 4</h3>
+          <p class="text-2xs text-token3 mono">minimal glyph · solid</p>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center py-6">
+        <div class="icon-shell concept-4">
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <!-- White A glyph -->
+            <path d="M50 22 L22 78 L34 78 L40 64 L60 64 L66 78 L78 78 Z M44 54 L50 42 L56 54 Z" fill="white"/>
+            <!-- Dot inside A -->
+            <circle cx="50" cy="48" r="3" fill="#10B981"/>
+          </svg>
+        </div>
+      </div>
+
+      <p class="text-xs text-token2 mt-3">
+        Bold "A" for Agent in white on emerald. Minimal, recognizable at small sizes.
+      </p>
+      <div class="flex items-center gap-2 mt-3 text-2xs text-token3 mono">
+        <span>solid · letter · minimal · bold</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Adaptive icon mockup -->
+  <section class="mb-8">
+    <h3 class="text-lg font-semibold mb-3">Adaptive icon · on home screen</h3>
+    <div class="bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 rounded-xl p-6 grid grid-cols-4 gap-4">
+      <div class="flex flex-col items-center gap-2">
+        <div class="icon-shell concept-1" style="width:64px; height:64px; border-radius:14px">
+          <svg viewBox="0 0 100 100" style="width:36px;height:36px">
+            <circle cx="50" cy="50" r="26" fill="#10B981"/>
+            <circle cx="50" cy="50" r="4" fill="white"/>
+          </svg>
+        </div>
+        <span class="text-2xs text-token2 mono">48dp</span>
+      </div>
+      <div class="flex flex-col items-center gap-2">
+        <div class="icon-shell concept-1" style="width:96px; height:96px; border-radius:22px">
+          <svg viewBox="0 0 100 100" style="width:54px;height:54px">
+            <circle cx="50" cy="50" r="26" fill="#10B981"/>
+            <circle cx="50" cy="50" r="4" fill="white"/>
+          </svg>
+        </div>
+        <span class="text-2xs text-token2 mono">72dp</span>
+      </div>
+      <div class="flex flex-col items-center gap-2">
+        <div class="icon-shell concept-1" style="width:128px; height:128px; border-radius:28px">
+          <svg viewBox="0 0 100 100" style="width:72px;height:72px">
+            <circle cx="50" cy="50" r="26" fill="#10B981"/>
+            <circle cx="50" cy="50" r="4" fill="white"/>
+          </svg>
+        </div>
+        <span class="text-2xs text-token2 mono">96dp</span>
+      </div>
+      <div class="flex flex-col items-center gap-2">
+        <div class="icon-shell concept-1" style="width:160px; height:160px; border-radius:36px">
+          <svg viewBox="0 0 100 100" style="width:90px;height:90px">
+            <circle cx="50" cy="50" r="26" fill="#10B981"/>
+            <circle cx="50" cy="50" r="4" fill="white"/>
+          </svg>
+        </div>
+        <span class="text-2xs text-token2 mono">120dp</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Build notes -->
+  <section class="border-t border-token pt-6">
+    <h3 class="text-lg font-semibold mb-3">Build notes</h3>
+    <div class="bg-surface border border-token rounded-lg p-4 space-y-2 text-xs text-token2">
+      <p>• <strong class="text-token">Source format:</strong> 1024×1024 PNG (foreground) + adaptive icon XML</p>
+      <p>• <strong class="text-token">Background:</strong> Concept 1 & 3 use dark slate (#0F0F12) · Concept 2 uses white (#FFFFFF) · Concept 4 uses emerald (#10B981)</p>
+      <p>• <strong class="text-token">Adaptive shape:</strong> Android auto-applies circle/squircle/rounded-square based on launcher</p>
+      <p>• <strong class="text-token">Splash screen:</strong> Same icon centered on canvas color (#FAFAF9 light / #0F0F12 dark)</p>
+      <p>• <strong class="text-token">Notification icon:</strong> Single-color silhouette (white on transparent) — required by Android</p>
+      <p>• <strong class="text-token">Next steps:</strong> Once user picks a concept, generate full PNG set (48dp, 72dp, 96dp, 144dp, 192dp) and add to <code class="mono">app/src/main/res/mipmap-*/</code></p>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

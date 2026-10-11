@@ -1,0 +1,48 @@
+{
+  "name": "System Tools",
+  "description": "System-level tools and info",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {
+      "name": "getSystemInfo",
+      "description": "Get device model, Android version, build number, root status",
+      "args": []
+    },
+    {
+      "name": "getInstalledApps",
+      "description": "List all installed apps with package names",
+      "args": []
+    },
+    {
+      "name": "getRunningApps",
+      "description": "Get currently running apps/processes",
+      "args": []
+    },
+    {
+      "name": "clearAppCache",
+      "description": "Clear cache for a specific app",
+      "args": ["package"]
+    },
+    {
+      "name": "getNetworkSpeed",
+      "description": "Test network speed (download/upload)",
+      "args": []
+    },
+    {
+      "name": "getIpAddress",
+      "description": "Get local + public IP address",
+      "args": []
+    },
+    {
+      "name": "rebootDevice",
+      "description": "Reboot the device (requires root or ADB)",
+      "args": []
+    },
+    {
+      "name": "getUptime",
+      "description": "Get device uptime since last boot",
+      "args": []
+    }
+  ]
+}

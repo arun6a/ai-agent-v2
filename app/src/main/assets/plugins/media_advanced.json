@@ -1,0 +1,33 @@
+{
+  "name": "Media Advanced",
+  "description": "Advanced media playback tools",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {
+      "name": "playMusic",
+      "description": "Play music from file path",
+      "args": ["path"]
+    },
+    {
+      "name": "getMusicInfo",
+      "description": "Get currently playing track info (title, artist, album)",
+      "args": []
+    },
+    {
+      "name": "setMusicVolume",
+      "description": "Set music volume (0-15)",
+      "args": ["level"]
+    },
+    {
+      "name": "recordAudio",
+      "description": "Record audio for N seconds, save to file",
+      "args": ["seconds", "path"]
+    },
+    {
+      "name": "getTextFromAudio",
+      "description": "Transcribe audio file to text (via Google STT)",
+      "args": ["path"]
+    }
+  ]
+}

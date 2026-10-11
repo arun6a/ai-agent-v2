@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Agent v2 — Design Index</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  html.light { background: #FAFAF9; color: #1C1C1F; }
+  html.light .bg-surface { background: #FFFFFF; }
+  html.light .border-token { border-color: #E7E7E3; }
+  html.light .text-token2 { color: #52525B; }
+  html.light .text-token3 { color: #A1A1AA; }
+  html.dark { background: #0F0F12; color: #FAFAF9; }
+  html.dark .bg-surface { background: #18181B; }
+  html.dark .border-token { border-color: #2A2A30; }
+  html.dark .text-token2 { color: #A1A1AA; }
+  html.dark .text-token3 { color: #71717A; }
+
+  .card { transition: all 0.2s ease; }
+  .card:hover { transform: translateY(-2px); border-color: #10B981; box-shadow: 0 12px 24px -8px rgba(16,185,129,0.2); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<header class="border-b border-token sticky top-0 z-50 bg-surface/95 backdrop-blur">
+  <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:#10B981">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+          <circle cx="12" cy="12" r="3" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-md font-semibold leading-tight">AI Agent v2 · Design Index</h1>
+        <p class="text-2xs text-token3 mono leading-tight">4 mockups · friendly + dense · emerald accent</p>
+      </div>
+    </div>
+    <span class="text-2xs mono text-token3">v2.0.0 · build 1</span>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-12">
+
+  <section class="mb-10">
+    <h2 class="text-3xl font-bold tracking-tight">Design mockups, all in one place.</h2>
+    <p class="text-sm text-token2 mt-2 max-w-2xl">
+      Four HTML mockups covering design system, chat screen (mobile + tablet), hub screen (13 sections),
+      and app icon concepts. Open each one, switch themes (light/dark), and tell me what to adjust.
+    </p>
+  </section>
+
+  <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <a href="01-design-system.html" class="card bg-surface border border-token rounded-xl p-6 block">
+      <div class="flex items-start justify-between mb-4">
+        <div class="w-10 h-10 rounded-md flex items-center justify-center" style="background:rgba(16,185,129,0.10)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+        </div>
+        <span class="mono text-2xs text-token3">01 · 56KB</span>
+      </div>
+      <h3 class="text-base font-semibold">Design System</h3>
+      <p class="text-xs text-token2 mt-1">Colors, typography, buttons, cards, chat bubbles, tool cards, status, dense panel, phone preview, nav patterns.</p>
+      <p class="text-2xs text-token3 mono mt-3">10 sections · 60+ components</p>
+    </a>
+
+    <a href="02-chat-screen.html" class="card bg-surface border border-token rounded-xl p-6 block">
+      <div class="flex items-start justify-between mb-4">
+        <div class="w-10 h-10 rounded-md flex items-center justify-center" style="background:rgba(59,130,246,0.10)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <span class="mono text-2xs text-token3">02 · 41KB</span>
+      </div>
+      <h3 class="text-base font-semibold">Chat Screen</h3>
+      <p class="text-xs text-token2 mt-1">Mobile (375×812) + tablet (side rail + dense right panel). Realistic BLACKPINK task with tool calls.</p>
+      <p class="text-2xs text-token3 mono mt-3">2 layouts · live tool cards · stats panel</p>
+    </a>
+
+    <a href="03-hub-screen.html" class="card bg-surface border border-token rounded-xl p-6 block">
+      <div class="flex items-start justify-between mb-4">
+        <div class="w-10 h-10 rounded-md flex items-center justify-center" style="background:rgba(245,158,11,0.10)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </div>
+        <span class="mono text-2xs text-token3">03 · 59KB</span>
+      </div>
+      <h3 class="text-base font-semibold">Hub Screen</h3>
+      <p class="text-xs text-token2 mt-1">All 13 sections (skills, rules, tools, plugins, memory, knowledge, history, files, LLM, vision, audio, permissions, settings). Click left nav to switch.</p>
+      <p class="text-2xs text-token3 mono mt-3">13 sections · tablet-first · live switcher</p>
+    </a>
+
+    <a href="04-app-icons.html" class="card bg-surface border border-token rounded-xl p-6 block">
+      <div class="flex items-start justify-between mb-4">
+        <div class="w-10 h-10 rounded-md flex items-center justify-center" style="background:rgba(139,92,246,0.10)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+        <span class="mono text-2xs text-token3">04 · SVG concepts</span>
+      </div>
+      <h3 class="text-base font-semibold">App Icons</h3>
+      <p class="text-xs text-token2 mt-1">4 SVG icon concepts (emerald orb, chat hex, agent core, minimal glyph) + adaptive icon preview at multiple sizes.</p>
+      <p class="text-2xs text-token3 mono mt-3">4 concepts · adaptive icon sizes</p>
+    </a>
+
+  </section>
+
+  <section class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-surface border border-token rounded-lg p-5">
+      <h4 class="text-sm font-semibold mb-2" style="color:#10B981">Friendly</h4>
+      <ul class="text-xs text-token2 space-y-1.5">
+        <li>· Warm emerald accent (#10B981)</li>
+        <li>· Rounded chat bubbles</li>
+        <li>· Off-white background</li>
+        <li>· Subtle pulse on thinking</li>
+      </ul>
+    </div>
+    <div class="bg-surface border border-token rounded-lg p-5">
+      <h4 class="text-sm font-semibold mb-2" style="color:#3B82F6">Dense</h4>
+      <ul class="text-xs text-token2 space-y-1.5">
+        <li>· Tool cards with args + latency</li>
+        <li>· Monospace for technical bits</li>
+        <li>· Stats grid + live numbers</li>
+        <li>· Keyboard shortcuts visible</li>
+      </ul>
+    </div>
+    <div class="bg-surface border border-token rounded-lg p-5">
+      <h4 class="text-sm font-semibold mb-2" style="color:#F59E0B">Power-user</h4>
+      <ul class="text-xs text-token2 space-y-1.5">
+        <li>· Side rail nav (tablet)</li>
+        <li>· Right panel with stats</li>
+        <li>· Provider switcher inline</li>
+        <li>· Per-step timestamps</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="mt-8 border-t border-token pt-6">
+    <h3 class="text-lg font-semibold mb-3">Next steps after approval</h3>
+    <ol class="text-sm text-token2 space-y-2 list-decimal list-inside">
+      <li>Scaffold <code class="mono text-xs">ai-agent-v2</code> Android project (Compose, v2.0.0)</li>
+      <li>Carry over battle-tested backend (LLMClient, AIProvider, ToolExecutor, Accessibility, DB, Skills)</li>
+      <li>Translate approved design to Jetpack Compose (theme + typography + components)</li>
+      <li>Build chat screen in Compose</li>
+      <li>Build Hub screen in Compose (13 sections)</li>
+      <li>Generate full PNG icon set for chosen concept</li>
+      <li>Build v2.0.0 APK → test on tablet</li>
+      <li>If anything fails → fall back to <code class="mono text-xs">ai-agent-apk</code> v6.4.4</li>
+    </ol>
+  </section>
+
+</main>
+
+</body>
+</html>

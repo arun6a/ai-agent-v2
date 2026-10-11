@@ -1,0 +1,13 @@
+{
+  "name": "Calendar & Alarms",
+  "description": "Calendar events, alarms, timers",
+  "version": "1.0",
+  "enabled": true,
+  "tools": [
+    {"name": "getCalendarEvents", "params": [], "description": "Get today's calendar events"},
+    {"name": "createCalendarEvent", "params": ["title", "startTime", "durationMinutes"], "description": "Create calendar event"},
+    {"name": "setAlarm", "params": ["hour", "minute"], "description": "Set an alarm"},
+    {"name": "setTimer", "params": ["seconds", "message"], "description": "Set a timer"}
+  ],
+  "prompt_section": "### Calendar & Alarms\n- getCalendarEvents() — today's events\n- createCalendarEvent(title, startTime, durationMinutes) — create event\n- setAlarm(hour, minute) — set alarm\n- setTimer(seconds, message?) — set timer"
+}

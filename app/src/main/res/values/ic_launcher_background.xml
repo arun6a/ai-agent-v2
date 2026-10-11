@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ic_launcher_background — color resource (dark slate, Concept 1 spec).
+  Dedicated color file for the adaptive icon background (#0F0F12).
+  Referenced by mipmap-anydpi-v26/ic_launcher.xml as @color/ic_launcher_background.
+-->
+<resources>
+    <color name="ic_launcher_background">#0F0F12</color>
+</resources>
