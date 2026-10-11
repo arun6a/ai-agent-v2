@@ -217,7 +217,7 @@ object AIProvider {
             description = "Uses the sandbox proxy. No API key needed, but the sandbox " +
                     "dev server must be running. GLM-4.6 model. 300 requests/day. " +
                     "Only works while sandbox is active.",
-            defaultEndpoint = "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai/api/llm/proxy",
+            defaultEndpoint = "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai/api/llm/proxy?XTransformPort=3030",
             needsApiKey = false,
             models = listOf(
                 ModelInfo("glm-4.6", "GLM-4.6", "Z.ai's flagship model. Smart, supports tools."),
