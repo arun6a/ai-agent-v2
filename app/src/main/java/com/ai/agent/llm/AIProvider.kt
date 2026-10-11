@@ -225,6 +225,21 @@ object AIProvider {
             )
         ),
         ProviderInfo(
+            id = "apikeys_in",
+            name = "APIKeys.in (Free Gateway)",
+            description = "Free API gateway — access multiple AI models (GPT, Claude, Gemini, etc.) through one endpoint. " +
+                    "Get a free API key at apikeys.in. OpenAI-compatible. Supports native function calling.",
+            defaultEndpoint = "https://apikeys.in/v1/chat/completions",
+            needsApiKey = true,
+            models = listOf(
+                ModelInfo("gpt-4o", "GPT-4o", "OpenAI's flagship model. Smart, capable."),
+                ModelInfo("gpt-4o-mini", "GPT-4o mini (Fast)", "Fast, cheap, capable."),
+                ModelInfo("claude-3-5-sonnet", "Claude 3.5 Sonnet", "Anthropic's flagship. Excellent quality."),
+                ModelInfo("gemini-2.0-flash", "Gemini 2.0 Flash", "Google's fast model."),
+                ModelInfo("gpt-3.5-turbo", "GPT-3.5 Turbo (Cheap)", "Cheap, fast."),
+            )
+        ),
+        ProviderInfo(
             id = "custom",
             name = "Custom (OpenAI-compatible)",
             description = "Use any OpenAI-compatible API. Enter endpoint, API key, and model name. " +

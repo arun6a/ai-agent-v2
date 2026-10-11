@@ -90,6 +90,8 @@ data class ChatUiState(
     val lastWorkflowSteps: String = "",
     /** Toast message for the UI to show (e.g. on skill save). */
     val toast: String? = null,
+    /** v2.0.4: TTS auto-speak toggle. Default OFF (was ON, annoyed user). */
+    val ttsEnabled: Boolean = false,
 )
 
 class ChatViewModel(
@@ -108,6 +110,7 @@ class ChatViewModel(
 
     init {
         loadProviderInfo()
+        loadTtsPref()
     }
 
     // ---- public API ----
@@ -116,6 +119,19 @@ class ChatViewModel(
         val provider = AIProvider.getCurrentProvider(context)
         val model = AIProvider.getModel(context)
         _state.update { it.copy(providerName = provider.name, modelName = model) }
+    }
+
+    /** v2.0.4: TTS toggle — persists across launches. Default OFF. */
+    fun loadTtsPref() {
+        val prefs = context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE)
+        val enabled = prefs.getBoolean("tts_enabled", false)
+        _state.update { it.copy(ttsEnabled = enabled) }
+    }
+
+    fun setTtsEnabled(enabled: Boolean) {
+        context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("tts_enabled", enabled).apply()
+        _state.update { it.copy(ttsEnabled = enabled) }
     }
 
     fun sendMessage(text: String) {
@@ -473,6 +489,7 @@ class ChatViewModel(
                             "I'm stuck on a step. I tried the same action $count times and it's not working.",
                             "en"
                         )
+                        // Note: stuck-state speak is intentional (not auto-reply), so it ignores ttsEnabled.
 
                         // Always learn — even from failure, save what NOT to do.
                         try {
@@ -560,7 +577,10 @@ class ChatViewModel(
             addAiFinalMessage(finalReply)
             database.addConversation("ai", finalReply)
             database.logAction("Processed: $userMessage → $finalReply")
-            voiceManager.speak(finalReply.take(500), "en")
+            // v2.0.4: Only speak if user explicitly enabled TTS (default OFF).
+            if (_state.value.ttsEnabled) {
+                voiceManager.speak(finalReply.take(500), "en")
+            }
 
             // Task 40 — prompt the user to save this workflow as a skill if it was
             // a sufficiently complex run (3+ iterations with a non-empty workLog).

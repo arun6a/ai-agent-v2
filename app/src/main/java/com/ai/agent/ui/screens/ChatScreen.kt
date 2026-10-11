@@ -42,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Stop
@@ -200,6 +202,8 @@ fun ChatScreen(
                 providerName = state.providerName,
                 modelName = state.modelName,
                 isThinking = state.isThinking,
+                ttsEnabled = state.ttsEnabled,
+                onToggleTts = { viewModel.setTtsEnabled(!state.ttsEnabled) },
                 onOpenHub = onOpenHub,
                 onClear = { viewModel.clearChat() },
             )
@@ -428,6 +432,8 @@ private fun ChatTopBar(
     providerName: String,
     modelName: String,
     isThinking: Boolean,
+    ttsEnabled: Boolean,
+    onToggleTts: () -> Unit,
     onOpenHub: () -> Unit,
     onClear: () -> Unit,
 ) {
@@ -490,6 +496,14 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            // v2.0.4: TTS toggle (default OFF). Emerald when enabled, gray when off.
+            IconButton(onClick = onToggleTts) {
+                Icon(
+                    imageVector = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Outlined.VolumeOff,
+                    contentDescription = if (ttsEnabled) "Mute AI voice" else "Enable AI voice",
+                    tint = if (ttsEnabled) custom.accent else custom.fg2,
+                )
+            }
             IconButton(onClick = onOpenHub) {
                 Icon(
                     imageVector = Icons.Outlined.Hub,
@@ -881,7 +895,7 @@ private fun ChatInputBar(
 }
 
 // ---------------------------------------------------------------------------
-// Status footer — "v2.0.3 · 47/14400 calls · 847ms avg"
+// Status footer — "v2.0.4 · 47/14400 calls · 847ms avg"
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -899,7 +913,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.3",
+            text = "v2.0.4",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,

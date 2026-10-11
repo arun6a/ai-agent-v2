@@ -129,10 +129,10 @@ enum class HubSection(val label: String, val icon: ImageVector, val count: Strin
     KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder, "23"),
     HISTORY("History", Icons.Outlined.History, "487"),
     FILES("Files", Icons.Outlined.Folder, "12"),
-    LLM("LLM", Icons.Outlined.Lock, "13"),
+    LLM("LLM", Icons.Outlined.Lock, "14"),
     VISION("Vision", Icons.Outlined.Visibility),
     AUDIO("Audio", Icons.Outlined.GraphicEq),
-    PERMISSIONS("Permissions", Icons.Outlined.Verified, "3/7"),
+    PERMISSIONS("Permissions", Icons.Outlined.Verified, "14"),
     SETTINGS("Settings", Icons.Outlined.Settings),
 }
 
@@ -290,10 +290,44 @@ private fun SkillsSection(
     var deleteSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
 
     fun reload() {
-        skills = try {
+        val allSkills = try {
             SkillManager(context).loadSkills()
         } catch (e: Exception) {
             emptyList()
+        }
+        // Skills can be loaded from TWO sources:
+        //   1. Built-in assets (assets/skills/*.md) — immutable, shipped with APK
+        //   2. User storage (/storage/emulated/0/Documents/ai-workspace/skills/*.md)
+        // SkillManager loads built-ins first, then user files — so a user file
+        // with the same fileName as an asset creates a duplicate entry.
+        //
+        // Issue 51 (Edit + Delete on built-ins):
+        //   - Edit on a built-in → SkillEditorScreen writes a user-owned override
+        //     copy with the same fileName. associateBy { fileName } keeps the LAST
+        //     occurrence, so the user override shadows the built-in (no duplicates).
+        //   - Delete on a built-in → we write a marker file `.deleted_<fileName>`
+        //     under /storage/.../skills/. Here we filter out any entry whose
+        //     fileName matches such a marker (UNLESS a user override exists for
+        //     that fileName — the override is still shown).
+        val userDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+        val userFileNames: Set<String> = if (userDir.exists()) {
+            userDir.listFiles { f -> f.extension == "md" }
+                ?.map { it.name }?.toSet() ?: emptySet()
+        } else emptySet()
+        val deletedMarkers: Set<String> = if (userDir.exists()) {
+            userDir.listFiles { f -> f.name.startsWith(".deleted_") }
+                ?.map { it.name.removePrefix(".deleted_") }?.toSet() ?: emptySet()
+        } else emptySet()
+
+        // associateBy keeps the LAST entry per fileName — since SkillManager loads
+        // assets first then user files, user-owned overrides win on conflict.
+        val deduped = allSkills.associateBy { it.fileName }.values
+        skills = deduped.filter { skill ->
+            // Show a skill if EITHER:
+            //   - a user-owned file with this fileName exists (Edit override),
+            //     OR
+            //   - this fileName has NOT been marked deleted.
+            skill.fileName in userFileNames || skill.fileName !in deletedMarkers
         }
         loaded = true
     }
@@ -389,11 +423,18 @@ private fun SkillsSection(
 
     // ---- Delete confirmation dialog ----
     deleteSkill?.let { skill ->
+        val isUser = isUserCreatedSkill(skill.fileName)
         SkillDeleteConfirmDialog(
             skillName = skill.name,
+            isUserCreated = isUser,
             onConfirm = {
-                deleteFile(skill)
-                Toast.makeText(context, "Skill deleted: ${skill.name}", Toast.LENGTH_SHORT).show()
+                deleteOrHideSkill(skill)
+                Toast.makeText(
+                    context,
+                    if (isUser) "Skill deleted: ${skill.name}"
+                    else "Built-in skill hidden: ${skill.name}",
+                    Toast.LENGTH_SHORT,
+                ).show()
                 deleteSkill = null
                 reload()
             },
@@ -402,10 +443,33 @@ private fun SkillsSection(
     }
 }
 
-/** Delete the underlying .md file for a user-created skill. */
-private fun deleteFile(skill: SkillManager.Skill) {
-    val file = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills/${skill.fileName}")
-    if (file.exists()) file.delete()
+/**
+ * Delete / hide the underlying .md file for a skill.
+ *
+ * - User-created skill  → the .md file under /storage/.../skills/ is deleted.
+ * - Built-in (asset) skill → a marker file `.deleted_<filename>` is written
+ *   under /storage/.../skills/. On reload, SkillsSection filters out any
+ *   asset whose fileName matches a marker. The original asset file in the
+ *   APK remains untouched (so the user can restore it by deleting the marker).
+ */
+private fun deleteOrHideSkill(skill: SkillManager.Skill) {
+    val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+    if (!dir.exists()) dir.mkdirs()
+    val userFile = java.io.File(dir, skill.fileName)
+    if (userFile.exists()) {
+        // User-owned override copy exists → delete it.
+        userFile.delete()
+        return
+    }
+    // Built-in asset → write a .deleted_ marker so SkillsSection hides it.
+    val marker = java.io.File(dir, ".deleted_${skill.fileName}")
+    if (!marker.exists()) {
+        try {
+            marker.writeText("hidden\n")
+        } catch (_: Exception) {
+            // best-effort — marker write failure means the skill stays visible
+        }
+    }
 }
 
 @Composable
@@ -432,7 +496,7 @@ private fun SkillOptionsDialog(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = if (isUserCreated) "User-created · editable" else "Built-in · read-only",
+                    text = if (isUserCreated) "User-created · editable" else "Built-in · edit creates a copy",
                     color = if (isUserCreated) custom.accent else custom.fg3,
                     fontFamily = MonoFontFamily,
                     fontSize = 10.sp,
@@ -442,14 +506,16 @@ private fun SkillOptionsDialog(
         text = {
             Column {
                 DialogOptionRow(label = "View", onClick = onView)
-                if (isUserCreated) {
-                    DialogOptionRow(label = "Edit", onClick = onEdit)
-                    DialogOptionRow(
-                        label = "Delete",
-                        onClick = onDelete,
-                        textColor = custom.error,
-                    )
-                }
+                // Issue 51: Edit + Delete are now available for BOTH user-created
+                // and built-in skills. For built-in skills, Edit opens the editor
+                // in non-read-only mode — on save, a user-owned override copy
+                // is written under /storage/.../skills/<filename>.md.
+                DialogOptionRow(label = "Edit", onClick = onEdit)
+                DialogOptionRow(
+                    label = "Delete",
+                    onClick = onDelete,
+                    textColor = custom.error,
+                )
             }
         },
         confirmButton = {
@@ -463,6 +529,7 @@ private fun SkillOptionsDialog(
 @Composable
 private fun SkillDeleteConfirmDialog(
     skillName: String,
+    isUserCreated: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -473,7 +540,7 @@ private fun SkillDeleteConfirmDialog(
         containerColor = m3.surface,
         title = {
             Text(
-                text = "Delete skill?",
+                text = if (isUserCreated) "Delete skill?" else "Hide built-in skill?",
                 color = m3.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
@@ -481,14 +548,23 @@ private fun SkillDeleteConfirmDialog(
         },
         text = {
             Text(
-                text = "Permanently delete \"$skillName\"? This cannot be undone.",
+                text = if (isUserCreated)
+                    "Permanently delete \"$skillName\"? This cannot be undone."
+                else
+                    "This is a built-in skill. Deleting will hide it from the list " +
+                        "(original file in assets remains). Continue?",
                 color = custom.fg2,
                 fontSize = 13.sp,
             )
         },
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = onConfirm) {
-                Text("Delete", color = custom.error, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(
+                    text = if (isUserCreated) "Delete" else "Hide",
+                    color = custom.error,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
             }
         },
         dismissButton = {
@@ -2482,8 +2558,8 @@ private fun AboutCard() {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        AboutRow(label = "version", value = "2.0.3")
-        AboutRow(label = "build", value = "3")
+        AboutRow(label = "version", value = "2.0.4")
+        AboutRow(label = "build", value = "4")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")
@@ -2676,25 +2752,168 @@ private fun ProviderRow(provider: AIProvider.ProviderInfo, isActive: Boolean, cu
 // ---------------------------------------------------------------------------
 // Functional section: Permissions (uses ContextCompat.checkSelfPermission)
 // ---------------------------------------------------------------------------
+// Issue 53 — full grant UI:
+//   • Each row shows a Grant button when not granted
+//   • Grant All button at top requests all runtime perms in one batch
+//   • Special perms (Overlay / All Files / Accessibility) deep-link into
+//     the relevant system Settings screen
+//   • ON_RESUME lifecycle observer bumps refreshKey so granted state is
+//     re-checked when the user returns from system Settings
+// ---------------------------------------------------------------------------
 
-private val TRACKED_PERMISSIONS = listOf(
-    Manifest.permission.RECORD_AUDIO,
-    Manifest.permission.READ_CONTACTS,
-    Manifest.permission.CALL_PHONE,
-    Manifest.permission.SEND_SMS,
-    Manifest.permission.ACCESS_FINE_LOCATION,
-    Manifest.permission.READ_CALENDAR,
-    Manifest.permission.READ_EXTERNAL_STORAGE,
+private enum class PermissionType { RUNTIME, OVERLAY, ALL_FILES, ACCESSIBILITY, INTERNET }
+
+private enum class PermissionGroup(val label: String) {
+    REQUIRED("Required"),
+    STORAGE("Storage"),
+    AUDIO_CAMERA("Audio / Camera"),
+    CONTACTS_SMS("Contacts / SMS"),
+    LOCATION_CALENDAR("Location / Calendar"),
+    NOTIFICATIONS("Notifications"),
+}
+
+private data class PermissionEntry(
+    val perm: String,        // Manifest.permission.* constant (or pseudo-key for special perms)
+    val display: String,     // "Camera" / "Microphone" / ...
+    val type: PermissionType,
+    val group: PermissionGroup,
 )
+
+private val PERMISSIONS = listOf(
+    // Required
+    PermissionEntry("__accessibility__", "Accessibility Service", PermissionType.ACCESSIBILITY, PermissionGroup.REQUIRED),
+    PermissionEntry(Manifest.permission.SYSTEM_ALERT_WINDOW, "Display Over Other Apps", PermissionType.OVERLAY, PermissionGroup.REQUIRED),
+    PermissionEntry(Manifest.permission.INTERNET, "Internet", PermissionType.INTERNET, PermissionGroup.REQUIRED),
+    // Storage
+    PermissionEntry(Manifest.permission.READ_EXTERNAL_STORAGE, "Read External Storage", PermissionType.RUNTIME, PermissionGroup.STORAGE),
+    PermissionEntry(Manifest.permission.MANAGE_EXTERNAL_STORAGE, "All Files Access", PermissionType.ALL_FILES, PermissionGroup.STORAGE),
+    PermissionEntry("android.permission.READ_MEDIA_IMAGES", "Read Media (Images)", PermissionType.RUNTIME, PermissionGroup.STORAGE),
+    // Audio / Camera
+    PermissionEntry(Manifest.permission.RECORD_AUDIO, "Microphone", PermissionType.RUNTIME, PermissionGroup.AUDIO_CAMERA),
+    PermissionEntry(Manifest.permission.CAMERA, "Camera", PermissionType.RUNTIME, PermissionGroup.AUDIO_CAMERA),
+    // Contacts / SMS
+    PermissionEntry(Manifest.permission.READ_CONTACTS, "Read Contacts", PermissionType.RUNTIME, PermissionGroup.CONTACTS_SMS),
+    PermissionEntry(Manifest.permission.CALL_PHONE, "Call Phone", PermissionType.RUNTIME, PermissionGroup.CONTACTS_SMS),
+    PermissionEntry(Manifest.permission.SEND_SMS, "Send SMS", PermissionType.RUNTIME, PermissionGroup.CONTACTS_SMS),
+    // Location / Calendar
+    PermissionEntry(Manifest.permission.ACCESS_FINE_LOCATION, "Fine Location", PermissionType.RUNTIME, PermissionGroup.LOCATION_CALENDAR),
+    PermissionEntry(Manifest.permission.READ_CALENDAR, "Read Calendar", PermissionType.RUNTIME, PermissionGroup.LOCATION_CALENDAR),
+    // Notifications
+    PermissionEntry(Manifest.permission.POST_NOTIFICATIONS, "Post Notifications", PermissionType.RUNTIME, PermissionGroup.NOTIFICATIONS),
+)
+
+/**
+ * Returns true iff our AgentAccessibilityService is enabled in the system's
+ * Accessibility settings. Used to mark the Accessibility permission row as
+ * granted / missing in the Hub's Permissions section.
+ */
+private fun isAccessibilityEnabled(context: android.content.Context): Boolean {
+    val enabled = try {
+        android.provider.Settings.Secure.getInt(
+            context.contentResolver,
+            android.provider.Settings.Secure.ACCESSIBILITY_ENABLED,
+            0,
+        ) == 1
+    } catch (_: Exception) {
+        false
+    }
+    if (!enabled) return false
+    val expected = "${context.packageName}/com.ai.agent.accessibility.AgentAccessibilityService"
+    val list = try {
+        android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        )
+    } catch (_: Exception) {
+        null
+    } ?: return false
+    val splitter = android.text.TextUtils.SimpleStringSplitter(':').apply { setString(list) }
+    while (splitter.hasNext()) {
+        if (splitter.next().equals(expected, ignoreCase = true)) return true
+    }
+    return false
+}
 
 @Composable
 private fun PermissionsSection() {
     val context = LocalContext.current
+    val custom = LocalCustomColors.current
 
-    val grantedCount = TRACKED_PERMISSIONS.count {
-        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    // refreshKey — bumped when runtime-permission result arrives OR on ON_RESUME.
+    // Re-checks the granted state of every permission (incl. special perms that
+    // can only be granted via system Settings → Accessibility / Overlay / All Files).
+    var refreshKey by remember { mutableStateOf(0) }
+
+    val permLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ -> refreshKey++ }
+
+    // Bump refreshKey whenever the user comes back from system Settings (where
+    // overlay, all-files, and accessibility permissions are granted).
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshKey++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    val total = TRACKED_PERMISSIONS.size
+
+    // Compute granted state for every permission — memoized on refreshKey so a
+    // state change triggers a single re-evaluation per refresh.
+    val permissionStates = remember(refreshKey) {
+        PERMISSIONS.associate { entry ->
+            val granted = when (entry.type) {
+                PermissionType.RUNTIME -> ContextCompat.checkSelfPermission(context, entry.perm) ==
+                    PackageManager.PERMISSION_GRANTED
+                PermissionType.OVERLAY -> android.provider.Settings.canDrawOverlays(context)
+                PermissionType.ALL_FILES -> android.os.Environment.isExternalStorageManager()
+                PermissionType.INTERNET -> true  // auto-granted on install
+                PermissionType.ACCESSIBILITY -> isAccessibilityEnabled(context)
+            }
+            entry.perm to granted
+        }
+    }
+
+    val grantedCount = permissionStates.count { it.value }
+    val total = permissionStates.size
+
+    fun requestPermission(entry: PermissionEntry) {
+        when (entry.type) {
+            PermissionType.RUNTIME -> permLauncher.launch(arrayOf(entry.perm))
+            PermissionType.OVERLAY -> {
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:${context.packageName}"),
+                ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (_: Exception) {}
+            }
+            PermissionType.ALL_FILES -> {
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION,
+                ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (_: Exception) {}
+            }
+            PermissionType.ACCESSIBILITY -> {
+                val intent = android.content.Intent(
+                    android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS,
+                ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                try { context.startActivity(intent) } catch (_: Exception) {}
+            }
+            PermissionType.INTERNET -> {}  // always granted
+        }
+    }
+
+    fun grantAll() {
+        val allRuntimePerms = PERMISSIONS
+            .filter { it.type == PermissionType.RUNTIME }
+            .map { it.perm }
+            .toTypedArray()
+        if (allRuntimePerms.isNotEmpty()) permLauncher.launch(allRuntimePerms)
+    }
+
+    // Group permission entries by their PermissionGroup, preserving declared order.
+    val grouped = PERMISSIONS.groupBy { it.group }
 
     LazyColumn(
         modifier = Modifier
@@ -2705,18 +2924,71 @@ private fun PermissionsSection() {
         item {
             SectionHeader(
                 title = "Permissions",
-                subtitle = "$grantedCount/$total granted · ${if (grantedCount == total) "all granted" else "missing ${total - grantedCount}"}",
+                subtitle = "$grantedCount/$total granted · " +
+                    if (grantedCount == total) "all granted" else "missing ${total - grantedCount}",
             )
         }
-        items(TRACKED_PERMISSIONS) { perm ->
-            val granted = ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
-            PermissionRow(name = perm.removePrefix("android.permission."), granted = granted)
+
+        // ---- "Grant All" button (only visible if something is missing) ----
+        if (grantedCount < total) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.accent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .clickable { grantAll() }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.Verified, contentDescription = null, tint = custom.accent, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Grant all runtime permissions",
+                        color = custom.accent,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "opens one dialog",
+                        color = custom.fg3,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+        }
+
+        // ---- Grouped permission rows ----
+        PermissionGroup.entries.forEach { group ->
+            val entriesInGroup = grouped[group] ?: return@forEach
+            item {
+                Text(
+                    text = group.label.uppercase(),
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+                )
+            }
+            items(entriesInGroup, key = { it.perm }) { entry ->
+                PermissionRow(
+                    entry = entry,
+                    granted = permissionStates[entry.perm] == true,
+                    onGrant = { requestPermission(entry) },
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun PermissionRow(name: String, granted: Boolean) {
+private fun PermissionRow(
+    entry: PermissionEntry,
+    granted: Boolean,
+    onGrant: () -> Unit,
+) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
@@ -2745,28 +3017,64 @@ private fun PermissionRow(name: String, granted: Boolean) {
             )
         }
         Spacer(Modifier.width(10.dp))
-        Text(
-            text = name,
-            color = m3.onSurface,
-            fontFamily = MonoFontFamily,
-            fontSize = 12.sp,
-            modifier = Modifier.weight(1f),
-        )
-        Box(
-            modifier = Modifier
-                .background(
-                    if (granted) custom.accent.copy(alpha = 0.15f) else custom.error.copy(alpha = 0.12f),
-                    RoundedCornerShape(4.dp),
-                )
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (granted) "GRANTED" else "MISSING",
-                color = if (granted) custom.accent else custom.error,
+                text = entry.display,
+                color = m3.onSurface,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = entry.perm.removePrefix("android.permission."),
+                color = custom.fg3,
                 fontFamily = MonoFontFamily,
                 fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
             )
+        }
+        if (granted) {
+            Box(
+                modifier = Modifier
+                    .background(custom.accent.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = "GRANTED",
+                    color = custom.accent,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        } else if (entry.type == PermissionType.INTERNET) {
+            // INTERNET is auto-granted on install — should never reach here.
+            Box(
+                modifier = Modifier
+                    .background(custom.accent.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = "AUTO",
+                    color = custom.accent,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        } else {
+            // Grant button — emerald pill, tappable.
+            Box(
+                modifier = Modifier
+                    .background(custom.accent, RoundedCornerShape(6.dp))
+                    .clickable(onClick = onGrant)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "Grant",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
     }
 }

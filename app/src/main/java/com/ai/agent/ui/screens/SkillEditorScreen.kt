@@ -17,11 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -30,6 +27,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -441,48 +439,28 @@ private fun SkillField(
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
-    val borderColor = if (readOnly) custom.border else custom.accent.copy(alpha = 0.4f)
-    val bgColor = if (readOnly) custom.surface2 else m3.surface
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor, RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        if (value.isEmpty() && readOnly) {
-            Text(
-                text = "—",
-                color = custom.fg3,
-                fontSize = 13.sp,
-            )
-        } else {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                readOnly = readOnly,
-                singleLine = singleLine,
-                textStyle = TextStyle(
-                    color = if (readOnly) custom.fg2 else m3.onSurface,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                ),
-                cursorBrush = SolidColor(custom.accent),
-                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-                decorationBox = { inner ->
-                    if (value.isEmpty()) {
-                        Text(
-                            text = placeholder,
-                            color = custom.fg3,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    inner()
-                },
-            )
-        }
-    }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        readOnly = readOnly,
+        singleLine = singleLine,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text(placeholder, color = custom.fg3, fontSize = 13.sp) },
+        textStyle = TextStyle(
+            color = if (readOnly) custom.fg2 else m3.onSurface,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        ),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = custom.accent,
+            unfocusedBorderColor = custom.border,
+            cursorColor = custom.accent,
+            focusedContainerColor = m3.surface,
+            unfocusedContainerColor = if (readOnly) custom.surface2 else m3.surface,
+        ),
+        shape = RoundedCornerShape(8.dp),
+    )
 }
 
 @Composable
@@ -494,42 +472,36 @@ private fun SkillBodyField(
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
-    val borderColor = if (readOnly) custom.border else custom.accent.copy(alpha = 0.4f)
-    val bgColor = if (readOnly) custom.surface2 else m3.surface
-
-    Box(
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        readOnly = readOnly,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 200.dp)
-            .background(bgColor, RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
-            .padding(12.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            readOnly = readOnly,
-            textStyle = TextStyle(
-                color = if (readOnly) custom.fg2 else m3.onSurface,
+            .heightIn(min = 200.dp),
+        placeholder = {
+            Text(
+                placeholder,
+                color = custom.fg3,
                 fontSize = 12.sp,
-                lineHeight = 18.sp,
                 fontFamily = MonoFontFamily,
-            ),
-            cursorBrush = SolidColor(custom.accent),
-            decorationBox = { inner ->
-                if (value.isEmpty()) {
-                    Text(
-                        text = placeholder,
-                        color = custom.fg3,
-                        fontSize = 12.sp,
-                        fontFamily = MonoFontFamily,
-                    )
-                }
-                inner()
-            },
-        )
-    }
+            )
+        },
+        textStyle = TextStyle(
+            color = if (readOnly) custom.fg2 else m3.onSurface,
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            fontFamily = MonoFontFamily,
+        ),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = custom.accent,
+            unfocusedBorderColor = custom.border,
+            cursorColor = custom.accent,
+            focusedContainerColor = m3.surface,
+            unfocusedContainerColor = if (readOnly) custom.surface2 else m3.surface,
+        ),
+        shape = RoundedCornerShape(8.dp),
+    )
 }
 
 // ---------------------------------------------------------------------------
