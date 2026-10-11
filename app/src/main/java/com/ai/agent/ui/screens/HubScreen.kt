@@ -102,6 +102,7 @@ import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
 import com.ai.agent.ui.components.HubNavItem
 import com.ai.agent.ui.components.LocalCustomColors
+import com.ai.agent.ui.components.StatCard
 import com.ai.agent.ui.theme.MonoFontFamily
 import com.ai.agent.ui.theme.ThemeManager
 import kotlinx.coroutines.launch
@@ -3992,17 +3993,17 @@ private fun UsageSection() {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 StatCard(
-                    title = "Calls",
+                    label = "Calls",
                     value = todayStats.first.toString(),
                     modifier = Modifier.weight(1f),
                 )
                 StatCard(
-                    title = "Tokens",
+                    label = "Tokens",
                     value = todayStats.second.toString(),
                     modifier = Modifier.weight(1f),
                 )
                 StatCard(
-                    title = "Est. Cost",
+                    label = "Est. Cost",
                     value = "$" + String.format("%.3f", todayStats.second * 0.000002),
                     modifier = Modifier.weight(1f),
                 )
@@ -4127,7 +4128,7 @@ private fun QuotaRow(provider: String, quota: String, custom: com.ai.agent.ui.co
     ) {
         Text(
             text = provider,
-            color = com.ai.agent.ui.components.LocalCustomColors.current.onSurface,
+            color = com.ai.agent.ui.components.LocalCustomColors.current.fg2,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
