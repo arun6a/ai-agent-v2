@@ -2,7 +2,6 @@ package com.ai.agent.ui.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -54,7 +53,6 @@ private data class NavItem(
 
 private val NAV_ITEMS = listOf(
     NavItem("Chat", Icons.Outlined.ChatBubbleOutline, Routes.CHAT),
-    NavItem("Browse", Icons.Outlined.Public, Routes.BROWSER),
     NavItem("Aira Lab", Icons.Outlined.Science, Routes.HUB),
 )
 
