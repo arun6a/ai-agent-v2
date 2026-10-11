@@ -27,10 +27,13 @@ import androidx.compose.ui.unit.sp
 
 /** Route identifiers used by AppNavigation. */
 object Routes {
+    const val SPLASH = "splash"
+    const val ONBOARDING = "onboarding"
     const val CHAT = "chat"
     const val BROWSER = "browser"
     const val HUB = "hub"
     const val HUB_SETTINGS = "hub/settings"
+    const val PROVIDER_SETTINGS = "provider_settings"
 }
 
 private data class NavItem(

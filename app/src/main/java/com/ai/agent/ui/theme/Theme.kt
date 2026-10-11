@@ -86,14 +86,16 @@ private val DarkColorScheme = darkColorScheme(
  * typography, shapes, our custom color tokens, and the system-bar appearance
  * (status bar / navigation bar) so it matches the active palette.
  *
- * @param darkTheme    true for the dark (ink) palette. Defaults to system setting.
+ * @param darkTheme    true for the dark (ink) palette. Defaults to the user's
+ *                     theme-mode preference (system / light / dark) via
+ *                     [ThemeManager], falling back to the system setting.
  * @param dynamicColor  reserved for future Material You support. Currently
  *                      disabled — our approved design uses a fixed brand palette.
  * @param content       app content to render inside the theme.
  */
 @Composable
 fun AIAgentTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = ThemeManager.isDarkTheme(isSystemInDarkTheme()),
     @Suppress("UNUSED_PARAMETER") dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {

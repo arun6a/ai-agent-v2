@@ -12,17 +12,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.ai.agent.ui.navigation.AppNavigation
 import com.ai.agent.ui.theme.AIAgentTheme
+import com.ai.agent.ui.theme.ThemeManager
 
 // ============================================================================
 // MainActivity — v2 entry point
 // ----------------------------------------------------------------------------
-// Mounts the theme + AppNavigation, which routes between the 4 top-level
-// screens (Chat / Browse / Hub / Settings via BottomNav).
+// Mounts the theme + AppNavigation, which routes between splash → onboarding →
+// chat / browser / hub / settings via BottomNav. The ChatScreen now owns a
+// ChatViewModel that drives the real agent loop: LLMClient → ToolExecutor →
+// AgentDatabase → VoiceManager.
 //
-// The ChatScreen now owns a ChatViewModel that drives the real agent loop:
-// LLMClient → ToolExecutor → AgentDatabase → VoiceManager.
-// Backend (LLMClient, ToolExecutor, Accessibility, rules…) is carried over
-// from v1 and instantiated inside ChatViewModelFactory.
+// ThemeManager is initialized before setContent so the user's theme preference
+// (System / Light / Dark) is honored from the very first frame.
 // ============================================================================
 
 class MainActivity : ComponentActivity() {
@@ -35,6 +36,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         super.onCreate(savedInstanceState)
+
+        // Load the persisted theme mode (System / Light / Dark).
+        ThemeManager.init(this)
 
         setContent {
             AIAgentTheme {

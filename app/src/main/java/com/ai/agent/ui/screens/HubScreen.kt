@@ -3,9 +3,11 @@ package com.ai.agent.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,6 +77,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,6 +99,9 @@ import com.ai.agent.tools.ToolExecutor
 import com.ai.agent.ui.components.HubNavItem
 import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.theme.MonoFontFamily
+import com.ai.agent.ui.theme.ThemeManager
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -132,6 +138,7 @@ enum class HubSection(val label: String, val icon: ImageVector, val count: Strin
 fun HubScreen(
     initialSection: HubSectionArg = HubSectionArg.SKILLS,
     onBackToChat: () -> Unit = {},
+    onOpenProviderSettings: () -> Unit = {},
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -223,7 +230,7 @@ fun HubScreen(
                     HubSection.KNOWLEDGE -> KnowledgeSection()
                     HubSection.HISTORY -> HistorySection()
                     HubSection.FILES -> FilesSection()
-                    HubSection.LLM -> LlmSection()
+                    HubSection.LLM -> LlmSection(onOpenProviderSettings = onOpenProviderSettings)
                     HubSection.VISION -> VisionSection()
                     HubSection.AUDIO -> AudioSection()
                     HubSection.PERMISSIONS -> PermissionsSection()
@@ -886,13 +893,21 @@ private fun PluginCard(plugin: PluginManager.Plugin, onToggle: (Boolean) -> Unit
 private fun KnowledgeSection() {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
+    val scope = rememberCoroutineScope()
 
     var allDocs by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
     var searchResults by remember { mutableStateOf<List<Triple<String, String, Float>>>(emptyList()) }
     var query by remember { mutableStateOf("") }
     var loaded by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableStateOf(0) }
+    var toast by remember { mutableStateOf<String?>(null) }
+    var uploading by remember { mutableStateOf(false) }
+    // Long-press → delete dialog
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
+    // Expanded card tracking — name of the card currently expanded
+    var expandedName by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(Unit, refreshKey) {
         allDocs = try {
             AgentDatabase(context).getAllKnowledge()
         } catch (e: Exception) {
@@ -914,6 +929,60 @@ private fun KnowledgeSection() {
         }
     }
 
+    // Task 39 — file upload launcher (any file type).
+    val uploadLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        uploading = true
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val resolver = context.contentResolver
+                var displayName: String? = null
+                var size = 0L
+                resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        if (nameIdx >= 0) displayName = cursor.getString(nameIdx)
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) size = cursor.getLong(sizeIdx)
+                    }
+                }
+                val name = displayName?.takeIf { it.isNotBlank() }
+                    ?: "doc-${System.currentTimeMillis()}"
+                // Read content for text-like files; otherwise save filename as placeholder.
+                val lower = name.lowercase()
+                val isText = lower.endsWith(".txt") || lower.endsWith(".md") ||
+                    lower.endsWith(".json") || lower.endsWith(".csv") ||
+                    lower.endsWith(".xml") || lower.endsWith(".yaml") || lower.endsWith(".yml")
+                val content = if (isText) {
+                    resolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader().readText()
+                    } ?: "(could not read file)"
+                } else {
+                    // PDF / image / etc — save metadata as content placeholder.
+                    val sizeStr = if (size > 0) formatFileSize(size) else "unknown size"
+                    "(binary file: $name — $sizeStr. Use readFile tool to access the file path.)"
+                }
+                AgentDatabase(context).saveKnowledge(
+                    name = name,
+                    content = content,
+                    source = "uploaded",
+                )
+                refreshKey++
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    toast = "Uploaded: $name"
+                    uploading = false
+                }
+            } catch (e: Exception) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    toast = "Upload failed: ${e.message ?: e::class.simpleName}"
+                    uploading = false
+                }
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -926,6 +995,26 @@ private fun KnowledgeSection() {
                 subtitle = "${allDocs.size} documents · ${if (loaded) "ready" else "loading…"}",
             )
         }
+
+        // Task 39 — Upload button row.
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MemoryActionButton(
+                    text = if (uploading) "Uploading…" else "↑ Upload document",
+                    emphasized = true,
+                    enabled = !uploading,
+                    onClick = { uploadLauncher.launch("*/*") },
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "txt · md · json · csv · pdf · images",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+            }
+        }
+
         item { KnowledgeSearchBar(query = query, onQueryChange = { query = it }) }
 
         if (query.trim().length >= 2) {
@@ -952,6 +1041,9 @@ private fun KnowledgeSection() {
                         content = content,
                         source = "similarity ${(score * 100).toInt()}%",
                         accent = true,
+                        expanded = expandedName == name,
+                        onToggleExpand = { expandedName = if (expandedName == name) null else name },
+                        onLongPress = { pendingDelete = name },
                     )
                 }
             }
@@ -960,7 +1052,8 @@ private fun KnowledgeSection() {
                 item {
                     PlaceholderCard(
                         title = "No knowledge yet",
-                        detail = "Save knowledge via chat — try \"remember that my wifi password is hunter2\" or \"save the project notes: …\".",
+                        detail = "Tap ↑ Upload document to add a text file (.txt / .md / .json / .csv). " +
+                            "Or save knowledge via chat — try \"remember that my wifi password is hunter2\".",
                     )
                 }
             } else if (allDocs.isEmpty()) {
@@ -976,11 +1069,52 @@ private fun KnowledgeSection() {
                 }
                 items(allDocs.size) { i ->
                     val (name, content, source) = allDocs[i]
-                    KnowledgeRow(name = name, content = content, source = source, accent = false)
+                    KnowledgeRow(
+                        name = name,
+                        content = content,
+                        source = source,
+                        accent = false,
+                        expanded = expandedName == name,
+                        onToggleExpand = { expandedName = if (expandedName == name) null else name },
+                        onLongPress = { pendingDelete = name },
+                    )
                 }
             }
         }
     }
+
+    // Long-press → delete confirmation.
+    pendingDelete?.let { name ->
+        ConfirmDialog(
+            title = "Delete \"$name\"?",
+            body = "This will permanently remove the knowledge entry. This cannot be undone.",
+            confirmLabel = "Delete",
+            onDismiss = { pendingDelete = null },
+            onConfirm = {
+                try {
+                    AgentDatabase(context).deleteKnowledge(name)
+                    refreshKey++
+                    toast = "Deleted: $name"
+                } catch (e: Exception) {
+                    toast = "Delete failed: ${e.message}"
+                }
+                pendingDelete = null
+            },
+        )
+    }
+
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            toast = null
+        }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes < 1024 -> "${bytes}B"
+    bytes < 1024 * 1024 -> "${bytes / 1024}KB"
+    else -> String.format("%.1fMB", bytes / (1024.0 * 1024.0))
 }
 
 @Composable
@@ -1026,8 +1160,17 @@ private fun KnowledgeSearchBar(query: String, onQueryChange: (String) -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun KnowledgeRow(name: String, content: String, source: String, accent: Boolean) {
+private fun KnowledgeRow(
+    name: String,
+    content: String,
+    source: String,
+    accent: Boolean,
+    expanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
+    onLongPress: () -> Unit = {},
+) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
@@ -1043,7 +1186,12 @@ private fun KnowledgeRow(name: String, content: String, source: String, accent: 
                 if (accent) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
                 RoundedCornerShape(8.dp),
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .combinedClickable(
+                onClick = onToggleExpand,
+                onLongClick = onLongPress,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .animateContentSize(),
         verticalAlignment = Alignment.Top,
     ) {
         Icon(
@@ -1054,25 +1202,37 @@ private fun KnowledgeRow(name: String, content: String, source: String, accent: 
         )
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = name,
-                color = if (accent) custom.accent else m3.onSurface,
-                fontFamily = MonoFontFamily,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = name,
+                    color = if (accent) custom.accent else m3.onSurface,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (content.length > 100) {
+                    Text(
+                        text = if (expanded) "▼" else "▶",
+                        color = custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                    )
+                }
+            }
             Spacer(Modifier.size(2.dp))
             Text(
-                text = content.take(120) + if (content.length > 120) "…" else "",
+                text = if (expanded) content else content.take(100) + if (content.length > 100) "…" else "",
                 color = custom.fg2,
                 fontSize = 11.sp,
                 lineHeight = 14.sp,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
+                overflow = if (expanded) TextOverflow.Visible else TextOverflow.Ellipsis,
             )
             Spacer(Modifier.size(4.dp))
             Text(
-                text = "source: $source · ${content.length} chars",
+                text = "source: $source · ${content.length} chars" +
+                    if (expanded) " · tap to collapse" else " · tap to expand",
                 color = custom.fg3,
                 fontFamily = MonoFontFamily,
                 fontSize = 9.sp,
@@ -1825,6 +1985,17 @@ private fun SettingsSection() {
             }
         }
         item {
+            SettingsGroup(title = "APPEARANCE") {
+                ThemeSelectorRow(
+                    current = ThemeManager.mode,
+                    onSelect = {
+                        ThemeManager.setMode(context, it)
+                        toast = "Theme: $it"
+                    },
+                )
+            }
+        }
+        item {
             AboutCard()
         }
     }
@@ -1946,6 +2117,72 @@ private fun ToggleRow(label: String, desc: String, checked: Boolean, onCheck: (B
     }
 }
 
+/**
+ * Task 41: Theme selector — System / Light / Dark.
+ * Reads + writes [ThemeManager.mode] so the rest of the app recomposes
+ * immediately when the user picks a different mode.
+ */
+@Composable
+private fun ThemeSelectorRow(
+    current: String,
+    onSelect: (String) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val options = listOf("system", "light", "dark")
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "Theme",
+            color = m3.onSurface,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Text(
+            text = "Override the system theme — applies instantly.",
+            color = custom.fg2,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(options) { opt ->
+                val active = opt == current
+                Row(
+                    modifier = Modifier
+                        .background(
+                            if (active) custom.accent.copy(alpha = 0.15f) else custom.surface2,
+                            RoundedCornerShape(14.dp),
+                        )
+                        .border(
+                            1.dp,
+                            if (active) custom.accent.copy(alpha = 0.5f) else custom.border,
+                            RoundedCornerShape(14.dp),
+                        )
+                        .clickable { onSelect(opt) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (active) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(custom.accent, CircleShape),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = opt,
+                        color = if (active) custom.accent else custom.fg2,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AboutCard() {
     val custom = LocalCustomColors.current
@@ -1982,8 +2219,8 @@ private fun AboutCard() {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        AboutRow(label = "version", value = "2.0.0")
-        AboutRow(label = "build", value = "3")
+        AboutRow(label = "version", value = "2.0.2")
+        AboutRow(label = "build", value = "2")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")
@@ -2015,7 +2252,7 @@ private fun AboutRow(label: String, value: String) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun LlmSection() {
+private fun LlmSection(onOpenProviderSettings: () -> Unit = {}) {
     val context = LocalContext.current
 
     val currentProvider = remember { AIProvider.getCurrentProvider(context) }
@@ -2034,10 +2271,66 @@ private fun LlmSection() {
                 subtitle = "active: ${currentProvider.name} · ${currentModel}",
             )
         }
+        // Task 36 wiring — "Configure" button routes to the full-screen
+        // ProviderSettingsScreen where the user can edit API key / model / endpoint.
+        item {
+            ConfigureProviderCard(onConfigure = onOpenProviderSettings)
+        }
         items(providers) { provider ->
             val isActive = provider.id == currentProvider.id
             ProviderRow(provider = provider, isActive = isActive, currentModel = currentModel)
         }
+    }
+}
+
+@Composable
+private fun ConfigureProviderCard(onConfigure: () -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+            .border(1.dp, custom.accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            .clickable(onClick = onConfigure)
+            .padding(horizontal = 12.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(custom.accent, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Outlined.Lock,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Configure provider",
+                color = m3.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = "Edit API key · model · endpoint →",
+                color = custom.fg2,
+                fontFamily = MonoFontFamily,
+                fontSize = 11.sp,
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.ArrowForward,
+            contentDescription = "Open",
+            tint = custom.accent,
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 
@@ -2225,14 +2518,32 @@ private fun MemorySection() {
 
     var memory by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var loaded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var refreshKey by remember { mutableStateOf(0) }
+    var toast by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    // Long-press → edit/delete dialog
+    var editingEntry by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Add-memory dialog
+    var showAddDialog by remember { mutableStateOf(false) }
+    // Clear-all confirmation dialog
+    var showClearDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit, refreshKey) {
         memory = try {
             AgentDatabase(context).getAllMemory()
         } catch (e: Exception) {
             emptyMap()
         }
         loaded = true
+    }
+
+    val filteredEntries = remember(memory, searchQuery) {
+        val q = searchQuery.trim().lowercase()
+        if (q.isEmpty()) memory.entries.toList()
+        else memory.entries.filter { (k, v) ->
+            k.lowercase().contains(q) || v.lowercase().contains(q)
+        }.toList()
     }
 
     LazyColumn(
@@ -2244,23 +2555,213 @@ private fun MemorySection() {
         item {
             SectionHeader(
                 title = "Memory",
-                subtitle = "${memory.size} keys · ${if (loaded) "ready" else "loading…"}",
+                subtitle = "${memory.size} keys · ${if (loaded) "ready" else "loading…"}" +
+                    if (searchQuery.isNotBlank()) " · ${filteredEntries.size} match" else "",
             )
         }
+        // Toolbar: search + Add + Clear all
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    MemorySearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
+                }
+                MemoryActionButton(
+                    text = "+ Add",
+                    emphasized = true,
+                    onClick = { showAddDialog = true },
+                )
+                MemoryActionButton(
+                    text = "Clear all",
+                    emphasized = false,
+                    enabled = memory.isNotEmpty(),
+                    onClick = { showClearDialog = true },
+                )
+            }
+        }
+
         if (memory.isEmpty() && loaded) {
-            item { PlaceholderCard(title = "No memories stored", detail = "Ask the agent to remember something — try \"remember my name is Arun\".") }
+            item { PlaceholderCard(title = "No memories stored", detail = "Ask the agent to remember something — try \"remember my name is Arun\". Or tap + Add to create one manually.") }
         } else if (memory.isEmpty()) {
             item { LoadingCard() }
+        } else if (filteredEntries.isEmpty()) {
+            item { PlaceholderCard(title = "No matches", detail = "Nothing matches \"$searchQuery\".") }
         } else {
-            items(memory.entries.toList()) { entry ->
-                MemoryRow(key = entry.key, value = entry.value)
+            items(filteredEntries, key = { it.key }) { entry ->
+                MemoryRow(
+                    key = entry.key,
+                    value = entry.value,
+                    onLongPress = { editingEntry = entry.key to entry.value },
+                )
+            }
+        }
+    }
+
+    // ---- Long-press edit / delete dialog ----
+    editingEntry?.let { (k, v) ->
+        MemoryEditDialog(
+            initialKey = k,
+            initialValue = v,
+            onDismiss = { editingEntry = null },
+            onSave = { newKey, newValue ->
+                try {
+                    // If key changed, forget the old one and remember the new
+                    if (newKey != k) AgentDatabase(context).forgetMemory(k)
+                    AgentDatabase(context).remember(newKey, newValue)
+                    refreshKey++
+                    toast = "Saved: $newKey"
+                } catch (e: Exception) {
+                    toast = "Save failed: ${e.message}"
+                }
+                editingEntry = null
+            },
+            onDelete = {
+                try {
+                    AgentDatabase(context).forgetMemory(k)
+                    refreshKey++
+                    toast = "Deleted: $k"
+                } catch (e: Exception) {
+                    toast = "Delete failed: ${e.message}"
+                }
+                editingEntry = null
+            },
+        )
+    }
+
+    // ---- Add memory dialog ----
+    if (showAddDialog) {
+        MemoryAddDialog(
+            onDismiss = { showAddDialog = false },
+            onSave = { key, value ->
+                if (key.isBlank()) {
+                    toast = "Key cannot be blank"
+                } else {
+                    try {
+                        AgentDatabase(context).remember(key.trim(), value)
+                        refreshKey++
+                        toast = "Memory saved: ${key.trim()}"
+                    } catch (e: Exception) {
+                        toast = "Save failed: ${e.message}"
+                    }
+                }
+                showAddDialog = false
+            },
+        )
+    }
+
+    // ---- Clear all confirmation ----
+    if (showClearDialog) {
+        ConfirmDialog(
+            title = "Clear all memory?",
+            body = "This will permanently delete all ${memory.size} memory entries. This cannot be undone.",
+            confirmLabel = "Clear all",
+            onDismiss = { showClearDialog = false },
+            onConfirm = {
+                try {
+                    AgentDatabase(context).clearMemory()
+                    refreshKey++
+                    toast = "All memory cleared"
+                } catch (e: Exception) {
+                    toast = "Clear failed: ${e.message}"
+                }
+                showClearDialog = false
+            },
+        )
+    }
+
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            toast = null
+        }
+    }
+}
+
+@Composable
+private fun MemorySearchBar(query: String, onQueryChange: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.surface2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Search, contentDescription = null, tint = custom.fg3, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(6.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(text = "Search memory…", color = custom.fg3, fontSize = 12.sp)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = m3.onSurface,
+                    fontSize = 12.sp,
+                ),
+                cursorBrush = SolidColor(custom.accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(20.dp)) {
+                Icon(Icons.Outlined.Refresh, contentDescription = "Clear", tint = custom.fg3, modifier = Modifier.size(12.dp))
             }
         }
     }
 }
 
 @Composable
-private fun MemoryRow(key: String, value: String) {
+private fun MemoryActionButton(
+    text: String,
+    emphasized: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    Row(
+        modifier = Modifier
+            .background(
+                when {
+                    !enabled -> custom.surface3
+                    emphasized -> custom.accent
+                    else -> custom.surface2
+                },
+                RoundedCornerShape(8.dp),
+            )
+            .border(
+                1.dp,
+                when {
+                    !enabled -> custom.border
+                    emphasized -> custom.accent
+                    else -> custom.border
+                },
+                RoundedCornerShape(8.dp),
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            color = when {
+                !enabled -> custom.fg3
+                emphasized -> Color.White
+                else -> custom.fg2
+            },
+            fontFamily = MonoFontFamily,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun MemoryRow(key: String, value: String, onLongPress: () -> Unit) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
@@ -2269,6 +2770,10 @@ private fun MemoryRow(key: String, value: String) {
             .fillMaxWidth()
             .background(custom.ink2, RoundedCornerShape(8.dp))
             .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onLongPress,
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -2293,6 +2798,206 @@ private fun MemoryRow(key: String, value: String) {
                 color = m3.onSurface,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = "${value.length} chars · long-press to edit",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemoryEditDialog(
+    initialKey: String,
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onSave: (key: String, value: String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    var key by remember { mutableStateOf(initialKey) }
+    var value by remember { mutableStateOf(initialValue) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = m3.surface,
+        title = {
+            Text(
+                text = "Edit Memory",
+                color = m3.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("KEY", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                DialogTextField(value = key, onValueChange = { key = it }, placeholder = "memory_key")
+                Spacer(Modifier.height(4.dp))
+                Text("VALUE", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                DialogTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    placeholder = "value",
+                    singleLine = false,
+                    minLines = 3,
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.TextButton(onClick = onDelete) {
+                    Text("Delete", color = custom.error, fontWeight = FontWeight.Medium)
+                }
+                androidx.compose.material3.TextButton(onClick = { onSave(key, value) }) {
+                    Text("Save", color = custom.accent, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = custom.fg2)
+            }
+        },
+    )
+}
+
+@Composable
+private fun MemoryAddDialog(
+    onDismiss: () -> Unit,
+    onSave: (key: String, value: String) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    var key by remember { mutableStateOf("") }
+    var value by remember { mutableStateOf("") }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = m3.surface,
+        title = {
+            Text(
+                text = "Add Memory",
+                color = m3.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("KEY", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                DialogTextField(value = key, onValueChange = { key = it }, placeholder = "e.g. user_name")
+                Spacer(Modifier.height(4.dp))
+                Text("VALUE", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                DialogTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    placeholder = "e.g. Arun",
+                    singleLine = false,
+                    minLines = 2,
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onSave(key, value) }) {
+                Text("Save", color = custom.accent, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = custom.fg2)
+            }
+        },
+    )
+}
+
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    body: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = m3.surface,
+        title = {
+            Text(
+                text = title,
+                color = m3.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
+        },
+        text = {
+            Text(
+                text = body,
+                color = custom.fg2,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = custom.error, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = custom.fg2)
+            }
+        },
+    )
+}
+
+@Composable
+private fun DialogTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.surface2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(modifier = Modifier.weight(1f)) {
+            if (value.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    color = custom.fg3,
+                    fontSize = 12.sp,
+                    fontFamily = MonoFontFamily,
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = singleLine,
+                minLines = minLines,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = m3.onSurface,
+                    fontSize = 12.sp,
+                ),
+                cursorBrush = SolidColor(custom.accent),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

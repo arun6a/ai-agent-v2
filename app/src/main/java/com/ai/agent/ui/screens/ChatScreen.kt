@@ -9,11 +9,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,9 +34,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
@@ -66,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -164,6 +171,29 @@ fun ChatScreen(
         }
     }
 
+    // Task 40 — show a toast when the VM signals one (e.g. skill saved).
+    LaunchedEffect(state.toast) {
+        state.toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearToast()
+        }
+    }
+
+    // Task 40 — Save-as-skill dialog state.
+    var showSaveSkillDialog by remember { mutableStateOf(false) }
+    var skillNameField by remember { mutableStateOf("") }
+    var skillDescriptionField by remember { mutableStateOf("") }
+    LaunchedEffect(state.showSaveSkillPrompt) {
+        // The prompt boolean lives in VM state — but the editable dialog fields
+        // are pure UI, so they live in local state. When the user opens the
+        // dialog, prefill name from the VM's auto-derived suggestion.
+        if (state.showSaveSkillPrompt && !showSaveSkillDialog) {
+            skillNameField = state.lastWorkflowName
+            skillDescriptionField = ""
+            showSaveSkillDialog = true
+        }
+    }
+
     Scaffold(
         containerColor = custom.canvas,
         topBar = {
@@ -222,12 +252,16 @@ fun ChatScreen(
                         count = state.messages.size,
                         key = { state.messages[it].id },
                     ) { i ->
+                        // Task 37 — message slide-in animation: animateItem() (Compose
+                        // Foundation 1.7+) automatically animates insert / move / remove
+                        // for items keyed by id, so new messages slide in from the right.
                         val msg = state.messages[i]
                         val isLastAi = !msg.isUser && i == state.messages.lastIndex
                         ChatMessageItem(
                             message = msg,
                             isLastAi = isLastAi,
                             thinking = state.isThinking,
+                            modifier = Modifier.animateItem(),
                         )
                     }
 
@@ -259,7 +293,36 @@ fun ChatScreen(
                     onStop = { viewModel.stopAgent() },
                 )
             }
+
+            // Task 40 — Save-skill prompt card (bottom-anchored, dismissable).
+            if (state.showSaveSkillPrompt && !showSaveSkillDialog) {
+                SaveSkillPromptCard(
+                    skillName = state.lastWorkflowName,
+                    onSave = { showSaveSkillDialog = true },
+                    onDismiss = { viewModel.dismissSaveSkillPrompt() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 12.dp, vertical = 80.dp),
+                )
+            }
         }
+    }
+
+    // Task 40 — Save-skill dialog (editable name + description, read-only steps).
+    if (showSaveSkillDialog) {
+        SaveSkillDialog(
+            initialName = skillNameField,
+            initialDescription = skillDescriptionField,
+            stepsPreview = state.lastWorkflowSteps,
+            onDismiss = {
+                showSaveSkillDialog = false
+                viewModel.dismissSaveSkillPrompt()
+            },
+            onConfirm = { name, desc ->
+                viewModel.saveWorkflowAsSkill(name, desc)
+                showSaveSkillDialog = false
+            },
+        )
     }
 
     // Toast on error (separate from inline error bubble).
@@ -484,20 +547,33 @@ private fun ProviderChip(provider: String, model: String) {
 
 @Composable
 private fun PulsingDot(active: Boolean, color: Color) {
+    // Task 37 — status dot pulse: scale 1.0 → 1.2 → 1.0 + alpha 1.0 → 0.6 → 1.0
+    // over 1.5s when thinking; steady when ready.
     val transition = rememberInfiniteTransition(label = "status-pulse")
     val alpha by transition.animateFloat(
-        initialValue = if (active) 0.3f else 1f,
+        initialValue = if (active) 0.6f else 1f,
         targetValue = 1f,
         animationSpec = if (active) {
-            infiniteRepeatable(animation = tween(700), repeatMode = RepeatMode.Reverse)
+            infiniteRepeatable(animation = tween(1500), repeatMode = RepeatMode.Reverse)
         } else {
             infiniteRepeatable(animation = tween(1200), repeatMode = RepeatMode.Restart)
         },
-        label = "pulse",
+        label = "pulse-alpha",
+    )
+    val scale by transition.animateFloat(
+        initialValue = if (active) 1f else 1f,
+        targetValue = if (active) 1.2f else 1f,
+        animationSpec = if (active) {
+            infiniteRepeatable(animation = tween(1500), repeatMode = RepeatMode.Reverse)
+        } else {
+            infiniteRepeatable(animation = tween(1200), repeatMode = RepeatMode.Restart)
+        },
+        label = "pulse-scale",
     )
     Box(
         modifier = Modifier
             .size(6.dp)
+            .scale(if (active) scale else 1f)
             .alpha(if (active) alpha else 1f)
             .background(color, CircleShape),
     )
@@ -778,12 +854,21 @@ private fun ChatInputBar(
 
         Spacer(Modifier.width(4.dp))
 
-        // Send button (round, emerald, with shadow)
+        // Send button (round, emerald, with shadow) — Task 37: press-scale feedback.
+        val sendInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+        val sendPressed by sendInteraction.collectIsPressedAsState()
+        val sendScale by animateFloatAsState(
+            targetValue = if (sendPressed) 0.92f else 1f,
+            animationSpec = tween(durationMillis = 120, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+            label = "send-press-scale",
+        )
         IconButton(
             onClick = onSend,
             enabled = text.isNotBlank(),
+            interactionSource = sendInteraction,
             modifier = Modifier
                 .size(40.dp)
+                .scale(sendScale)
                 .shadow(
                     elevation = if (text.isNotBlank()) 8.dp else 0.dp,
                     shape = CircleShape,
@@ -804,7 +889,7 @@ private fun ChatInputBar(
 }
 
 // ---------------------------------------------------------------------------
-// Status footer — "v2.0.0 · 47/14400 calls · 847ms avg"
+// Status footer — "v2.0.2 · 47/14400 calls · 847ms avg"
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -822,7 +907,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.0",
+            text = "v2.0.2",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,
@@ -863,6 +948,200 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
             fontSize = 11.sp,
         )
     }
+}
+
+// ---------------------------------------------------------------------------
+// Task 40 — Save-skill prompt card + dialog
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun SaveSkillPromptCard(
+    skillName: String,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(m3.surface, RoundedCornerShape(12.dp))
+            .border(1.dp, custom.accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .shadow(elevation = 6.dp, shape = RoundedCornerShape(12.dp), clip = false)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "💾",
+            color = custom.accent,
+            fontSize = 18.sp,
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Save as skill?",
+                color = m3.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Capture this workflow as \"$skillName\"",
+                color = custom.fg2,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Row(
+            modifier = Modifier
+                .background(custom.accent, RoundedCornerShape(8.dp))
+                .clickable(onClick = onSave)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Save",
+                color = Color.White,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Dismiss",
+                tint = custom.fg3,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SaveSkillDialog(
+    initialName: String,
+    initialDescription: String,
+    stepsPreview: String,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, description: String) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    var name by remember { mutableStateOf(initialName) }
+    var description by remember { mutableStateOf(initialDescription) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = m3.surface,
+        title = {
+            Text(
+                text = "Save as Skill",
+                color = m3.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("NAME", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.surface2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (name.isEmpty()) {
+                            Text(text = "skill_name", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 12.sp)
+                        }
+                        BasicTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = m3.onSurface,
+                                fontSize = 12.sp,
+                                fontFamily = MonoFontFamily,
+                            ),
+                            cursorBrush = SolidColor(custom.accent),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("DESCRIPTION", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.surface2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (description.isEmpty()) {
+                            Text(text = "What does this skill do?", color = custom.fg3, fontSize = 12.sp)
+                        }
+                        BasicTextField(
+                            value = description,
+                            onValueChange = { description = it },
+                            singleLine = false,
+                            minLines = 2,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = m3.onSurface,
+                                fontSize = 12.sp,
+                            ),
+                            cursorBrush = SolidColor(custom.accent),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("STEPS PREVIEW (read-only)", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 180.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(custom.ink2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = stepsPreview.take(800) + if (stepsPreview.length > 800) "\n…" else "",
+                        color = custom.fg2,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { onConfirm(name, description) },
+                enabled = name.isNotBlank(),
+            ) {
+                Text(
+                    text = "Confirm save",
+                    color = if (name.isNotBlank()) custom.accent else custom.fg3,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text("Cancel", color = custom.fg2)
+            }
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------

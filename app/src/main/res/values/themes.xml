@@ -21,4 +21,12 @@
         <item name="android:windowContentOverlay">@null</item>
     </style>
 
+    <!-- ====== Splash theme ====== -->
+    <!-- Same as the main theme but explicitly uses the canvas background so the
+         splash screen matches the SplashScreen composable's background exactly.
+         Used by the Activity while the SplashScreen composable renders. -->
+    <style name="Theme.AIAgentV2.Splash" parent="Theme.AIAgentV2">
+        <item name="android:windowBackground">@color/canvas_light</item>
+    </style>
+
 </resources>

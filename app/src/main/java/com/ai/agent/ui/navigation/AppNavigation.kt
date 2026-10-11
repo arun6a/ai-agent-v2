@@ -1,5 +1,11 @@
 package com.ai.agent.ui.navigation
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,18 +27,24 @@ import com.ai.agent.ui.screens.BrowserScreen
 import com.ai.agent.ui.screens.ChatScreen
 import com.ai.agent.ui.screens.HubScreen
 import com.ai.agent.ui.screens.HubSectionArg
+import com.ai.agent.ui.screens.OnboardingScreen
+import com.ai.agent.ui.screens.ProviderSettingsScreen
+import com.ai.agent.ui.screens.SplashScreen
 
 // ============================================================================
 // AppNavigation — root nav graph for the v2 app.
 // ----------------------------------------------------------------------------
 // Routes:
-//   chat      → ChatScreen
-//   browser   → BrowserScreen (placeholder)
-//   hub       → HubScreen (default section: Skills)
-//   hub/settings → HubScreen (default section: Settings)
+//   splash            → SplashScreen (cold start; auto-navigates after 1.5s)
+//   onboarding        → OnboardingScreen (3-step first-run flow)
+//   chat              → ChatScreen
+//   browser           → BrowserScreen
+//   hub               → HubScreen (default section: Skills)
+//   hub/settings      → HubScreen (default section: Settings)
+//   provider_settings → ProviderSettingsScreen (full-screen provider manager)
 //
-// The Chat tab passes an onOpenHub callback that navigates to hub,
-// so the top-bar hub button is wired end-to-end.
+// The Splash route is the start destination. After ~1.5s the splash composable
+// decides whether to send the user to onboarding or straight to chat.
 // ============================================================================
 
 @Composable
@@ -43,23 +55,31 @@ fun AppNavigation() {
     val backstack by nav.currentBackStackEntryAsState()
     val currentRoute = backstack?.destination?.route
 
+    // Bottom bar is shown only on the four primary tabs — not on splash /
+    // onboarding / provider_settings (which are full-screen flows).
+    val showBottomBar = currentRoute in setOf(
+        Routes.CHAT, Routes.BROWSER, Routes.HUB, Routes.HUB_SETTINGS,
+    )
+
     Scaffold(
         containerColor = custom.canvas,
         bottomBar = {
-            BottomNav(
-                currentRoute = currentRoute,
-                onNavigate = { route ->
-                    // Don't re-navigate to the same destination.
-                    if (route != currentRoute) {
-                        nav.navigate(route) {
-                            // Pop back to the start destination to avoid a long stack.
-                            popUpTo(nav.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+            if (showBottomBar) {
+                BottomNav(
+                    currentRoute = currentRoute,
+                    onNavigate = { route ->
+                        // Don't re-navigate to the same destination.
+                        if (route != currentRoute) {
+                            nav.navigate(route) {
+                                // Pop back to the start destination to avoid a long stack.
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         },
     ) { innerPadding: PaddingValues ->
         Box(
@@ -70,9 +90,54 @@ fun AppNavigation() {
         ) {
             NavHost(
                 navController = nav,
-                startDestination = Routes.CHAT,
+                startDestination = Routes.SPLASH,
             ) {
-                composable(Routes.CHAT) {
+                // ---- Splash ----
+                composable(
+                    route = Routes.SPLASH,
+                    enterTransition = { fadeIn(tween(200)) },
+                    exitTransition = { fadeOut(tween(200)) },
+                ) {
+                    SplashScreen(
+                        onFinished = { goToOnboarding ->
+                            if (goToOnboarding) {
+                                nav.navigate(Routes.ONBOARDING) {
+                                    popUpTo(Routes.SPLASH) { inclusive = true }
+                                }
+                            } else {
+                                nav.navigate(Routes.CHAT) {
+                                    popUpTo(Routes.SPLASH) { inclusive = true }
+                                }
+                            }
+                        },
+                    )
+                }
+
+                // ---- Onboarding ----
+                composable(
+                    route = Routes.ONBOARDING,
+                    enterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 4 } },
+                    exitTransition = { fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
+                    popExitTransition = { fadeOut(tween(200)) },
+                ) {
+                    OnboardingScreen(
+                        onFinished = {
+                            nav.navigate(Routes.CHAT) {
+                                popUpTo(Routes.ONBOARDING) { inclusive = true }
+                            }
+                        },
+                    )
+                }
+
+                // ---- Chat ----
+                composable(
+                    route = Routes.CHAT,
+                    enterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 4 } },
+                    exitTransition = { fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
+                    popExitTransition = { fadeOut(tween(200)) },
+                ) {
                     ChatScreen(
                         onOpenHub = {
                             nav.navigate(Routes.HUB) {
@@ -83,14 +148,56 @@ fun AppNavigation() {
                         },
                     )
                 }
-                composable(Routes.BROWSER) {
+
+                // ---- Browser ----
+                composable(
+                    route = Routes.BROWSER,
+                    enterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 4 } },
+                    exitTransition = { fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
+                    popExitTransition = { fadeOut(tween(200)) },
+                ) {
                     BrowserScreen()
                 }
-                composable(Routes.HUB) {
-                    HubScreen(initialSection = HubSectionArg.SKILLS)
+
+                // ---- Hub ----
+                composable(
+                    route = Routes.HUB,
+                    enterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 4 } },
+                    exitTransition = { fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
+                    popExitTransition = { fadeOut(tween(200)) },
+                ) {
+                    HubScreen(
+                        initialSection = HubSectionArg.SKILLS,
+                        onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
+                    )
                 }
-                composable(Routes.HUB_SETTINGS) {
-                    HubScreen(initialSection = HubSectionArg.SETTINGS)
+
+                composable(
+                    route = Routes.HUB_SETTINGS,
+                    enterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 4 } },
+                    exitTransition = { fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
+                    popExitTransition = { fadeOut(tween(200)) },
+                ) {
+                    HubScreen(
+                        initialSection = HubSectionArg.SETTINGS,
+                        onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
+                    )
+                }
+
+                // ---- Provider Settings ----
+                composable(
+                    route = Routes.PROVIDER_SETTINGS,
+                    enterTransition = { slideInVertically(tween(300)) { it / 3 } + fadeIn(tween(300)) },
+                    exitTransition = { slideOutVertically(tween(250)) { it / 3 } + fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) },
+                    popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
+                ) {
+                    ProviderSettingsScreen(
+                        onBack = { nav.popBackStack() },
+                    )
                 }
             }
         }

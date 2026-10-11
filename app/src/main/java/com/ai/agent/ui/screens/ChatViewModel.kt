@@ -82,6 +82,14 @@ data class ChatUiState(
     val stopRequested: Boolean = false,
     /** Files staged to send with the next message. */
     val attachments: List<Attachment> = emptyList(),
+    /** Task 40 — prompt the user to save the just-finished workflow as a skill. */
+    val showSaveSkillPrompt: Boolean = false,
+    /** Auto-derived skill name (lowercase, spaces → underscores, truncated to 30 chars). */
+    val lastWorkflowName: String = "",
+    /** The accumulated workLog string from the just-finished run. */
+    val lastWorkflowSteps: String = "",
+    /** Toast message for the UI to show (e.g. on skill save). */
+    val toast: String? = null,
 )
 
 class ChatViewModel(
@@ -226,6 +234,103 @@ class ChatViewModel(
 
     fun clearAttachments() {
         _state.update { it.copy(attachments = emptyList()) }
+    }
+
+    // ---- Task 40: Skill creator from chat ----
+
+    /**
+     * After a successful agent loop with `iteration >= 3` and a non-empty workLog,
+     * prompt the user to save the workflow as a reusable skill.
+     *
+     * Skill name is auto-derived from the first user message: lowercase, spaces →
+     * underscores, only [a-z0-9_] kept, truncated to 30 chars.
+     */
+    private fun maybePromptSaveSkill(userMessage: String, workLog: String, iteration: Int) {
+        if (iteration < 3) return
+        if (workLog.isBlank()) return
+        val rawName = userMessage.lowercase()
+            .replace(" ", "_")
+            .replace(Regex("[^a-z0-9_]"), "")
+            .take(30)
+            .trim('_')
+        val skillName = if (rawName.isNotBlank()) rawName else "workflow_${System.currentTimeMillis()}"
+        _state.update {
+            it.copy(
+                showSaveSkillPrompt = true,
+                lastWorkflowName = skillName,
+                lastWorkflowSteps = workLog.take(2000),
+            )
+        }
+        Log.i(TAG, "Prompting user to save skill: $skillName (${workLog.length} chars, $iteration iterations)")
+    }
+
+    /** Dismiss the save-skill prompt without saving. */
+    fun dismissSaveSkillPrompt() {
+        _state.update { it.copy(showSaveSkillPrompt = false) }
+    }
+
+    /**
+     * Persist a workflow as a Markdown skill file in
+     * `/storage/emulated/0/Documents/ai-workspace/skills/{name}.md` so that
+     * SkillManager.loadSkills() picks it up next time.
+     *
+     * SkillManager itself is frozen and exposes no save method, so we write
+     * the .md file directly using its documented on-disk layout (YAML
+     * frontmatter + Markdown body).
+     */
+    fun saveWorkflowAsSkill(name: String, description: String) {
+        val steps = _state.value.lastWorkflowSteps
+        if (steps.isBlank()) {
+            _state.update { it.copy(toast = "Nothing to save — workflow log is empty.") }
+            return
+        }
+        val safeName = name.lowercase()
+            .replace(" ", "_")
+            .replace(Regex("[^a-z0-9_]"), "")
+            .take(40)
+            .trim('_')
+            .ifBlank { "workflow_${System.currentTimeMillis()}" }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val skillsDir = java.io.File(USER_SKILLS_DIR)
+                if (!skillsDir.exists()) skillsDir.mkdirs()
+                val file = java.io.File(skillsDir, "$safeName.md")
+                val desc = description.ifBlank { "Workflow captured from chat: $safeName" }
+                val frontmatter = buildString {
+                    append("---\n")
+                    append("name: $safeName\n")
+                    append("description: ${desc.replace("\"", "'").replace("\n", " ").take(160)}\n")
+                    append("trigger: ${safeName.replace("_", " ")}\n")
+                    append("tools_used: []\n")
+                    append("version: 1.0\n")
+                    append("---\n\n")
+                }
+                val body = "# Workflow: $safeName\n\n" +
+                    "Captured from a successful agent run.\n\n" +
+                    "## Steps\n\n```\n$steps\n```\n"
+                file.writeText(frontmatter + body)
+                Log.i(TAG, "Saved skill file: ${file.absolutePath}")
+                _state.update {
+                    it.copy(
+                        showSaveSkillPrompt = false,
+                        toast = "Skill saved: $safeName",
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save skill", e)
+                _state.update {
+                    it.copy(
+                        showSaveSkillPrompt = false,
+                        toast = "Save failed: ${e.message ?: e::class.simpleName}",
+                    )
+                }
+            }
+        }
+    }
+
+    /** Clear the toast after the UI has shown it. */
+    fun clearToast() {
+        _state.update { it.copy(toast = null) }
     }
 
     // ---- the agent loop (ported from v1 MainActivity.runAgentLoop) ----
@@ -457,6 +562,12 @@ class ChatViewModel(
             database.logAction("Processed: $userMessage → $finalReply")
             voiceManager.speak(finalReply.take(500), "en")
 
+            // Task 40 — prompt the user to save this workflow as a skill if it was
+            // a sufficiently complex run (3+ iterations with a non-empty workLog).
+            if (iteration >= 3 && workLog.isNotBlank() && finalReply.isNotEmpty()) {
+                maybePromptSaveSkill(userMessage, workLog.toString(), iteration)
+            }
+
         } catch (e: CancellationException) {
             // User pressed Stop or sent a new message — not a real error.
             if (!_state.value.stopRequested) {
@@ -566,6 +677,8 @@ class ChatViewModel(
         private const val MAX_REPEATED_TOOLS = 3
         private const val MAX_CONVERSATION_CHARS = 8000
         const val ATTACHMENTS_DIR = "/storage/emulated/0/Documents/ai-workspace/attachments"
+        /** Task 40 — user-created skills live here so SkillManager picks them up. */
+        const val USER_SKILLS_DIR = "/storage/emulated/0/Documents/ai-workspace/skills"
     }
 }
 
