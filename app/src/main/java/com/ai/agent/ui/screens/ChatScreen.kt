@@ -1,6 +1,12 @@
 package com.ai.agent.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.speech.RecognizerIntent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -21,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -28,12 +35,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,6 +109,54 @@ fun ChatScreen(
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    // ===== Voice input launcher (Google Voice Intent) =====
+    // Modern Compose-native API — no onActivityResult, no MainActivity changes.
+    val voiceLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val results = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            val spoken = results?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                // Append (with separating space) so the user can keep editing afterwards.
+                input = if (input.isBlank()) spoken else "$input $spoken".trim()
+            }
+        } else if (result.resultCode != Activity.RESULT_CANCELED) {
+            Toast.makeText(context, "Voice input failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun launchVoice() {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                )
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now…")
+            }
+            voiceLauncher.launch(intent)
+        } catch (e: Exception) {
+            Toast.makeText(
+                context,
+                "Voice input unavailable: ${e.message ?: "no recognizer"}",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    // ===== File attachment launcher (any file type) =====
+    val attachLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.addAttachment(uri)
+        }
+    }
+
     // Auto-scroll to the latest message when the list grows.
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -114,6 +177,13 @@ fun ChatScreen(
         },
         bottomBar = {
             Column {
+                // Attachment chips row — visible only when attachments are staged.
+                if (state.attachments.isNotEmpty()) {
+                    AttachmentsBar(
+                        attachments = state.attachments,
+                        onRemove = { viewModel.removeAttachment(it) },
+                    )
+                }
                 StatusFooter(apiCalls = state.apiCallCount, context = context)
                 ChatInputBar(
                     text = input,
@@ -123,9 +193,9 @@ fun ChatScreen(
                         input = ""
                         viewModel.sendMessage(text)
                     },
-                    onVoice = {
-                        Toast.makeText(context, "voice input", Toast.LENGTH_SHORT).show()
-                    },
+                    onVoice = { launchVoice() },
+                    onAttach = { attachLauncher.launch("*/*") },
+                    attachmentCount = state.attachments.size,
                 )
             }
         },
@@ -199,6 +269,91 @@ fun ChatScreen(
             viewModel.dismissError()
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Attachments bar — horizontal scroll of staged attachment chips above input
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun AttachmentsBar(
+    attachments: List<Attachment>,
+    onRemove: (Attachment) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.canvas)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        items(attachments, key = { it.path }) { att ->
+            Row(
+                modifier = Modifier
+                    .background(custom.surface2, RoundedCornerShape(14.dp))
+                    .border(1.dp, custom.border, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = iconForAttachment(att.name, att.mimeType),
+                    contentDescription = null,
+                    tint = custom.accent,
+                    modifier = Modifier.size(12.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = att.name.take(20) + if (att.name.length > 20) "…" else "",
+                    color = m3.onSurface,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = formatSize(att.sizeBytes),
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                )
+                Spacer(Modifier.width(4.dp))
+                IconButton(
+                    onClick = { onRemove(att) },
+                    modifier = Modifier.size(16.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Remove",
+                        tint = custom.fg3,
+                        modifier = Modifier.size(10.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun iconForAttachment(name: String, mime: String): androidx.compose.ui.graphics.vector.ImageVector {
+    val n = name.lowercase()
+    val m = mime.lowercase()
+    return when {
+        m.startsWith("image/") || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") ||
+            n.endsWith(".gif") || n.endsWith(".webp") -> Icons.Outlined.Image
+        m.startsWith("audio/") || n.endsWith(".mp3") || n.endsWith(".wav") || n.endsWith(".m4a") ->
+            Icons.Outlined.MusicNote
+        n.endsWith(".pdf") -> Icons.Outlined.PictureAsPdf
+        n.endsWith(".txt") || n.endsWith(".md") || n.endsWith(".json") || n.endsWith(".csv") ->
+            Icons.Outlined.Description
+        else -> Icons.Outlined.InsertDriveFile
+    }
+}
+
+private fun formatSize(bytes: Long): String = when {
+    bytes < 1024 -> "${bytes}B"
+    bytes < 1024 * 1024 -> "${bytes / 1024}KB"
+    else -> "${bytes / (1024 * 1024)}MB"
 }
 
 // ---------------------------------------------------------------------------
@@ -527,6 +682,8 @@ private fun ChatInputBar(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onVoice: () -> Unit,
+    onAttach: () -> Unit,
+    attachmentCount: Int = 0,
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -586,16 +743,37 @@ private fun ChatInputBar(
 
         Spacer(Modifier.width(8.dp))
 
-        // Attach (paperclip) — placeholder
+        // Attach (paperclip) — wires GetContent launcher.
         IconButton(
-            onClick = { /* placeholder — file attachment later */ },
+            onClick = onAttach,
             modifier = Modifier.size(40.dp),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.AttachFile,
-                contentDescription = "Attach",
-                tint = custom.fg3,
-            )
+            if (attachmentCount > 0) {
+                BadgedBox(
+                    badge = {
+                        Badge {
+                            Text(
+                                text = attachmentCount.toString(),
+                                color = Color.White,
+                                fontFamily = MonoFontFamily,
+                                fontSize = 9.sp,
+                            )
+                        }
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AttachFile,
+                        contentDescription = "Attach",
+                        tint = custom.accent,
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.AttachFile,
+                    contentDescription = "Attach",
+                    tint = custom.fg3,
+                )
+            }
         }
 
         Spacer(Modifier.width(4.dp))

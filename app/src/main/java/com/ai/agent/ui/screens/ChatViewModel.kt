@@ -1,6 +1,8 @@
 package com.ai.agent.ui.screens
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -20,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 // ============================================================================
@@ -58,6 +61,14 @@ data class ToolCallDisplay(
 
 enum class MessageStatus { IDLE, THINKING, EXECUTING, SUCCESS, ERROR }
 
+/** A file the user has staged to send with the next message. */
+data class Attachment(
+    val name: String,
+    val path: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+)
+
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val isThinking: Boolean = false,
@@ -69,6 +80,8 @@ data class ChatUiState(
     val modelName: String = "",
     val error: String? = null,
     val stopRequested: Boolean = false,
+    /** Files staged to send with the next message. */
+    val attachments: List<Attachment> = emptyList(),
 )
 
 class ChatViewModel(
@@ -104,7 +117,17 @@ class ChatViewModel(
         // Cancel any in-flight loop (re-entrant send = stop previous task).
         loopJob?.cancel()
 
-        // Persist + display the user message.
+        // Build the effective message text — append attachment metadata so the LLM
+        // knows what files the user has shared.
+        val attachments = _state.value.attachments
+        val effectiveMessage = if (attachments.isEmpty()) {
+            trimmed
+        } else {
+            val attachmentList = attachments.joinToString(", ") { it.name }
+            "$trimmed\n\n[Attached files: $attachmentList — use readFile/listFiles tools to access them from /storage/emulated/0/Documents/ai-workspace/attachments/]"
+        }
+
+        // Persist + display the user message (display the trimmed text, not the augmented one).
         database.addConversation("user", trimmed)
         val userMsg = ChatMessage(text = trimmed, isUser = true, status = MessageStatus.IDLE)
         _state.update { s ->
@@ -116,10 +139,12 @@ class ChatViewModel(
                 apiCallCount = 0,
                 isThinking = true,
                 isExecuting = false,
+                // Clear staged attachments — they're now consumed.
+                attachments = emptyList(),
             )
         }
 
-        loopJob = viewModelScope.launch { runAgentLoop(trimmed) }
+        loopJob = viewModelScope.launch { runAgentLoop(effectiveMessage) }
     }
 
     fun stopAgent() {
@@ -140,6 +165,67 @@ class ChatViewModel(
 
     fun dismissError() {
         _state.update { it.copy(error = null) }
+    }
+
+    // ---- Attachments ----
+
+    /**
+     * Copy a content:// Uri into `/storage/emulated/0/Documents/ai-workspace/attachments/`
+     * and stage it as an Attachment for the next message.
+     *
+     * Runs on Dispatchers.IO so we don't block the UI thread on large files.
+     */
+    fun addAttachment(uri: Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val resolver = context.contentResolver
+                var name: String? = null
+                var size: Long = 0L
+                resolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        if (nameIdx >= 0) name = cursor.getString(nameIdx)
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) size = cursor.getLong(sizeIdx)
+                    }
+                }
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                val finalName = name?.takeIf { it.isNotBlank() }
+                    ?: "attachment-${System.currentTimeMillis()}"
+                val attachmentsDir = File(ATTACHMENTS_DIR)
+                if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
+                val destFile = File(attachmentsDir, finalName)
+                resolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                } ?: run {
+                    _state.update { it.copy(error = "Could not open file stream") }
+                    return@launch
+                }
+                if (size == 0L) size = destFile.length()
+                val attachment = Attachment(
+                    name = finalName,
+                    path = destFile.absolutePath,
+                    mimeType = mime,
+                    sizeBytes = size,
+                )
+                _state.update { s ->
+                    s.copy(attachments = s.attachments + attachment)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to stage attachment", e)
+                _state.update { it.copy(error = "Attachment failed: ${e.message ?: e::class.simpleName}") }
+            }
+        }
+    }
+
+    fun removeAttachment(attachment: Attachment) {
+        _state.update { s ->
+            s.copy(attachments = s.attachments.filterNot { it.path == attachment.path })
+        }
+    }
+
+    fun clearAttachments() {
+        _state.update { it.copy(attachments = emptyList()) }
     }
 
     // ---- the agent loop (ported from v1 MainActivity.runAgentLoop) ----
@@ -479,6 +565,7 @@ class ChatViewModel(
         private const val MAX_ITERATIONS = 50
         private const val MAX_REPEATED_TOOLS = 3
         private const val MAX_CONVERSATION_CHARS = 8000
+        const val ATTACHMENTS_DIR = "/storage/emulated/0/Documents/ai-workspace/attachments"
     }
 }
 

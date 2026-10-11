@@ -2,8 +2,10 @@ package com.ai.agent.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,29 +19,56 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Rule
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,27 +79,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.ApiUsageTracker
+import com.ai.agent.llm.PluginManager
 import com.ai.agent.skills.SkillManager
 import com.ai.agent.storage.AgentDatabase
+import com.ai.agent.tools.ToolExecutor
 import com.ai.agent.ui.components.HubNavItem
 import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.theme.MonoFontFamily
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // ============================================================================
 // HubScreen — tablet/desktop-style dashboard with side nav + content area.
 // ----------------------------------------------------------------------------
 // Mirrors `design/03-hub-screen.html`:
 //   - Side nav 200dp wide: 13 sections + count badges
-//   - Content area: 4 functional sections (Skills, LLM, Permissions, Memory)
-//     + simple placeholders for the others
+//   - Content area: 13 functional sections (Skills, Rules, Tools, Plugins,
+//     Memory, Knowledge, History, Files, LLM, Vision, Audio, Permissions,
+//     Settings) — all backed by real data from the frozen backend
 //   - Status footer: agent ready · API calls today · success rate
 // ============================================================================
 
@@ -178,10 +216,18 @@ fun HubScreen(
             ) {
                 when (selected) {
                     HubSection.SKILLS -> SkillsSection()
-                    HubSection.LLM -> LlmSection()
-                    HubSection.PERMISSIONS -> PermissionsSection()
+                    HubSection.RULES -> RulesSection()
+                    HubSection.TOOLS -> ToolsSection()
+                    HubSection.PLUGINS -> PluginsSection()
                     HubSection.MEMORY -> MemorySection()
-                    else -> PlaceholderSection(section = selected)
+                    HubSection.KNOWLEDGE -> KnowledgeSection()
+                    HubSection.HISTORY -> HistorySection()
+                    HubSection.FILES -> FilesSection()
+                    HubSection.LLM -> LlmSection()
+                    HubSection.VISION -> VisionSection()
+                    HubSection.AUDIO -> AudioSection()
+                    HubSection.PERMISSIONS -> PermissionsSection()
+                    HubSection.SETTINGS -> SettingsSection()
                 }
             }
 
@@ -196,7 +242,6 @@ fun HubScreen(
 // ---------------------------------------------------------------------------
 
 enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HISTORY, FILES, LLM, VISION, AUDIO, PERMISSIONS, SETTINGS
-
     ;
     fun toHubSection(): HubSection = when (this) {
         HubSectionArg.SKILLS -> HubSection.SKILLS
@@ -221,8 +266,6 @@ enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HIS
 
 @Composable
 private fun SkillsSection() {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
     val context = LocalContext.current
 
     var skills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
@@ -230,8 +273,7 @@ private fun SkillsSection() {
 
     LaunchedEffect(Unit) {
         skills = try {
-            val mgr = SkillManager(context)
-            mgr.loadSkills()
+            SkillManager(context).loadSkills()
         } catch (e: Exception) {
             emptyList()
         }
@@ -320,13 +362,1660 @@ private fun SkillRow(skill: SkillManager.Skill) {
 }
 
 // ---------------------------------------------------------------------------
+// Task 23 — Functional section: Rules (uses AgentDatabase.getRules())
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun RulesSection() {
+    val custom = LocalCustomColors.current
+    val context = LocalContext.current
+
+    var rules by remember { mutableStateOf<List<AgentDatabase.Rule>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
+    var lastToast by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        rules = try {
+            AgentDatabase(context).getRules(enabledOnly = false)
+        } catch (e: Exception) {
+            emptyList()
+        }
+        loaded = true
+    }
+
+    val activeCount = rules.count { it.enabled }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Rules",
+                subtitle = "$activeCount / ${rules.size} active · ${if (loaded) "ready" else "loading…"}",
+            )
+        }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.accent.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.accent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        lastToast = "New Rule editor coming soon — create rules via chat: \"create a rule…\""
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Rule, contentDescription = null, tint = custom.accent, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "New Rule",
+                    color = custom.accent,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "via chat →",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+            }
+        }
+        if (rules.isEmpty() && loaded) {
+            item {
+                PlaceholderCard(
+                    title = "No rules yet",
+                    detail = "Create rules via the chat screen — try \"create a rule that silences my phone at 10pm\".",
+                )
+            }
+        } else if (rules.isEmpty()) {
+            item { LoadingCard() }
+        } else {
+            items(rules, key = { it.id }) { rule ->
+                RuleRow(rule = rule, onToggle = { newValue ->
+                    try {
+                        AgentDatabase(context).toggleRule(rule.id, newValue)
+                        rules = rules.map { if (it.id == rule.id) it.copy(enabled = newValue) else it }
+                    } catch (e: Exception) {
+                        lastToast = "Toggle failed: ${e.message}"
+                    }
+                })
+            }
+        }
+    }
+
+    LaunchedEffect(lastToast) {
+        lastToast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            lastToast = null
+        }
+    }
+}
+
+@Composable
+private fun RuleRow(rule: AgentDatabase.Rule, onToggle: (Boolean) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (rule.enabled) custom.accent.copy(alpha = 0.06f) else custom.ink2,
+                RoundedCornerShape(8.dp),
+            )
+            .border(
+                1.dp,
+                if (rule.enabled) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(
+                    if (rule.enabled) custom.accent.copy(alpha = 0.15f) else custom.surface3,
+                    RoundedCornerShape(8.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Outlined.Rule,
+                contentDescription = null,
+                tint = if (rule.enabled) custom.accent else custom.fg3,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = rule.name,
+                color = if (rule.enabled) m3.onSurface else custom.fg2,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = "trigger: ${rule.triggerType} · ${rule.triggerValue}",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = "→ ${rule.action}",
+                color = custom.fg2,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(
+            checked = rule.enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = custom.accent,
+                uncheckedThumbColor = custom.fg3,
+                uncheckedTrackColor = custom.surface3,
+            ),
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 24 — Functional section: Tools (groups ToolExecutor.getAvailableToolNames)
+// ---------------------------------------------------------------------------
+
+private data class ToolCategory(
+    val name: String,
+    val icon: ImageVector,
+    val tools: List<String>,
+    val accent: Boolean = false,
+)
+
+private fun buildToolCategories(allTools: List<String>): List<ToolCategory> {
+    val byPrefix: (String) -> Boolean = { prefix -> allTools.any { it.startsWith(prefix) } }
+    val categories = mutableListOf<ToolCategory>()
+
+    fun select(predicate: (String) -> Boolean): List<String> = allTools.filter(predicate)
+
+    categories += ToolCategory("Screen", Icons.Outlined.Visibility, select {
+        it in setOf(
+            "readScreen", "readScreenStructured", "tap", "clickByText", "type", "swipe",
+            "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput",
+            "lockScreen", "takeScreenshotToGallery",
+        )
+    })
+    categories += ToolCategory("Apps", Icons.Outlined.Bolt, select {
+        it in setOf(
+            "launchApp", "listInstalledApps", "getAppInfo", "forceStopApp", "uninstallApp",
+            "openDialer", "openContact", "openSettings", "shareText", "shareFile",
+            "openActivity", "openDeepLink", "openAppWithData", "searchInApp",
+            "listAppActivities", "openWhatsAppChat", "openYouTubeVideo", "openMapsLocation",
+            "playSpotify", "openInstagramProfile", "openTelegramChat",
+            "openGoogleSearch", "shareToApp",
+        )
+    })
+    categories += ToolCategory("Vision", Icons.Outlined.Visibility, select {
+        it in setOf("analyzeScreen", "findElement", "translateText")
+    })
+    categories += ToolCategory("Browser", Icons.Outlined.Public, select { it.startsWith("browser") || it in setOf("openInChrome", "searchInChrome") })
+    categories += ToolCategory("Web", Icons.Outlined.Cloud, select {
+        it in setOf("webSearch", "makeHttpRequest", "downloadFile", "openUrl", "fetchPageText")
+    })
+    categories += ToolCategory("Device", Icons.Outlined.Build, select {
+        it in setOf(
+            "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
+            "getDeviceInfo", "pingHost", "getVolume", "setVolume", "setBrightness",
+            "toggleFlashlight", "toggleWifi",
+        )
+    })
+    categories += ToolCategory("Memory", Icons.Outlined.Memory, select {
+        it in setOf(
+            "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
+            "saveToKnowledge", "recallKnowledge", "listKnowledge",
+            "getClipboard", "setClipboard",
+        )
+    })
+    categories += ToolCategory("Location", Icons.Outlined.Public, select {
+        it in setOf("getCurrentLocation", "openMaps")
+    })
+    categories += ToolCategory("Rules", Icons.Outlined.Rule, select {
+        it in setOf("createRule", "listRules", "deleteRule", "modifyRule")
+    })
+    categories += ToolCategory("Contacts", Icons.Outlined.Verified, select {
+        it in setOf(
+            "readContacts", "searchContacts", "getCallLog", "openContact", "openDialer",
+            "makePhoneCall", "callContact", "sendSMS", "sendEmail", "composeEmail",
+            "getCalendarEvents", "createCalendarEvent", "setAlarm", "setTimer",
+        )
+    })
+    categories += ToolCategory("Files", Icons.Outlined.Folder, select {
+        it in setOf(
+            "listFiles", "readFile", "writeFile", "copyFile", "moveFile", "deleteFile", "createDirectory",
+            "listAttachments", "readAttachment", "sendAttachmentTo",
+        )
+    })
+    categories += ToolCategory("Media", Icons.Outlined.GraphicEq, select {
+        it in setOf("mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto")
+    })
+    categories += ToolCategory("Skills", Icons.Outlined.School, select {
+        it in setOf("executeSkill", "listSkills", "createSkill", "deleteSkill", "getSkill")
+    })
+    categories += ToolCategory("Async", Icons.Outlined.Refresh, select {
+        it in setOf("wait", "waitAndContinue")
+    })
+
+    // Anything not bucketed lands in Misc.
+    val bucketed = categories.flatMap { it.tools }.toSet()
+    val misc = allTools.filter { it !in bucketed }
+    if (misc.isNotEmpty()) {
+        categories += ToolCategory("Misc", Icons.Outlined.MoreVert, misc)
+    }
+
+    // Accent the "terminal-like" categories — Apps + Device can drive the OS directly.
+    return categories.mapIndexed { idx, c ->
+        if (c.name == "Apps") c.copy(accent = true) else c
+    }
+}
+
+@Composable
+private fun ToolsSection() {
+    val context = LocalContext.current
+    val allTools = remember { ToolExecutor.getAvailableToolNames() }
+    val categories = remember(allTools) { buildToolCategories(allTools) }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+            SectionHeader(
+                title = "Tools",
+                subtitle = "${allTools.size} tools · ${categories.size} categories",
+            )
+        }
+        items(categories, key = { it.name }) { cat ->
+            ToolCategoryCard(cat)
+        }
+    }
+}
+
+@Composable
+private fun ToolCategoryCard(category: ToolCategory) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (category.accent) custom.accent.copy(alpha = 0.06f) else custom.ink2,
+                RoundedCornerShape(8.dp),
+            )
+            .border(
+                1.dp,
+                if (category.accent) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .background(
+                        if (category.accent) custom.accent else custom.surface3,
+                        RoundedCornerShape(6.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    category.icon,
+                    contentDescription = null,
+                    tint = if (category.accent) Color.White else custom.fg3,
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = category.name,
+                color = m3.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = category.tools.size.toString(),
+                color = if (category.accent) custom.accent else custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        Spacer(Modifier.size(6.dp))
+        HorizontalDivider(color = custom.inkBorder, thickness = 1.dp)
+        Spacer(Modifier.size(6.dp))
+        // Up to first 8 tool names (mono, small) — rest are elided.
+        val shown = category.tools.take(8)
+        val more = category.tools.size - shown.size
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            shown.forEach { name ->
+                Text(
+                    text = "· $name",
+                    color = custom.fg2,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (more > 0) {
+                Text(
+                    text = "+ $more more",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 25 — Functional section: Plugins (uses PluginManager.loadPlugins)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun PluginsSection() {
+    val context = LocalContext.current
+
+    var plugins by remember { mutableStateOf<List<PluginManager.Plugin>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        plugins = try {
+            PluginManager.loadPlugins(context)
+        } catch (e: Exception) {
+            emptyList()
+        }
+        loaded = true
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+            SectionHeader(
+                title = "Plugins",
+                subtitle = "${plugins.size} loaded · ${plugins.count { it.enabled }} enabled · ${if (loaded) "ready" else "loading…"}",
+            )
+        }
+        if (plugins.isEmpty() && loaded) {
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                PlaceholderCard(
+                    title = "No plugins loaded",
+                    detail = "Drop .json plugin files in assets/plugins/ or install via PluginManager.installPlugin().",
+                )
+            }
+        } else if (plugins.isEmpty()) {
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) { LoadingCard() }
+        } else {
+            items(plugins, key = { it.name }) { plugin ->
+                PluginCard(plugin = plugin, onToggle = { newValue ->
+                    try {
+                        PluginManager.setPluginEnabled(context, plugin.name, newValue)
+                        plugins = plugins.map {
+                            if (it.name == plugin.name) it.copy(enabled = newValue) else it
+                        }
+                    } catch (_: Exception) {
+                    }
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun PluginCard(plugin: PluginManager.Plugin, onToggle: (Boolean) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (plugin.enabled) custom.accent.copy(alpha = 0.06f) else custom.ink2,
+                RoundedCornerShape(8.dp),
+            )
+            .border(
+                1.dp,
+                if (plugin.enabled) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(
+                        if (plugin.enabled) custom.accent else custom.surface3,
+                        RoundedCornerShape(8.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Extension,
+                    contentDescription = null,
+                    tint = if (plugin.enabled) Color.White else custom.fg3,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = plugin.name,
+                    color = m3.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${plugin.tools.size} tools · v${plugin.version}",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+            }
+            Switch(
+                checked = plugin.enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = custom.accent,
+                    uncheckedThumbColor = custom.fg3,
+                    uncheckedTrackColor = custom.surface3,
+                ),
+            )
+        }
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = plugin.description.ifBlank { "(no description)" },
+            color = custom.fg2,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.size(4.dp))
+        Text(
+            text = "source: ${plugin.source}",
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 9.sp,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 26 — Functional section: Knowledge (getAllKnowledge + recallKnowledge)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun KnowledgeSection() {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+
+    var allDocs by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
+    var searchResults by remember { mutableStateOf<List<Triple<String, String, Float>>>(emptyList()) }
+    var query by remember { mutableStateOf("") }
+    var loaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        allDocs = try {
+            AgentDatabase(context).getAllKnowledge()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        loaded = true
+    }
+
+    // Live search (debounced via simple remember guard).
+    LaunchedEffect(query, allDocs) {
+        searchResults = if (query.trim().length < 2 || allDocs.isEmpty()) {
+            emptyList()
+        } else {
+            try {
+                AgentDatabase(context).recallKnowledge(query.trim(), limit = 5)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Knowledge",
+                subtitle = "${allDocs.size} documents · ${if (loaded) "ready" else "loading…"}",
+            )
+        }
+        item { KnowledgeSearchBar(query = query, onQueryChange = { query = it }) }
+
+        if (query.trim().length >= 2) {
+            if (searchResults.isEmpty() && loaded) {
+                item {
+                    PlaceholderCard(
+                        title = "No matches",
+                        detail = "No knowledge entries match \"$query\". Try broader keywords.",
+                    )
+                }
+            } else {
+                item {
+                    Text(
+                        text = "TOP MATCHES",
+                        color = custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                    )
+                }
+                items(searchResults.size) { i ->
+                    val (name, content, score) = searchResults[i]
+                    KnowledgeRow(
+                        name = name,
+                        content = content,
+                        source = "similarity ${(score * 100).toInt()}%",
+                        accent = true,
+                    )
+                }
+            }
+        } else {
+            if (allDocs.isEmpty() && loaded) {
+                item {
+                    PlaceholderCard(
+                        title = "No knowledge yet",
+                        detail = "Save knowledge via chat — try \"remember that my wifi password is hunter2\" or \"save the project notes: …\".",
+                    )
+                }
+            } else if (allDocs.isEmpty()) {
+                item { LoadingCard() }
+            } else {
+                item {
+                    Text(
+                        text = "ALL DOCUMENTS",
+                        color = custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                    )
+                }
+                items(allDocs.size) { i ->
+                    val (name, content, source) = allDocs[i]
+                    KnowledgeRow(name = name, content = content, source = source, accent = false)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun KnowledgeSearchBar(query: String, onQueryChange: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.surface2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Search, contentDescription = null, tint = custom.fg3, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(
+                    text = "Search knowledge…",
+                    color = custom.fg3,
+                    fontSize = 13.sp,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = m3.onSurface,
+                    fontSize = 13.sp,
+                ),
+                cursorBrush = SolidColor(custom.accent),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Spacer(Modifier.width(4.dp))
+            IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(20.dp)) {
+                Icon(Icons.Outlined.Refresh, contentDescription = "Clear", tint = custom.fg3, modifier = Modifier.size(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun KnowledgeRow(name: String, content: String, source: String, accent: Boolean) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (accent) custom.accent.copy(alpha = 0.06f) else custom.ink2,
+                RoundedCornerShape(8.dp),
+            )
+            .border(
+                1.dp,
+                if (accent) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            Icons.Outlined.BookmarkBorder,
+            contentDescription = null,
+            tint = if (accent) custom.accent else custom.fg3,
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = name,
+                color = if (accent) custom.accent else m3.onSurface,
+                fontFamily = MonoFontFamily,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = content.take(120) + if (content.length > 120) "…" else "",
+                color = custom.fg2,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = "source: $source · ${content.length} chars",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 27 — Functional section: History (getRecentConversations + filters)
+// ---------------------------------------------------------------------------
+
+private enum class HistoryFilter(val label: String) { ALL("All"), USER("User"), AI("AI") }
+
+@Composable
+private fun HistorySection() {
+    val context = LocalContext.current
+
+    var conversations by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(HistoryFilter.ALL) }
+
+    LaunchedEffect(Unit) {
+        conversations = try {
+            AgentDatabase(context).getRecentConversations(50)
+        } catch (e: Exception) {
+            emptyList()
+        }
+        loaded = true
+    }
+
+    val filtered = when (filter) {
+        HistoryFilter.ALL -> conversations
+        HistoryFilter.USER -> conversations.filter { it.first == "user" }
+        HistoryFilter.AI -> conversations.filter { it.first == "ai" }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "History",
+                subtitle = "${conversations.size} messages · ${if (loaded) "ready" else "loading…"}",
+            )
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                HistoryFilter.entries.forEach { f ->
+                    FilterChip(
+                        label = f.label,
+                        count = when (f) {
+                            HistoryFilter.ALL -> conversations.size
+                            HistoryFilter.USER -> conversations.count { it.first == "user" }
+                            HistoryFilter.AI -> conversations.count { it.first == "ai" }
+                        },
+                        active = f == filter,
+                        onClick = { filter = f },
+                    )
+                }
+            }
+        }
+        if (filtered.isEmpty() && loaded) {
+            item {
+                PlaceholderCard(
+                    title = "No messages yet",
+                    detail = "Send a message on the Chat tab — it'll show up here in chronological order.",
+                )
+            }
+        } else if (filtered.isEmpty()) {
+            item { LoadingCard() }
+        } else {
+            itemsIndexed(filtered, key = { i, pair -> "$filter-$i-${pair.hashCode()}" }) { _, (role, text) ->
+                HistoryRow(role = role, text = text)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, count: Int, active: Boolean, onClick: () -> Unit) {
+    val custom = LocalCustomColors.current
+    Row(
+        modifier = Modifier
+            .background(
+                if (active) custom.accent.copy(alpha = 0.15f) else custom.surface2,
+                RoundedCornerShape(14.dp),
+            )
+            .border(
+                1.dp,
+                if (active) custom.accent.copy(alpha = 0.5f) else custom.border,
+                RoundedCornerShape(14.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = if (active) custom.accent else custom.fg2,
+            fontSize = 11.sp,
+            fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = count.toString(),
+            color = if (active) custom.accent else custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 10.sp,
+        )
+    }
+}
+
+@Composable
+private fun HistoryRow(role: String, text: String) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val isUser = role == "user"
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(if (isUser) 0.85f else 0.95f)
+                .background(
+                    if (isUser) custom.accent.copy(alpha = 0.10f) else custom.ink2,
+                    RoundedCornerShape(
+                        topStart = 8.dp,
+                        topEnd = 8.dp,
+                        bottomEnd = if (isUser) 4.dp else 8.dp,
+                        bottomStart = if (isUser) 8.dp else 4.dp,
+                    ),
+                )
+                .border(
+                    1.dp,
+                    if (isUser) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                    RoundedCornerShape(8.dp),
+                )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            Column {
+                Text(
+                    text = if (isUser) "USER" else "AI",
+                    color = if (isUser) custom.accent else custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.size(2.dp))
+                Text(
+                    text = text,
+                    color = m3.onSurface,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 28 — Functional section: Files (list attachments dir)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun FilesSection() {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+
+    data class FileEntry(val name: String, val size: Long, val lastModified: Long)
+    var files by remember { mutableStateOf<List<FileEntry>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
+    var toast by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        files = try {
+            val dir = File(ChatViewModel.ATTACHMENTS_DIR)
+            if (!dir.exists() || !dir.isDirectory) {
+                emptyList()
+            } else {
+                dir.listFiles()
+                    ?.filter { it.isFile }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.map { FileEntry(it.name, it.length(), it.lastModified()) }
+                    ?: emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+        loaded = true
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Files",
+                subtitle = "${files.size} attachments · ${ChatViewModel.ATTACHMENTS_DIR}",
+            )
+        }
+        if (files.isEmpty() && loaded) {
+            item {
+                PlaceholderCard(
+                    title = "No attachments yet",
+                    detail = "Tap the paperclip on the chat bar to attach a file. It will be copied to " +
+                        "${ChatViewModel.ATTACHMENTS_DIR} and shown here.",
+                )
+            }
+        } else if (files.isEmpty()) {
+            item { LoadingCard() }
+        } else {
+            items(files, key = { it.name }) { file ->
+                FileRow(
+                    name = file.name,
+                    size = file.size,
+                    lastModified = file.lastModified,
+                    onAttach = {
+                        toast = "${file.name} staged for chat — go to Chat tab to send"
+                    },
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            toast = null
+        }
+    }
+}
+
+@Composable
+private fun FileRow(name: String, size: Long, lastModified: Long, onAttach: () -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val df = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(custom.surface3, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                iconForFile(name),
+                contentDescription = null,
+                tint = custom.accent,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = name,
+                color = m3.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = "${formatBytes(size)} · ${df.format(Date(lastModified))}",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
+        }
+        IconButton(onClick = onAttach, modifier = Modifier.size(28.dp)) {
+            Icon(Icons.Outlined.AttachFile, contentDescription = "Attach to chat", tint = custom.fg3, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+private fun iconForFile(name: String): ImageVector {
+    val n = name.lowercase()
+    return when {
+        n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") ||
+            n.endsWith(".gif") || n.endsWith(".webp") -> Icons.Outlined.Image
+        n.endsWith(".pdf") -> Icons.Outlined.PictureAsPdf
+        n.endsWith(".txt") || n.endsWith(".md") || n.endsWith(".json") ||
+            n.endsWith(".csv") -> Icons.Outlined.Description
+        n.endsWith(".mp3") || n.endsWith(".wav") || n.endsWith(".m4a") -> Icons.Outlined.GraphicEq
+        else -> Icons.Outlined.InsertDriveFile
+    }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024 -> "${bytes}B"
+    bytes < 1024 * 1024 -> "${bytes / 1024}KB"
+    else -> String.format("%.1fMB", bytes / (1024.0 * 1024.0))
+}
+
+// ---------------------------------------------------------------------------
+// Task 29 — Functional section: Vision (3-tier fallback diagram + vision models)
+// ---------------------------------------------------------------------------
+
+private fun isVisionCapable(modelId: String): Boolean {
+    val m = modelId.lowercase()
+    return m.contains("vision") || m.contains("-v") || m.contains("vlm") ||
+        m.contains("pixtral") || m.contains("gpt-4-vision") || m.contains("vl-") ||
+        m.contains("glm-4.5v") || m.contains("glm-4.1v") || m.contains("glm-5v") ||
+        m.contains("llama-3.2") && m.contains("vision") || m.contains("gemma-4-31b")
+}
+
+@Composable
+private fun VisionSection() {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val providers = remember { AIProvider.PROVIDERS }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Vision",
+                subtitle = "3-tier screen-understanding pipeline",
+            )
+        }
+        // 3-tier fallback diagram
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                VisionTierRow(idx = 1, name = "Accessibility Service", desc = "Free, instant, no API. Reads on-screen text directly from the OS.", hits = "—", accent = true)
+                VisionTierRow(idx = 2, name = "ML Kit OCR (on-device)", desc = "Falls back to on-device OCR via ML Kit text-recognition — works offline.", hits = "—")
+                VisionTierRow(idx = 3, name = "VLM API (cloud)", desc = "Final fallback — sends screenshot to a vision LLM (GLM-5V / Gemma Vision).", hits = "—")
+            }
+        }
+        // Stats row
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatBox(label = "TIER 1 HITS", value = "—", modifier = Modifier.weight(1f))
+                StatBox(label = "TIER 2 HITS", value = "—", modifier = Modifier.weight(1f))
+                StatBox(label = "TIER 3 CALLS", value = "—", modifier = Modifier.weight(1f))
+            }
+        }
+        item {
+            Text(
+                text = "VISION-CAPABLE MODELS",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
+        }
+        items(providers, key = { it.id }) { provider ->
+            val visionModels = provider.models.filter { isVisionCapable(it.id) }
+            if (visionModels.isNotEmpty()) {
+                VisionProviderRow(providerName = provider.name, models = visionModels.map { it.name })
+            }
+        }
+    }
+}
+
+@Composable
+private fun VisionTierRow(idx: Int, name: String, desc: String, hits: String, accent: Boolean = false) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .background(
+                    if (accent) custom.accent else custom.surface3,
+                    RoundedCornerShape(6.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = idx.toString(),
+                color = if (accent) Color.White else custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = name,
+                color = m3.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = desc,
+                color = custom.fg2,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = hits,
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun VisionProviderRow(providerName: String, models: List<String>) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Visibility, contentDescription = null, tint = custom.accent, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = providerName,
+                color = m3.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = models.joinToString(", "),
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = models.size.toString(),
+            color = custom.accent,
+            fontFamily = MonoFontFamily,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun StatBox(label: String, value: String, modifier: Modifier = Modifier) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Column(
+        modifier = modifier
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = label,
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 9.sp,
+        )
+        Spacer(Modifier.size(2.dp))
+        Text(
+            text = value,
+            color = m3.onSurface,
+            fontFamily = MonoFontFamily,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 30 — Functional section: Audio (voice input + TTS info)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun AudioSection() {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Audio",
+                subtitle = "Voice input + speech output",
+            )
+        }
+        // Voice input (Google Voice Intent) — active
+        item {
+            AudioCard(
+                icon = Icons.Outlined.Mic,
+                title = "Voice Input",
+                method = "Google Voice Intent",
+                status = "ACTIVE",
+                desc = "Uses Android's built-in RecognizerIntent — works on every device with Google services. Tap the mic in the chat bar to dictate.",
+                active = true,
+            )
+        }
+        // TTS engine (Android TextToSpeech)
+        item {
+            AudioCard(
+                icon = Icons.Outlined.VolumeUp,
+                title = "Speech Output (TTS)",
+                method = "Android TextToSpeech",
+                status = "ACTIVE",
+                desc = "VoiceManager wraps android.speech.tts — the AI reads its final reply aloud at the end of each task (up to 500 chars).",
+                active = true,
+            )
+        }
+        // ASR coming soon (greyed out)
+        item {
+            AudioCard(
+                icon = Icons.Outlined.GraphicEq,
+                title = "On-device ASR",
+                method = "ML Kit Speech Recognition",
+                status = "COMING SOON",
+                desc = "Offline speech-to-text via ML Kit — will replace Google Voice Intent so dictation works without an internet connection.",
+                active = false,
+            )
+        }
+        // Audio stats
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatBox(label = "TTS ENGINE", value = "Android", modifier = Modifier.weight(1f))
+                StatBox(label = "ASR ENGINE", value = "Intent", modifier = Modifier.weight(1f))
+                StatBox(label = "LANGUAGES", value = "en-US", modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioCard(
+    icon: ImageVector,
+    title: String,
+    method: String,
+    status: String,
+    desc: String,
+    active: Boolean,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (active) custom.accent.copy(alpha = 0.06f) else custom.ink2,
+                RoundedCornerShape(8.dp),
+            )
+            .border(
+                1.dp,
+                if (active) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(
+                    if (active) custom.accent else custom.surface3,
+                    RoundedCornerShape(8.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (active) Color.White else custom.fg3,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    color = m3.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .background(
+                            if (active) custom.accent.copy(alpha = 0.15f) else custom.surface3,
+                            RoundedCornerShape(4.dp),
+                        )
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                ) {
+                    Text(
+                        text = status,
+                        color = if (active) custom.accent else custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = method,
+                color = custom.fg2,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = desc,
+                color = custom.fg2,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 31 — Functional section: Settings (Prompt / Browser / Search / Toggles)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun SettingsSection() {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+
+    var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
+    var browserMode by remember { mutableStateOf(AIProvider.getBrowserMode(context)) }
+    var searchMethod by remember { mutableStateOf(AIProvider.getSearchMethod(context)) }
+    var dynamicPrompt by remember { mutableStateOf(promptMode == "dynamic") }
+    var alwaysLearn by remember { mutableStateOf(true) }
+    var toast by remember { mutableStateOf<String?>(null) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            SectionHeader(
+                title = "Settings",
+                subtitle = "AI behavior · search · learning",
+            )
+        }
+
+        item {
+            SettingsGroup(title = "PROMPT MODE") {
+                SelectorRow(
+                    label = "Prompt Mode",
+                    options = listOf("smart", "dynamic", "balanced", "fast", "custom"),
+                    selected = promptMode,
+                    onSelect = {
+                        promptMode = it
+                        AIProvider.setPromptMode(context, it)
+                        if (it == "dynamic") dynamicPrompt = true
+                        toast = "Prompt mode: $it"
+                    },
+                )
+            }
+        }
+        item {
+            SettingsGroup(title = "BROWSER MODE") {
+                SelectorRow(
+                    label = "Browser Mode",
+                    options = listOf("auto", "in_app", "chrome"),
+                    selected = browserMode,
+                    onSelect = {
+                        browserMode = it
+                        AIProvider.setBrowserMode(context, it)
+                        toast = "Browser mode: $it"
+                    },
+                )
+            }
+        }
+        item {
+            SettingsGroup(title = "SEARCH METHOD") {
+                SelectorRow(
+                    label = "Search Method",
+                    options = listOf("duckduckgo", "google", "bing", "proxy"),
+                    selected = searchMethod,
+                    onSelect = {
+                        searchMethod = it
+                        AIProvider.setSearchMethod(context, it)
+                        toast = "Search method: $it"
+                    },
+                )
+            }
+        }
+        item {
+            SettingsGroup(title = "BEHAVIOR") {
+                ToggleRow(
+                    label = "Dynamic Prompt",
+                    desc = "Auto-select relevant tools per task (saves tokens)",
+                    checked = dynamicPrompt,
+                    onCheck = {
+                        dynamicPrompt = it
+                        if (it && promptMode != "dynamic") {
+                            promptMode = "dynamic"
+                            AIProvider.setPromptMode(context, "dynamic")
+                        } else if (!it && promptMode == "dynamic") {
+                            promptMode = "smart"
+                            AIProvider.setPromptMode(context, "smart")
+                        }
+                        toast = "Dynamic prompt: $it"
+                    },
+                )
+                ToggleRow(
+                    label = "Always Learn",
+                    desc = "Save successful workflows + failure lessons to memory",
+                    checked = alwaysLearn,
+                    onCheck = {
+                        alwaysLearn = it
+                        toast = "Always learn: $it"
+                    },
+                )
+            }
+        }
+        item {
+            AboutCard()
+        }
+    }
+
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            toast = null
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroup(title: String, content: @Composable () -> Unit) {
+    val custom = LocalCustomColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = title,
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        content()
+    }
+}
+
+@Composable
+private fun SelectorRow(label: String, options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            color = m3.onSurface,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(options) { opt ->
+                val active = opt == selected
+                Row(
+                    modifier = Modifier
+                        .background(
+                            if (active) custom.accent.copy(alpha = 0.15f) else custom.surface2,
+                            RoundedCornerShape(14.dp),
+                        )
+                        .border(
+                            1.dp,
+                            if (active) custom.accent.copy(alpha = 0.5f) else custom.border,
+                            RoundedCornerShape(14.dp),
+                        )
+                        .clickable { onSelect(opt) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (active) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(custom.accent, CircleShape),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = opt,
+                        color = if (active) custom.accent else custom.fg2,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, desc: String, checked: Boolean, onCheck: (Boolean) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = m3.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.size(2.dp))
+            Text(
+                text = desc,
+                color = custom.fg2,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheck,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = custom.accent,
+                uncheckedThumbColor = custom.fg3,
+                uncheckedTrackColor = custom.surface3,
+            ),
+        )
+    }
+}
+
+@Composable
+private fun AboutCard() {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "ABOUT",
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .background(custom.accent, RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("A", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "AI Agent v2",
+                color = m3.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        AboutRow(label = "version", value = "2.0.0")
+        AboutRow(label = "build", value = "3")
+        AboutRow(label = "min sdk", value = "24 (Android 7.0)")
+        AboutRow(label = "target sdk", value = "34 (Android 14)")
+        AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")
+    }
+}
+
+@Composable
+private fun AboutRow(label: String, value: String) {
+    val custom = LocalCustomColors.current
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 10.sp,
+            modifier = Modifier.width(80.dp),
+        )
+        Text(
+            text = value,
+            color = custom.fg2,
+            fontFamily = MonoFontFamily,
+            fontSize = 10.sp,
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Functional section: LLM Providers (uses AIProvider.PROVIDERS)
 // ---------------------------------------------------------------------------
 
 @Composable
 private fun LlmSection() {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
     val context = LocalContext.current
 
     val currentProvider = remember { AIProvider.getCurrentProvider(context) }
@@ -444,8 +2133,6 @@ private val TRACKED_PERMISSIONS = listOf(
 
 @Composable
 private fun PermissionsSection() {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
     val context = LocalContext.current
 
     val grantedCount = TRACKED_PERMISSIONS.count {
@@ -534,8 +2221,6 @@ private fun PermissionRow(name: String, granted: Boolean) {
 
 @Composable
 private fun MemorySection() {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
     val context = LocalContext.current
 
     var memory by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -610,30 +2295,6 @@ private fun MemoryRow(key: String, value: String) {
                 lineHeight = 16.sp,
             )
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Placeholder section (for Vision, Audio, Settings, etc.)
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun PlaceholderSection(section: HubSection) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-    ) {
-        SectionHeader(
-            title = section.label,
-            subtitle = "coming soon",
-        )
-        Spacer(Modifier.height(16.dp))
-        PlaceholderCard(
-            title = "${section.label} section is under construction",
-            detail = "This panel will be populated with real data in a future task. The layout " +
-                "matches the side-nav structure of the approved mockup so future work is plug-in only.",
-        )
     }
 }
 
