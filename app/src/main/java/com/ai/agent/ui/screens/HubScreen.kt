@@ -57,6 +57,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.School
@@ -1013,6 +1014,10 @@ private fun ToolCategoryCard(category: ToolCategory) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
+    // v2.0.7: Expandable — tap card to toggle between collapsed (8 tools)
+    // and expanded (all tools) views. Fixes "tools category not expanding".
+    var expanded by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1025,6 +1030,7 @@ private fun ToolCategoryCard(category: ToolCategory) {
                 if (category.accent) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
                 RoundedCornerShape(8.dp),
             )
+            .clickable { expanded = !expanded }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1059,12 +1065,19 @@ private fun ToolCategoryCard(category: ToolCategory) {
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
             )
+            Spacer(Modifier.width(8.dp))
+            // v2.0.7: Expand/collapse indicator
+            Text(
+                text = if (expanded) "▼" else "▶",
+                color = custom.fg3,
+                fontSize = 10.sp,
+            )
         }
         Spacer(Modifier.size(6.dp))
         HorizontalDivider(color = custom.inkBorder, thickness = 1.dp)
         Spacer(Modifier.size(6.dp))
-        // Up to first 8 tool names (mono, small) — rest are elided.
-        val shown = category.tools.take(8)
+        // v2.0.7: Show all tools when expanded, first 8 + "+N more" when collapsed.
+        val shown = if (expanded) category.tools else category.tools.take(8)
         val more = category.tools.size - shown.size
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             shown.forEach { name ->
@@ -1079,7 +1092,14 @@ private fun ToolCategoryCard(category: ToolCategory) {
             }
             if (more > 0) {
                 Text(
-                    text = "+ $more more",
+                    text = "+ $more more · tap to expand",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+            } else if (expanded && category.tools.size > 8) {
+                Text(
+                    text = "· all ${category.tools.size} shown · tap to collapse",
                     color = custom.fg3,
                     fontFamily = MonoFontFamily,
                     fontSize = 10.sp,
@@ -2237,12 +2257,17 @@ private fun AudioCard(
 private fun SettingsSection() {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
 
     var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
     var browserMode by remember { mutableStateOf(AIProvider.getBrowserMode(context)) }
     var searchMethod by remember { mutableStateOf(AIProvider.getSearchMethod(context)) }
     var dynamicPrompt by remember { mutableStateOf(promptMode == "dynamic") }
     var alwaysLearn by remember { mutableStateOf(true) }
+    // v2.0.7: Overlay toggle — persists via SharedPreferences("ai_agent_prefs","overlay_enabled")
+    val prefs = remember { context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE) }
+    var overlayEnabled by remember { mutableStateOf(prefs.getBoolean("overlay_enabled", true)) }
+    var overlayPermGranted by remember { mutableStateOf(android.provider.Settings.canDrawOverlays(context)) }
     var toast by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -2328,6 +2353,70 @@ private fun SettingsSection() {
                         toast = "Always learn: $it"
                     },
                 )
+            }
+        }
+        // v2.0.7: Floating overlay toggle — lets user enable/disable the floating
+        // button without uninstalling or revoking overlay permission.
+        item {
+            SettingsGroup(title = "FLOATING OVERLAY") {
+                if (!overlayPermGranted) {
+                    // Permission missing — show a "Grant overlay permission" row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(custom.accent.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                            .border(1.dp, custom.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .clickable {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${context.packageName}"),
+                                )
+                                context.startActivity(intent)
+                                toast = "Grant overlay permission in Settings"
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Warning,
+                            contentDescription = null,
+                            tint = custom.accent,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Grant overlay permission",
+                                color = m3.onSurface,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Required for the floating button to appear",
+                                color = custom.fg3,
+                                fontSize = 11.sp,
+                            )
+                        }
+                        Text(text = "Open →", color = custom.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    }
+                } else {
+                    ToggleRow(
+                        label = "Floating Overlay Button",
+                        desc = "Show the floating Aira button on top of other apps",
+                        checked = overlayEnabled,
+                        onCheck = { enabled ->
+                            overlayEnabled = enabled
+                            prefs.edit().putBoolean("overlay_enabled", enabled).apply()
+                            if (enabled) {
+                                com.ai.agent.service.OverlayManager.setEnabled(true, context)
+                                toast = "Overlay enabled — relaunch app to show"
+                            } else {
+                                com.ai.agent.service.OverlayManager.setEnabled(false, context)
+                                toast = "Overlay disabled"
+                            }
+                        },
+                    )
+                }
             }
         }
         item {
@@ -2567,8 +2656,8 @@ private fun AboutCard() {
         }
         AboutRow(label = "subtitle", value = "Personal AI Assistant")
         AboutRow(label = "tagline", value = "Your intelligent companion for seamless device control and daily tasks.")
-        AboutRow(label = "version", value = "2.0.6")
-        AboutRow(label = "build", value = "6")
+        AboutRow(label = "version", value = "2.0.7")
+        AboutRow(label = "build", value = "7")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")

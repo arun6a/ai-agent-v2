@@ -50,6 +50,12 @@ class OverlayManager(private val context: Context) {
 
     companion object {
         private var instance: OverlayManager? = null
+        // v2.0.7: Static visibility flag — survives MainActivity recreation
+        // (e.g., on rotation, app restart, config change). Without this, a new
+        // OverlayManager instance has isVisible=false, so it creates ANOTHER
+        // overlay button on top of the existing one.
+        @Volatile
+        private var sIsVisible: Boolean = false
 
         /**
          * Process a voice command from anywhere.
@@ -60,6 +66,17 @@ class OverlayManager(private val context: Context) {
                 manager.scope.launch {
                     manager.processCommandInternal(text)
                 }
+            }
+        }
+
+        /** v2.0.7: Static visibility check — used by MainActivity to skip duplicate overlay creation. */
+        fun isStaticVisible(): Boolean = sIsVisible
+
+        /** v2.0.7: Toggle the overlay via settings page (Settings section). */
+        fun setEnabled(enabled: Boolean, context: android.content.Context) {
+            instance?.let { mgr ->
+                if (enabled && !sIsVisible) mgr.show()
+                else if (!enabled && sIsVisible) mgr.hide()
             }
         }
     }
@@ -79,7 +96,10 @@ class OverlayManager(private val context: Context) {
     fun isVisible(): Boolean = isVisible
 
     fun show() {
-        if (isVisible) return
+        // v2.0.7: Check both instance + static flag to prevent duplicates
+        // across MainActivity recreation (each new OverlayManager instance has
+        // isVisible=false, but sIsVisible persists across recreations).
+        if (isVisible || sIsVisible) return
 
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
@@ -108,6 +128,7 @@ class OverlayManager(private val context: Context) {
         try {
             windowManager?.addView(overlayView, params)
             isVisible = true
+            sIsVisible = true  // v2.0.7: sync static flag
             Log.i(TAG, "Overlay shown")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to show overlay", e)
@@ -120,6 +141,7 @@ class OverlayManager(private val context: Context) {
         try {
             windowManager?.removeView(overlayView)
             isVisible = false
+            sIsVisible = false  // v2.0.7: sync static flag
             Log.i(TAG, "Overlay hidden")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to hide overlay", e)

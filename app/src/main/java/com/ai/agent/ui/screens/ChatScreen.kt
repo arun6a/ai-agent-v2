@@ -46,9 +46,9 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.MusicNote
@@ -107,6 +107,7 @@ import com.ai.agent.ui.theme.MonoFontFamily
 @Composable
 fun ChatScreen(
     onOpenHub: () -> Unit = {},
+    onOpenBrowser: () -> Unit = {},
     viewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(LocalContext.current)),
 ) {
     val custom = LocalCustomColors.current
@@ -204,7 +205,7 @@ fun ChatScreen(
                 isThinking = state.isThinking,
                 ttsEnabled = state.ttsEnabled,
                 onToggleTts = { viewModel.setTtsEnabled(!state.ttsEnabled) },
-                onOpenHub = onOpenHub,
+                onOpenBrowser = onOpenBrowser,
                 onClear = { viewModel.clearChat() },
             )
         },
@@ -434,7 +435,7 @@ private fun ChatTopBar(
     isThinking: Boolean,
     ttsEnabled: Boolean,
     onToggleTts: () -> Unit,
-    onOpenHub: () -> Unit,
+    onOpenBrowser: () -> Unit,
     onClear: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
@@ -444,13 +445,8 @@ private fun ChatTopBar(
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Aira logo (PNG) replaces the old letter "A" badge.
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(com.ai.agent.R.drawable.aira_logo),
-                    contentDescription = "Aira",
-                    modifier = Modifier.size(28.dp),
-                )
-                Spacer(Modifier.width(8.dp))
+                // v2.0.7: Removed logo from header (per user request).
+                // Just "Aira" + tagline subtitle now.
                 Column {
                     Text(
                         text = "Aira",
@@ -458,10 +454,11 @@ private fun ChatTopBar(
                         color = m3.onSurface,
                     )
                     Text(
-                        text = "Personal Assistant",
+                        text = "Your intelligent companion",
                         color = custom.fg3,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Normal,
+                        maxLines = 1,
                     )
                 }
 
@@ -497,10 +494,12 @@ private fun ChatTopBar(
                     tint = if (ttsEnabled) custom.accent else custom.fg2,
                 )
             }
-            IconButton(onClick = onOpenHub) {
+            // v2.0.7: Browser icon in header (replaced Hub icon).
+            // Hub is now reachable only via bottom nav "Aira Lab" tab.
+            IconButton(onClick = onOpenBrowser) {
                 Icon(
-                    imageVector = Icons.Outlined.Hub,
-                    contentDescription = "Hub",
+                    imageVector = Icons.Outlined.Public,
+                    contentDescription = "Open browser",
                     tint = custom.fg2,
                 )
             }
@@ -905,7 +904,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.6",
+            text = "v2.0.7",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,

@@ -184,7 +184,23 @@ class MainActivity : ComponentActivity() {
             // Don't prompt here — Hub → Permissions handles it now
             return
         }
+        // v2.0.7: Read the user's overlay-enabled preference (default ON).
+        // User can toggle this from Hub → Settings → Floating Overlay.
+        val prefs = getSharedPreferences("ai_agent_prefs", MODE_PRIVATE)
+        val overlayEnabled = prefs.getBoolean("overlay_enabled", true)
+        if (!overlayEnabled) {
+            Log.i(TAG, "Overlay disabled by user — skipping")
+            return
+        }
         try {
+            // v2.0.7: Use static flag to prevent duplicate overlay creation
+            // across MainActivity recreation (rotation, app restart, config change).
+            // Old code only checked the instance flag, which resets on every new
+            // OverlayManager() — so a new instance would create a SECOND overlay button.
+            if (com.ai.agent.service.OverlayManager.isStaticVisible()) {
+                Log.i(TAG, "Overlay already visible (static flag) — skipping")
+                return
+            }
             if (overlayManager?.isVisible() != true) {
                 if (overlayManager == null) {
                     overlayManager = com.ai.agent.service.OverlayManager(this)

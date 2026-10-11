@@ -133,7 +133,7 @@ fun SplashScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "v2.0.6 · build 6",
+                        text = "v2.0.7 · build 7",
                         color = custom.fg3,
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,

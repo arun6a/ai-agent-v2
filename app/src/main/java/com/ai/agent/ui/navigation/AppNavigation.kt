@@ -156,6 +156,13 @@ fun AppNavigation() {
                                 restoreState = true
                             }
                         },
+                        onOpenBrowser = {
+                            nav.navigate(Routes.BROWSER) {
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                     )
                 }
 
