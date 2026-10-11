@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Adaptive icon — Concept 1 "Emerald Orb on dark"
+  Adaptive icon — Aira logo on dark slate background
+  - Background: solid dark slate (#0F0F12) for premium dark aesthetic
+  - Foreground: Aira logo (PNG, 1512x1512, scales to every density)
   Android auto-applies the launcher's mask (circle / squircle / rounded-square).
-  Background: solid dark slate (#0F0F12).
-  Foreground: hexagon orb vector (drawable/ic_launcher_foreground.xml).
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <foreground android:drawable="@drawable/aira_logo" />
     <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>

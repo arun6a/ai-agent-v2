@@ -444,33 +444,26 @@ private fun ChatTopBar(
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .background(custom.accent, RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
+                // Aira logo (PNG) replaces the old letter "A" badge.
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(com.ai.agent.R.drawable.aira_logo),
+                    contentDescription = "Aira",
+                    modifier = Modifier.size(28.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
                     Text(
-                        text = "A",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
+                        text = "Aira",
+                        style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = m3.onSurface,
+                    )
+                    Text(
+                        text = "Personal Assistant",
+                        color = custom.fg3,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Normal,
                     )
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "AI Agent",
-                    style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = m3.onSurface,
-                )
-                Text(
-                    text = " v2",
-                    style = typography.titleMedium.copy(
-                        fontFamily = MonoFontFamily,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                    color = custom.accent,
-                )
 
                 Spacer(Modifier.width(10.dp))
 
@@ -697,15 +690,14 @@ private fun WelcomeEmptyState(
 
         Spacer(Modifier.height(20.dp))
         Text(
-            text = "Hey, I'm your AI Agent",
+            text = "Hey, I'm Aira",
             style = typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
             color = m3.onSurface,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Ask anything, give a command, or tap the mic to talk.\n" +
-                "I can run tools, control your phone, and remember what matters.",
+            text = "Your intelligent companion for seamless device control and daily tasks.",
             style = typography.bodyMedium,
             color = custom.fg2,
             textAlign = TextAlign.Center,
@@ -913,7 +905,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.5",
+            text = "v2.0.6",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,
@@ -1200,8 +1192,8 @@ private fun ChatScreenPreviewBody() {
                     Text("A", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text("AI Agent", style = typography.titleMedium, color = m3.onSurface)
-                Text(" v2", color = custom.accent, fontFamily = MonoFontFamily)
+                Text("Aira", style = typography.titleMedium, color = m3.onSurface)
+                Text(" · Personal Assistant", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 11.sp)
             }
             Box(modifier = Modifier.weight(1f)) {
                 WelcomeEmptyState(Modifier.fillMaxSize()) {}

@@ -42,14 +42,14 @@ import com.ai.agent.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
 // ============================================================================
-// SplashScreen — v2.0.5 cold-start splash.
+// SplashScreen — v2.0.6 cold-start splash (Aira rebrand).
 // ----------------------------------------------------------------------------
 // - Canvas-color background (matches Theme.AIAgentV2.Splash so there's no flash)
-// - Emerald orb icon (vector drawable ic_launcher_foreground) centered ~120dp
-// - "AI Agent v2" title with emerald "v2" accent (semibold 28sp)
-// - "v2.0.5 · build 5" mono caption below
+// - Aira logo (PNG, drawable/aira_logo.png) centered ~120dp
+// - "Aira" title (semibold 28sp) + "Personal AI Assistant" subtitle (gray)
+// - "v2.0.6 · build 6" mono caption below
 // - Fade-in icon, then slide-up title (AnimatedVisibility)
-// - After ~1500ms, navigates to chat (or onboarding if no provider configured)
+// - After ~1500ms, navigates to chat (or onboarding if first-run)
 // ============================================================================
 
 @Composable
@@ -92,18 +92,15 @@ fun SplashScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            // === Emerald orb icon (vector drawable wrapped in Image) ===
+            // === Aira logo (PNG resource) ===
             val iconAlpha by animateFloatAsState(
                 targetValue = if (showIcon) 1f else 0f,
                 animationSpec = tween(durationMillis = 600, easing = LinearOutSlowInEasing),
                 label = "splash-icon-fade",
             )
-            // vectorResource is a @Composable function — must be called directly,
-            // no try/catch (the resource exists in res/drawable/ic_launcher_foreground.xml).
-            val vector = ImageVector.vectorResource(R.drawable.ic_launcher_foreground)
             Image(
-                imageVector = vector,
-                contentDescription = "AI Agent icon",
+                painter = androidx.compose.ui.res.painterResource(R.drawable.aira_logo),
+                contentDescription = "Aira logo",
                 modifier = Modifier
                     .size(120.dp)
                     .alpha(iconAlpha),
@@ -121,24 +118,22 @@ fun SplashScreen(
                     ),
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(
-                            text = "AI Agent ",
-                            color = m3.onSurface,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = "v2",
-                            color = custom.accent,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = MonoFontFamily,
-                        )
-                    }
+                    Text(
+                        text = "Aira",
+                        color = m3.onSurface,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Personal AI Assistant",
+                        color = custom.fg2,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "v2.0.5 · build 5",
+                        text = "v2.0.6 · build 6",
                         color = custom.fg3,
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,

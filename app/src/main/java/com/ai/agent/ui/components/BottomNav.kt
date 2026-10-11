@@ -2,9 +2,8 @@ package com.ai.agent.ui.components
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -18,11 +17,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ============================================================================
-// BottomNav — Material 3 NavigationBar with 4 items:
-//   Chat  ·  Browse  ·  Hub  ·  Settings
+// BottomNav — Material 3 NavigationBar with 3 items:
+//   Chat  ·  Browse  ·  Aira Lab
 //
-// "Settings" routes to the Hub screen with the Settings section pre-selected
-// (same destination, different starting section) — the Hub screen handles it.
+// Settings tab was removed — Settings is available inside Aira Lab (the
+// renamed Hub) as one of its 13 sections. Cleaner, less duplication.
 // ============================================================================
 
 /** Route identifiers used by AppNavigation. */
@@ -56,8 +55,7 @@ private data class NavItem(
 private val NAV_ITEMS = listOf(
     NavItem("Chat", Icons.Outlined.ChatBubbleOutline, Routes.CHAT),
     NavItem("Browse", Icons.Outlined.Public, Routes.BROWSER),
-    NavItem("Hub", Icons.Outlined.Hub, Routes.HUB),
-    NavItem("Settings", Icons.Outlined.Settings, Routes.HUB_SETTINGS),
+    NavItem("Aira Lab", Icons.Outlined.Science, Routes.HUB),
 )
 
 @Composable
@@ -67,12 +65,11 @@ fun BottomNav(
 ) {
     val custom = LocalCustomColors.current
 
-    // Treat hub and hub/settings as the same nav target so both highlight "Hub".
-    // The Settings tab highlights itself when currentRoute == hub/settings.
+    // Aira Lab (Hub) highlights on both hub and hub/settings routes since
+    // the Settings section lives inside Aira Lab now.
     fun isSelected(item: NavItem): Boolean {
         return when (item.route) {
-            Routes.HUB -> currentRoute == Routes.HUB
-            Routes.HUB_SETTINGS -> currentRoute == Routes.HUB_SETTINGS
+            Routes.HUB -> currentRoute == Routes.HUB || currentRoute == Routes.HUB_SETTINGS
             else -> currentRoute == item.route
         }
     }

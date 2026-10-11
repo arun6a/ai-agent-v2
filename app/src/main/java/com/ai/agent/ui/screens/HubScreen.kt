@@ -178,12 +178,19 @@ fun HubScreen(
                     Text("A", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "AI Agent v2",
-                    color = m3.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                )
+                Column {
+                    Text(
+                        text = "Aira Lab",
+                        color = m3.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        text = "Personal Assistant",
+                        color = custom.fg3,
+                        fontSize = 10.sp,
+                    )
+                }
             }
             Text(
                 text = "SECTIONS · 13",
@@ -2552,14 +2559,16 @@ private fun AboutCard() {
             }
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "AI Agent v2",
+                text = "Aira",
                 color = m3.onSurface,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        AboutRow(label = "version", value = "2.0.5")
-        AboutRow(label = "build", value = "5")
+        AboutRow(label = "subtitle", value = "Personal AI Assistant")
+        AboutRow(label = "tagline", value = "Your intelligent companion for seamless device control and daily tasks.")
+        AboutRow(label = "version", value = "2.0.6")
+        AboutRow(label = "build", value = "6")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")

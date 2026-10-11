@@ -2,9 +2,9 @@
 <resources>
 
     <!-- App -->
-    <string name="app_name">AI Agent v2</string>
+    <string name="app_name">Aira</string>
 
     <!-- Accessibility service description (used by accessibility_service_config.xml) -->
-    <string name="accessibility_description">AI Agent v2 needs Accessibility to control your phone — read screen, tap buttons, type text, and navigate apps. Enable to allow the AI to execute commands.</string>
+    <string name="accessibility_description">Aira needs Accessibility to control your phone — read screen, tap buttons, type text, and navigate apps. Enable to allow Aira to execute commands.</string>
 
 </resources>

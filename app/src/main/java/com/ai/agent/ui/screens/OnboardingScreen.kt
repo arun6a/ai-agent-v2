@@ -224,25 +224,32 @@ private fun WelcomeStep(onGetStarted: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // vectorResource is @Composable — can't be wrapped in try/catch.
-        val vector = ImageVector.vectorResource(R.drawable.ic_launcher_foreground)
+        // Aira logo (PNG resource).
         Image(
-            imageVector = vector,
-            contentDescription = "AI Agent icon",
+            painter = androidx.compose.ui.res.painterResource(R.drawable.aira_logo),
+            contentDescription = "Aira logo",
             modifier = Modifier.size(140.dp),
         )
 
         Spacer(Modifier.height(24.dp))
         Text(
-            text = "Welcome to AI Agent v2",
+            text = "Welcome to Aira",
             color = m3.onSurface,
-            fontSize = 24.sp,
+            fontSize = 28.sp,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Personal AI Assistant",
+            color = custom.accent,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Your phone, controlled by AI.\nVoice or text — your wish is its command.",
+            text = "Your intelligent companion for seamless device control and daily tasks.",
             color = custom.fg2,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
