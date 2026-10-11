@@ -90,7 +90,7 @@ class LLMClient(private val context: Context) {
                         requestBuilder.header("X-Title", "AI Agent Phone")
                     }
                     "zai_direct", "groq", "together", "openai", "cerebras", "mistral",
-                    "deepinfra", "fireworks", "anthropic", "apikeys_in" -> {
+                    "deepinfra", "fireworks", "anthropic", "apikeys_in", "cline" -> {
                         // All OpenAI-compatible — Bearer token
                         requestBuilder.header("Authorization", "Bearer $apiKey")
                         // Anthropic also needs anthropic-version header
@@ -181,7 +181,7 @@ class LLMClient(private val context: Context) {
             // This is MUCH more reliable than asking the LLM to write JSON in the reply.
             // The LLM returns tool_calls as a structured field, not as text.
             if (providerId in setOf("groq", "openrouter", "together", "custom", "openai",
-                "cerebras", "mistral", "deepinfra", "fireworks", "zai_direct", "apikeys_in")) {
+                "cerebras", "mistral", "deepinfra", "fireworks", "zai_direct", "apikeys_in", "cline")) {
                 put("tools", buildToolsArray())
                 put("tool_choice", "auto")
                 // Some providers (Groq, OpenRouter) support response_format for stricter output

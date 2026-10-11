@@ -240,6 +240,37 @@ object AIProvider {
             )
         ),
         ProviderInfo(
+            id = "cline",
+            name = "Cline (Multi-Provider)",
+            description = "Cline gateway — access GPT, Claude, Gemini, DeepSeek through one API key. " +
+                    "Get a key at app.cline.bot/dashboard/account?tab=api-keys. " +
+                    "OpenAI-compatible. Model format: 'provider/model' (e.g., openai/gpt-4o). " +
+                    "Pay-as-you-go credits.",
+            defaultEndpoint = "https://api.cline.bot/api/v1/chat/completions",
+            needsApiKey = true,
+            models = listOf(
+                // === OpenAI ===
+                ModelInfo("openai/gpt-4o", "GPT-4o (OpenAI)", "OpenAI flagship. Smart, multimodal."),
+                ModelInfo("openai/gpt-4o-mini", "GPT-4o mini (Fast)", "Cheap, fast, capable."),
+                ModelInfo("openai/o3-mini", "o3-mini (Reasoning)", "Reasoning model."),
+                // === Anthropic ===
+                ModelInfo("anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5 (Best)", "Anthropic's latest. Excellent for coding + reasoning."),
+                ModelInfo("anthropic/claude-3-7-sonnet", "Claude 3.7 Sonnet", "Previous flagship. Very capable."),
+                ModelInfo("anthropic/claude-3-5-haiku", "Claude 3.5 Haiku (Fast)", "Fast, cheap."),
+                // === Google Gemini ===
+                ModelInfo("gemini/gemini-2.5-pro", "Gemini 2.5 Pro", "Google's flagship. Long context."),
+                ModelInfo("gemini/gemini-2.5-flash", "Gemini 2.5 Flash (Fast)", "Fast Gemini."),
+                // === DeepSeek ===
+                ModelInfo("deepseek/deepseek-chat", "DeepSeek V3", "Cheap, capable."),
+                ModelInfo("deepseek/deepseek-r1", "DeepSeek R1 (Reasoning)", "Open-source reasoning model."),
+                // === Meta Llama ===
+                ModelInfo("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Meta's open-weight flagship."),
+                // === Mistral ===
+                ModelInfo("mistral/mistral-large", "Mistral Large", "Mistral's flagship."),
+                ModelInfo("mistral/codestral", "Codestral", "Code generation specialist.")
+            )
+        ),
+        ProviderInfo(
             id = "custom",
             name = "Custom (OpenAI-compatible)",
             description = "Use any OpenAI-compatible API. Enter endpoint, API key, and model name. " +
