@@ -895,7 +895,7 @@ private fun ChatInputBar(
 }
 
 // ---------------------------------------------------------------------------
-// Status footer — "v2.0.4 · 47/14400 calls · 847ms avg"
+// Status footer — "v2.0.5 · 47/14400 calls · 847ms avg"
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -913,7 +913,7 @@ private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "v2.0.4",
+            text = "v2.0.5",
             color = custom.fg3,
             fontFamily = MonoFontFamily,
             fontSize = 11.sp,

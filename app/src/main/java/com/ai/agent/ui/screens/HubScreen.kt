@@ -2558,8 +2558,8 @@ private fun AboutCard() {
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        AboutRow(label = "version", value = "2.0.4")
-        AboutRow(label = "build", value = "4")
+        AboutRow(label = "version", value = "2.0.5")
+        AboutRow(label = "build", value = "5")
         AboutRow(label = "min sdk", value = "24 (Android 7.0)")
         AboutRow(label = "target sdk", value = "34 (Android 14)")
         AboutRow(label = "repo", value = "github.com/arun6a/ai-agent-v2")
@@ -2915,6 +2915,29 @@ private fun PermissionsSection() {
     // Group permission entries by their PermissionGroup, preserving declared order.
     val grouped = PERMISSIONS.groupBy { it.group }
 
+    // Critical permissions — if any of these is missing the agent can't run.
+    // Matches MainActivity.checkCriticalPermissions() plus the special perms
+    // (Accessibility + Overlay) which gate the floating button + screen-reading.
+    val missingCritical = remember(refreshKey) {
+        PERMISSIONS.filter { entry ->
+            val granted = when (entry.type) {
+                PermissionType.RUNTIME -> ContextCompat.checkSelfPermission(context, entry.perm) ==
+                    PackageManager.PERMISSION_GRANTED
+                PermissionType.OVERLAY -> android.provider.Settings.canDrawOverlays(context)
+                PermissionType.ALL_FILES -> android.os.Environment.isExternalStorageManager()
+                PermissionType.INTERNET -> true
+                PermissionType.ACCESSIBILITY -> isAccessibilityEnabled(context)
+            }
+            !granted && entry.perm in setOf(
+                "__accessibility__",
+                Manifest.permission.SYSTEM_ALERT_WINDOW,
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -2927,6 +2950,34 @@ private fun PermissionsSection() {
                 subtitle = "$grantedCount/$total granted · " +
                     if (grantedCount == total) "all granted" else "missing ${total - grantedCount}",
             )
+        }
+
+        // ---- v2.0.5 Task 60: Critical-permission warning banner ----
+        // Shows at the very top whenever any critical permission is missing,
+        // on EVERY visit to Hub → Permissions (not just onboarding).
+        if (missingCritical.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.error.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                        .border(1.dp, custom.error.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .clickable { grantAll() }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("⚠️", color = custom.error, fontSize = 16.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "Missing permissions — some features won't work. Tap Grant All to enable.",
+                        color = custom.error,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
 
         // ---- "Grant All" button (only visible if something is missing) ----

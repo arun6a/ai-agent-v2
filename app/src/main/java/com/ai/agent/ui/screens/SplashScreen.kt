@@ -42,12 +42,12 @@ import com.ai.agent.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
 // ============================================================================
-// SplashScreen — v2.0.4 cold-start splash.
+// SplashScreen — v2.0.5 cold-start splash.
 // ----------------------------------------------------------------------------
 // - Canvas-color background (matches Theme.AIAgentV2.Splash so there's no flash)
 // - Emerald orb icon (vector drawable ic_launcher_foreground) centered ~120dp
 // - "AI Agent v2" title with emerald "v2" accent (semibold 28sp)
-// - "v2.0.4 · build 4" mono caption below
+// - "v2.0.5 · build 5" mono caption below
 // - Fade-in icon, then slide-up title (AnimatedVisibility)
 // - After ~1500ms, navigates to chat (or onboarding if no provider configured)
 // ============================================================================
@@ -138,7 +138,7 @@ fun SplashScreen(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "v2.0.4 · build 4",
+                        text = "v2.0.5 · build 5",
                         color = custom.fg3,
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,
