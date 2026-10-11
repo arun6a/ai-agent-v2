@@ -4,16 +4,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.ai.agent.ui.screens.ChatScreen
+import com.ai.agent.ui.navigation.AppNavigation
 import com.ai.agent.ui.theme.AIAgentTheme
 
 // ============================================================================
 // MainActivity — v2 entry point
 // ----------------------------------------------------------------------------
-// Fresh Compose-based rebuild. No v1 chat logic is wired in yet — this just
-// mounts the theme + ChatScreen placeholder so we can iterate on the visual
-// layer. Backend (LLMClient, ToolExecutor, Accessibility, rules…) is carried
-// over from v1 and can be plugged in later from a ViewModel.
+// Mounts the theme + AppNavigation, which routes between the 4 top-level
+// screens (Chat / Browse / Hub / Settings via BottomNav).
+//
+// The ChatScreen now owns a ChatViewModel that drives the real agent loop:
+// LLMClient → ToolExecutor → AgentDatabase → VoiceManager.
+// Backend (LLMClient, ToolExecutor, Accessibility, rules…) is carried over
+// from v1 and instantiated inside ChatViewModelFactory.
 // ============================================================================
 
 class MainActivity : ComponentActivity() {
@@ -29,7 +32,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AIAgentTheme {
-                ChatScreen()
+                AppNavigation()
             }
         }
     }

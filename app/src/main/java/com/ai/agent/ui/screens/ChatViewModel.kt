@@ -1,0 +1,501 @@
+package com.ai.agent.ui.screens
+
+import android.content.Context
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.ai.agent.VoiceManager
+import com.ai.agent.llm.AIProvider
+import com.ai.agent.llm.ApiUsageTracker
+import com.ai.agent.llm.DynamicPromptBuilder
+import com.ai.agent.llm.LLMClient
+import com.ai.agent.storage.AgentDatabase
+import com.ai.agent.tools.ToolExecutor
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+// ============================================================================
+// ChatViewModel — owns chat state and runs the v2 agent loop.
+// ----------------------------------------------------------------------------
+// Ports v1's MainActivity.runAgentLoop() into a Compose-friendly ViewModel:
+//   - State exposed as StateFlow (collectAsState in Compose)
+//   - Iteration / API count / provider info surfaced in the same state
+//   - Stop button cancels the current loop without losing partial progress
+//   - Per-step messages (each iteration appends a new ChatMessage with tools)
+//   - Strategy switching after 2 failures, hard stop after 3 (infinite-loop guard)
+//   - Always learns (saves successful workflow + failure lessons to database)
+//   - Dynamic prompt fallback: if AI calls unknown tools, expand to full prompt
+//   - Conversation trimmed to 8000 chars (keeps last 6000 + original user msg)
+//   - Voice: speak(finalReply.take(500), "en") at the end
+// ============================================================================
+
+// ---- UI state models ----
+
+data class ChatMessage(
+    val id: String = UUID.randomUUID().toString(),
+    val text: String,
+    val isUser: Boolean,
+    val timestamp: Long = System.currentTimeMillis(),
+    val toolCalls: List<ToolCallDisplay> = emptyList(),
+    val status: MessageStatus = MessageStatus.IDLE,
+)
+
+data class ToolCallDisplay(
+    val name: String,
+    val args: Map<String, Any>,
+    val success: Boolean = false,
+    val output: String = "",
+    val durationMs: Long = 0,
+)
+
+enum class MessageStatus { IDLE, THINKING, EXECUTING, SUCCESS, ERROR }
+
+data class ChatUiState(
+    val messages: List<ChatMessage> = emptyList(),
+    val isThinking: Boolean = false,
+    val isExecuting: Boolean = false,
+    val currentIteration: Int = 0,
+    val maxIterations: Int = MAX_ITERATIONS,
+    val apiCallCount: Int = 0,
+    val providerName: String = "",
+    val modelName: String = "",
+    val error: String? = null,
+    val stopRequested: Boolean = false,
+)
+
+class ChatViewModel(
+    private val context: Context,
+    private val llmClient: LLMClient,
+    private val toolExecutor: ToolExecutor,
+    private val database: AgentDatabase,
+    private val voiceManager: VoiceManager,
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(ChatUiState())
+    val state: StateFlow<ChatUiState> = _state.asStateFlow()
+
+    /** The currently running agent-loop coroutine (so Stop can cancel it). */
+    private var loopJob: Job? = null
+
+    init {
+        loadProviderInfo()
+    }
+
+    // ---- public API ----
+
+    fun loadProviderInfo() {
+        val provider = AIProvider.getCurrentProvider(context)
+        val model = AIProvider.getModel(context)
+        _state.update { it.copy(providerName = provider.name, modelName = model) }
+    }
+
+    fun sendMessage(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+
+        // Cancel any in-flight loop (re-entrant send = stop previous task).
+        loopJob?.cancel()
+
+        // Persist + display the user message.
+        database.addConversation("user", trimmed)
+        val userMsg = ChatMessage(text = trimmed, isUser = true, status = MessageStatus.IDLE)
+        _state.update { s ->
+            s.copy(
+                messages = s.messages + userMsg,
+                error = null,
+                stopRequested = false,
+                currentIteration = 0,
+                apiCallCount = 0,
+                isThinking = true,
+                isExecuting = false,
+            )
+        }
+
+        loopJob = viewModelScope.launch { runAgentLoop(trimmed) }
+    }
+
+    fun stopAgent() {
+        _state.update { it.copy(stopRequested = true, isThinking = false, isExecuting = false) }
+        loopJob?.cancel()
+    }
+
+    fun clearChat() {
+        loopJob?.cancel()
+        database.clearConversations()
+        _state.update {
+            ChatUiState(
+                providerName = it.providerName,
+                modelName = it.modelName,
+            )
+        }
+    }
+
+    fun dismissError() {
+        _state.update { it.copy(error = null) }
+    }
+
+    // ---- the agent loop (ported from v1 MainActivity.runAgentLoop) ----
+
+    private suspend fun runAgentLoop(userMessage: String) {
+        val workLog = StringBuilder()
+        try {
+            // === 1. Build the system prompt (dynamic) + inject memory ===
+            val basePrompt = DynamicPromptBuilder.buildPrompt(context, userMessage)
+            val memory = database.getAllMemory()
+            val memoryStr = if (memory.isEmpty()) {
+                "No memories stored yet."
+            } else {
+                memory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
+            }
+            var systemPrompt = "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
+
+            // === 2. Build the conversation: recent history + user message ===
+            val conversation = StringBuilder()
+            val history = database.getRecentConversations(4)
+            if (history.isNotEmpty()) {
+                conversation.append("[Recent conversation history:\n")
+                for ((role, text) in history) {
+                    conversation.append(if (role == "user") "User: " else "AI: ")
+                    conversation.append(text.take(150))
+                    conversation.append("\n")
+                }
+                conversation.append("]\n\n")
+            }
+            conversation.append(userMessage)
+
+            // === 3. Loop state ===
+            val toolCallHistory = mutableListOf<String>()
+            var finalReply = ""
+            var iteration = 0
+
+            ApiUsageTracker.startNewTask()
+
+            while (iteration < MAX_ITERATIONS && !_state.value.stopRequested) {
+                iteration++
+                _state.update {
+                    it.copy(
+                        currentIteration = iteration,
+                        isThinking = true,
+                        isExecuting = false,
+                        apiCallCount = ApiUsageTracker.getTaskCalls(),
+                    )
+                }
+
+                // Call the LLM with current conversation state.
+                val llmResponse = llmClient.chat(conversation.toString(), systemPrompt)
+
+                _state.update {
+                    it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())
+                }
+
+                // === Dynamic-prompt fallback ===
+                // If AI calls tools NOT in the dynamic prompt, expand to full prompt for next call.
+                if (iteration == 1 && AIProvider.getPromptMode(context) == "dynamic") {
+                    val availableTools = ToolExecutor.getAvailableToolNames()
+                    val unknownTools = llmResponse.toolCalls.filter { it.name !in availableTools }
+                    if (unknownTools.isNotEmpty()) {
+                        Log.w(TAG, "AI called unknown tools: ${unknownTools.map { it.name }} — expanding to full prompt")
+                        val fullPrompt = DynamicPromptBuilder.buildPrompt(context, "")
+                        val allMemory = database.getAllMemory()
+                        val memStr = if (allMemory.isEmpty()) "No memories stored yet."
+                        else allMemory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
+                        systemPrompt = "$fullPrompt\n\n## What I Remember About the User\n$memStr"
+                        // Re-call with full prompt
+                        val retryResponse = llmClient.chat(conversation.toString(), systemPrompt)
+                        val retryResults = executeTimed(retryResponse.toolCalls)
+                        val retrySummary = StringBuilder("Step $iteration (fallback): ${retryResponse.reply}")
+                        retryResults.forEachIndexed { i, dr ->
+                            val call = retryResponse.toolCalls[i]
+                            retrySummary.append("\n• ${call.name}(${argsStr(call.args)}) → ${if (dr.success) "✓" else "✗"}")
+                        }
+                        val callCount = ApiUsageTracker.getTaskCalls()
+                        addAiStepMessage(retrySummary.toString(), retryResponse.toolCalls, retryResults, iteration, callCount)
+                        conversation.append("\n\n[Tool results from step $iteration (fallback)]:")
+                        retryResults.forEachIndexed { i, dr ->
+                            val call = retryResponse.toolCalls[i]
+                            conversation.append("Tool: ${call.name}(${argsStr(call.args)})\n")
+                            conversation.append("Result: ${dr.output}\n\n")
+                        }
+                        conversation.append("\nBased on these results, decide the next step.")
+                        _state.update { it.copy(apiCallCount = callCount) }
+                        delay(300)
+                        continue
+                    }
+                }
+
+                // === If no tool calls → task complete ===
+                if (llmResponse.toolCalls.isEmpty()) {
+                    finalReply = llmResponse.reply.ifBlank { "Done." }
+
+                    // Always learn — save successful workflow for future use.
+                    if (iteration > 1 && workLog.isNotEmpty()) {
+                        try {
+                            val workflowKey = "workflow_${
+                                userMessage.take(40)
+                                    .replace(" ", "_")
+                                    .replace(Regex("[^a-zA-Z0-9_]"), "")
+                            }"
+                            database.remember(workflowKey, workLog.toString().take(500))
+                            Log.i(TAG, "Saved workflow: $workflowKey (${workLog.length} chars)")
+                        } catch (_: Exception) {
+                        }
+                    }
+                    break
+                }
+
+                // === Infinite-loop detection + strategy switching ===
+                // readScreen() and wait() are verification tools — expected to repeat.
+                val actionTools = llmResponse.toolCalls.filter { it.name != "readScreen" && it.name != "wait" }
+                var stuckSignature: String? = null
+                for (call in actionTools) {
+                    val signature = "${call.name}(${argsStr(call.args)})"
+                    toolCallHistory.add(signature)
+                    val count = toolCallHistory.count { it == signature }
+
+                    // Strategy switching — after 2 failures, inject alternatives into the conversation.
+                    if (count == 2) {
+                        val alternatives = getStrategyAlternatives(call.name)
+                        if (alternatives.isNotEmpty()) {
+                            conversation.append(
+                                "\n\n⚠️ STRATEGY SWITCH: You've tried \"$signature\" twice and it's not working. " +
+                                    "Try a DIFFERENT approach:\n$alternatives\n" +
+                                    "Do NOT repeat the same tool. Switch strategy NOW."
+                            )
+                            Log.i(TAG, "Strategy switch injected for $signature (attempt 2)")
+                        }
+                    }
+
+                    if (count >= MAX_REPEATED_TOOLS) {
+                        finalReply = "I stopped because I tried \"$signature\" $count times — it's not working. " +
+                            "I may be stuck on this step.\n\n$workLog\n\n" +
+                            "The task might need a different approach. Try breaking it into smaller steps, " +
+                            "or ask me to read the screen and describe what I see."
+                        voiceManager.speak(
+                            "I'm stuck on a step. I tried the same action $count times and it's not working.",
+                            "en"
+                        )
+
+                        // Always learn — even from failure, save what NOT to do.
+                        try {
+                            val failKey = "avoid_${call.name}_${userMessage.take(30).replace(" ", "_")}"
+                            database.remember(
+                                failKey,
+                                "Tried $signature $count times — FAILED. Use alternatives: ${getStrategyAlternatives(call.name)}"
+                            )
+                            Log.i(TAG, "Saved failure lesson: $failKey")
+                        } catch (_: Exception) {
+                        }
+                        stuckSignature = signature
+                        break
+                    }
+                }
+                if (stuckSignature != null) {
+                    addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
+                    break
+                }
+
+                // === LLM wants to call tools — execute them (with per-call timing) ===
+                _state.update { it.copy(isThinking = false, isExecuting = true) }
+                val results = executeTimed(llmResponse.toolCalls)
+
+                val toolSummary = StringBuilder()
+                toolSummary.append(if (iteration == 1) llmResponse.reply else "Step $iteration: ${llmResponse.reply}")
+                val resultsForLLM = StringBuilder("\n\nI executed these tools:\n")
+                results.forEachIndexed { i, dr ->
+                    val call = llmResponse.toolCalls[i]
+                    val argsStr = argsStr(call.args)
+                    toolSummary.append("\n• ${call.name}($argsStr) → ${if (dr.success) "✓" else "✗"}")
+                    if (!dr.success) {
+                        toolSummary.append(" ${dr.output}")
+                    }
+                    resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
+                    resultsForLLM.append("Result: ${dr.output}\n\n")
+                }
+
+                if (iteration == 1) {
+                    workLog.clear()
+                    workLog.append(toolSummary)
+                } else {
+                    workLog.append("\n\n").append(toolSummary)
+                }
+
+                // Show iteration progress as a NEW message per step (mirrors v1 v5.0.8 fix).
+                val callCount = ApiUsageTracker.getTaskCalls()
+                addAiStepMessage(toolSummary.toString(), llmResponse.toolCalls, results, iteration, callCount)
+
+                // Append results to conversation for the next LLM call.
+                conversation.append("\n\n[Tool results from step $iteration]:")
+                conversation.append(resultsForLLM)
+                conversation.append(
+                    "\nBased on these results, decide the next step. " +
+                        "If the task is complete, reply with just the final message and no tool_calls. " +
+                        "If a step failed, try a DIFFERENT approach (don't repeat the same action). " +
+                        "If you need to verify, call readScreen()."
+                )
+
+                // Trim old history to prevent conversation from growing too long.
+                if (conversation.length > MAX_CONVERSATION_CHARS) {
+                    val originalMsg = userMessage
+                    val recentHistory = conversation.substring(conversation.length - 6000)
+                    conversation.clear()
+                    conversation.append(originalMsg)
+                    conversation.append("\n\n[Previous steps omitted. Most recent steps:]")
+                    conversation.append(recentHistory)
+                }
+
+                _state.update { it.copy(apiCallCount = callCount) }
+                delay(300)
+            }
+
+            if (finalReply.isEmpty()) {
+                finalReply = if (iteration >= MAX_ITERATIONS && !_state.value.stopRequested) {
+                    "I reached the maximum of $MAX_ITERATIONS steps. Here's what I accomplished:\n" +
+                        "$workLog\n\nThe task might need more steps — try asking me to continue, " +
+                        "or break it into smaller parts."
+                } else {
+                    workLog.toString().ifBlank { "Done." }
+                }
+            }
+
+            // Final reply as a separate message (does NOT overwrite step messages).
+            addAiFinalMessage(finalReply)
+            database.addConversation("ai", finalReply)
+            database.logAction("Processed: $userMessage → $finalReply")
+            voiceManager.speak(finalReply.take(500), "en")
+
+        } catch (e: CancellationException) {
+            // User pressed Stop or sent a new message — not a real error.
+            if (!_state.value.stopRequested) {
+                val msg = "Task interrupted (a new message was sent or the task was stopped). " +
+                    "Last progress:\n$workLog"
+                addAiFinalMessage(msg)
+                database.addConversation("ai", msg)
+            }
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Agent loop failed", e)
+            val msg = "Error: ${e.message ?: e::class.simpleName}"
+            _state.update { it.copy(error = msg, isThinking = false, isExecuting = false) }
+            addAiFinalMessage(msg, MessageStatus.ERROR)
+            database.addConversation("ai", msg)
+        } finally {
+            _state.update {
+                it.copy(
+                    isThinking = false,
+                    isExecuting = false,
+                    currentIteration = 0,
+                    stopRequested = false,
+                )
+            }
+        }
+    }
+
+    /**
+     * Execute each tool call individually so we can time each one.
+     * Returns ToolCallDisplay list (with success / output / durationMs).
+     *
+     * We use `toolExecutor.executeTools(listOf(call))` per call so we don't have
+     * to modify the (frozen) backend — executeTool is private.
+     */
+    private suspend fun executeTimed(toolCalls: List<LLMClient.ToolCall>): List<ToolCallDisplay> {
+        val out = mutableListOf<ToolCallDisplay>()
+        for (call in toolCalls) {
+            val start = System.currentTimeMillis()
+            val results = toolExecutor.executeTools(listOf(call))
+            val elapsed = System.currentTimeMillis() - start
+            val r = results.firstOrNull()
+            out.add(
+                ToolCallDisplay(
+                    name = call.name,
+                    args = call.args,
+                    success = r?.success == true,
+                    output = r?.output ?: "(no result)",
+                    durationMs = elapsed,
+                )
+            )
+        }
+        return out
+    }
+
+    /** Pretty-print tool args: "key=value, key=value". */
+    private fun argsStr(args: Map<String, Any>): String {
+        if (args.isEmpty()) return ""
+        return args.entries.joinToString(", ") { "${it.key}=${it.value}" }
+    }
+
+    /** Append a per-step AI message (with tool calls) to the chat. */
+    private fun addAiStepMessage(
+        text: String,
+        toolCalls: List<LLMClient.ToolCall>,
+        results: List<ToolCallDisplay>,
+        iteration: Int,
+        apiCalls: Int,
+        status: MessageStatus = MessageStatus.EXECUTING,
+    ) {
+        val header = "[$iteration/$MAX_ITERATIONS] [API: $apiCalls calls] $text"
+        val msg = ChatMessage(
+            text = header,
+            isUser = false,
+            toolCalls = results,
+            status = status,
+        )
+        _state.update { s -> s.copy(messages = s.messages + msg) }
+    }
+
+    /** Append the final AI message (no tools, just the reply). */
+    private fun addAiFinalMessage(text: String, status: MessageStatus = MessageStatus.SUCCESS) {
+        val msg = ChatMessage(text = text, isUser = false, status = status)
+        _state.update { s -> s.copy(messages = s.messages + msg) }
+    }
+
+    /**
+     * v6.1.1: Strategy switching — returns alternative tools to try when a tool fails.
+     * Injected into the conversation after 2 failures of the same tool.
+     */
+    private fun getStrategyAlternatives(toolName: String): String {
+        return when (toolName) {
+            "browserClickText" -> "Try: tap(x, y) with coordinates from analyzeScreen, " +
+                "or use browserClickElement with index, or readScreen to see what's actually there."
+            "browserFill" -> "Try: tap on the field first, then type(text). " +
+                "Or use browserEval with document.querySelector(...).value = '...'"
+            "tap" -> "Try: analyzeScreen first to find correct coordinates. " +
+                "Or use browserClickText if in browser. Or use accessibility tap."
+            "type" -> "Try: tap the field first to focus it, then type. Or use browserFillForm."
+            "launchApp" -> "Try: searchInApp instead, or open via browser."
+            else -> "Try a different approach, or call readScreen to see what's on screen."
+        }
+    }
+
+    companion object {
+        private const val TAG = "ChatViewModel"
+        private const val MAX_ITERATIONS = 50
+        private const val MAX_REPEATED_TOOLS = 3
+        private const val MAX_CONVERSATION_CHARS = 8000
+    }
+}
+
+// ============================================================================
+// Factory — instantiates the VM with all of its carried-over backend deps.
+// ============================================================================
+
+class ChatViewModelFactory(
+    private val context: Context,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        val appContext = context.applicationContext
+        val llmClient = LLMClient(appContext)
+        val toolExecutor = ToolExecutor(appContext)
+        val database = AgentDatabase(appContext)
+        val voiceManager = VoiceManager(appContext)
+        return ChatViewModel(appContext, llmClient, toolExecutor, database, voiceManager) as T
+    }
+}
