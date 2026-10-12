@@ -9,6 +9,7 @@ import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -413,7 +414,7 @@ class ToolExecutor(private val context: Context) {
                     val cameraManager = context.getSystemService(android.content.Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
                     val cameraId = cameraManager.cameraIdList[0]
                     cameraManager.setTorchMode(cameraId, true)
-                    Thread.sleep(2000)
+                    delay(2000)
                     cameraManager.setTorchMode(cameraId, false)
                     ToolResult(true, "Flashlight toggled")
                 } catch (e: Exception) {
@@ -782,25 +783,42 @@ class ToolExecutor(private val context: Context) {
                     val (searchUrl, parseMode) = when (searchMethod) {
                         "google" -> "https://www.google.com/search?q=$encodedQuery" to "google"
                         "bing" -> "https://www.bing.com/search?q=$encodedQuery&setlang=en" to "bing"
-                        "proxy" -> AIProvider.getWebSearchUrl(context) to "proxy"
-                        else -> "https://html.duckduckgo.com/html/?q=$encodedQuery" to "duckduckgo"
-                    }
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val request = okhttp3.Request.Builder()
-                        .url(searchUrl)
-                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
-                        .apply {
-                            if (parseMode == "proxy") {
-                                header("Content-Type", "application/json")
-                                post("""{"query":"$query","num":5}""".toRequestBody("application/json".toMediaType()))
+                        "google_app" -> {
+                            // v2.2.3: Open Google Search app directly via Intent
+                            val intent = android.content.Intent(android.content.Intent.ACTION_WEB_SEARCH).apply {
+                                putExtra("query", query)
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                context.startActivity(intent)
+                                return ToolResult(true, "Opened Google Search app for: '$query'. Use readScreen() to see results after 3s.")
+                            } catch (e: Exception) {
+                                // Google Search app not available — fall back to DuckDuckGo
+                                "https://html.duckduckgo.com/html/?q=$encodedQuery" to "duckduckgo"
                             }
                         }
-                        .build()
-                    val response = client.newCall(request).execute()
-                    val body = response.body?.string() ?: ""
+                        else -> "https://html.duckduckgo.com/html/?q=$encodedQuery" to "duckduckgo"
+                    }
+                    // v2.2.6: Run HTTP request on IO dispatcher (was blocking main thread → NetworkOnMainThreadException)
+                    val (body, responseCode) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val client = okhttp3.OkHttpClient.Builder()
+                            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        val request = okhttp3.Request.Builder()
+                            .url(searchUrl)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                            .apply {
+                                if (parseMode == "proxy") {
+                                    header("Content-Type", "application/json")
+                                    post("""{"query":"$query","num":5}""".toRequestBody("application/json".toMediaType()))
+                                }
+                            }
+                            .build()
+                        val response = client.newCall(request).execute()
+                        val respBody = response.body?.string() ?: ""
+                        respBody to response.code
+                    }
 
                     val results = StringBuilder()
 
@@ -1192,7 +1210,7 @@ class ToolExecutor(private val context: Context) {
                     "chrome" -> {
                         // User chose Chrome mode — open in Chrome (needs accessibility for AI to read results)
                         val opened = BrowserController.openInChrome(context, finalUrl)
-                        Thread.sleep(3000)  // give Chrome time to load
+                        delay(3000)  // v2.2.6: non-blocking delay (was Thread.sleep → ANR)
                         if (opened) {
                             // Auto-read the screen so the AI can see what's on Chrome
                             val screenText = try { service?.readScreen() ?: "(readScreen failed)" } catch (e: Exception) { "(readScreen error: ${e.message})" }
@@ -1204,14 +1222,17 @@ class ToolExecutor(private val context: Context) {
                     }
                     "auto", "in_app" -> {
                         // Use the visible in-app browser (BrowserActivity)
+                        // v2.2.6: Don't use Thread.sleep — it blocks the main thread and
+                        // causes ANR because BrowserActivity.onCreate is also on main thread.
+                        // Instead, use coroutine delay (non-blocking) + return immediately.
                         BrowserController.openUrl(context, finalUrl)
-                        Thread.sleep(2000)
-                        ToolResult(true, "Browser opened (visible in-app): $finalUrl — use browserReadStructured/browserClickText to interact")
+                        delay(2000)  // non-blocking delay (was Thread.sleep which blocked main thread → ANR)
+                        ToolResult(true, "Browser opened (visible in-app): $finalUrl — use browserReadStructured/browserClickText to interact. Wait for page to load before clicking.")
                     }
                     else -> {
                         BrowserController.openUrl(context, finalUrl)
-                        Thread.sleep(2000)
-                        ToolResult(true, "Browser opened: $finalUrl")
+                        delay(2000)  // non-blocking delay
+                        ToolResult(true, "Browser opened: $finalUrl — wait for page to load before interacting.")
                     }
                 }
             }
@@ -1243,7 +1264,7 @@ class ToolExecutor(private val context: Context) {
             }
             "browserBack" -> {
                 BrowserController.goBack(context)
-                Thread.sleep(1000)
+                delay(1000)
                 ToolResult(true, "Went back")
             }
             "browserGetUrl" -> {
@@ -1254,7 +1275,7 @@ class ToolExecutor(private val context: Context) {
                 val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
                 val url = "https://www.google.com/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}"
                 BrowserController.openUrl(context, url)
-                Thread.sleep(2000)
+                delay(2000)
                 val pageText = BrowserController.getPageText(context)
                 val text = pageText?.take(3000) ?: "Page not loaded"
                 ToolResult(true, "Searched: $query\n\nPage content:\n$text")
@@ -1304,7 +1325,7 @@ class ToolExecutor(private val context: Context) {
                     // Chrome mode — use accessibility clickByText instead
                     val clicked = service?.clickByText(text) ?: false
                     if (clicked) {
-                        Thread.sleep(1500)  // let the page transition
+                        delay(1500)  // let the page transition
                         val screenText = try { service?.readScreen() ?: "" } catch (e: Exception) { "" }
                         val finalScreen = if (screenText.length > 1000) screenText.take(1000) + "..." else screenText
                         ToolResult(true, "Chrome mode: clicked '$text' via accessibility. Screen after click:\n$finalScreen")
