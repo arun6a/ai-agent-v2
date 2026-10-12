@@ -1,7 +1,9 @@
 package com.ai.agent.ui.components
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -27,6 +33,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -100,6 +107,11 @@ fun ChatMessageItem(
         }
     } else {
         // ----- AI message: left-aligned with emerald orb avatar -----
+        // v2.2.4: Step messages (with [N/M] prefix) are collapsible.
+        // Collapsed: shows first line + tool count. Expanded: shows full text + tools.
+        val isStepMessage = message.text.startsWith("[")
+        var expanded by remember { mutableStateOf(!isStepMessage) }  // steps start collapsed
+
         Column(
             modifier = modifier
                 .fillMaxWidth()
@@ -133,6 +145,8 @@ fun ChatMessageItem(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .animateContentSize()  // v2.2.4: smooth expand/collapse
+                                .clickable(enabled = isStepMessage) { expanded = !expanded }  // tap to toggle
                                 .background(
                                     if (isError) custom.error.copy(alpha = 0.12f) else custom.surface2,
                                     RoundedCornerShape(
@@ -173,12 +187,54 @@ fun ChatMessageItem(
                                     }
                                     Spacer(Modifier.height(4.dp))
                                 }
-                                Text(
-                                    text = renderMarkdown(message.text),
-                                    color = if (isError) custom.error else m3.onSurface,
-                                    fontSize = 13.sp,
-                                    lineHeight = 18.sp,
-                                )
+
+                                // v2.2.4: Collapsible step messages
+                                if (isStepMessage && !expanded) {
+                                    // COLLAPSED: show first line + tool count + expand hint
+                                    val firstLine = message.text.substringBefore("\n").take(120)
+                                    val toolCount = message.toolCalls.size
+                                    Text(
+                                        text = renderMarkdown(firstLine),
+                                        color = if (isError) custom.error else m3.onSurface,
+                                        fontSize = 13.sp,
+                                        lineHeight = 18.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (toolCount > 0) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = "$toolCount tool call${if (toolCount > 1) "s" else ""} · tap to expand ▶",
+                                            color = custom.fg3,
+                                            fontFamily = MonoFontFamily,
+                                            fontSize = 11.sp,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "tap to expand ▶",
+                                            color = custom.fg3,
+                                            fontFamily = MonoFontFamily,
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                } else {
+                                    // EXPANDED (or not a step message): show full text
+                                    Text(
+                                        text = renderMarkdown(message.text),
+                                        color = if (isError) custom.error else m3.onSurface,
+                                        fontSize = 13.sp,
+                                        lineHeight = 18.sp,
+                                    )
+                                    if (isStepMessage) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = "tap to collapse ▼",
+                                            color = custom.fg3,
+                                            fontFamily = MonoFontFamily,
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                }
                             }
                         }
                         Row(
@@ -209,8 +265,8 @@ fun ChatMessageItem(
                         }
                     }
 
-                    // Tool call cards stack
-                    if (message.toolCalls.isNotEmpty()) {
+                    // Tool call cards stack — only show when expanded
+                    if (message.toolCalls.isNotEmpty() && (expanded || !isStepMessage)) {
                         Spacer(Modifier.height(6.dp))
                         Column(
                             modifier = Modifier.fillMaxWidth(),

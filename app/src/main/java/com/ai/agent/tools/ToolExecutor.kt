@@ -196,14 +196,18 @@ class ToolExecutor(private val context: Context) {
                     }
                     else -> {
                         // AUTO mode (default) — a11y first, supplement with ML Kit if short
-                        if (a11yText.isNotEmpty() && a11yText != "(no text on screen)" && a11yText != "(screen is null)" && a11yText.length >= 200) {
-                            // Accessibility found enough text — use it (instant, free)
+                        // v2.2.4: Lowered threshold from 200 to 100 chars so ML Kit
+                        // supplements more often (catches text in Gmail/YouTube/Instagram
+                        // that accessibility misses even when there's SOME text).
+                        if (a11yText.isNotEmpty() && a11yText != "(no text on screen)" && a11yText != "(screen is null)" && a11yText.length >= 500) {
+                            // Accessibility found a LOT of text (>500 chars) — use it (instant, free)
+                            Log.i(TAG, "readScreen: auto mode — a11y has ${a11yText.length} chars, using directly")
                             ToolResult(true, a11yText)
                         } else if (a11yText.length >= 10) {
-                            // Accessibility found SOME text but it's short (< 200 chars).
+                            // Accessibility found SOME text but it's short (< 500 chars).
                             // v2.2.3: Supplement with ML Kit to catch text that a11y missed
                             // (e.g., email subjects in Gmail, custom list view items).
-                            Log.i(TAG, "readScreen: a11y text short (${a11yText.length} chars) — supplementing with ML Kit")
+                            Log.i(TAG, "readScreen: auto mode — a11y short (${a11yText.length} chars) — supplementing with ML Kit")
                             val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
                             if (mlText != null && mlText.length >= 10 && mlText != a11yText) {
                                 // Combine a11y + ML Kit for maximum coverage
