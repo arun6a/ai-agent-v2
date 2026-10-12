@@ -2398,16 +2398,17 @@ $instructions
         AgentAccessibilityService.getInstance()?.let { return it }
         // Slow path: if enabled in system settings, wait for the bind to complete.
         if (!AgentAccessibilityService.isEnabled(context)) return null
-        // Service is enabled but not yet bound. Poll up to 5s (10 × 500ms).
-        Log.i(TAG, "Accessibility is enabled but instance not yet bound — polling for up to 5s")
-        repeat(10) { i ->
+        // v2.2.5: Increased poll from 5s to 10s (20 × 500ms) — after BrowserActivity
+        // opens, the system may take longer to rebind the accessibility service.
+        Log.i(TAG, "Accessibility is enabled but instance not yet bound — polling for up to 10s")
+        repeat(20) { i ->
             delay(500)
             AgentAccessibilityService.getInstance()?.let {
                 Log.i(TAG, "Accessibility service bound after ${i + 1} polls")
                 return it
             }
         }
-        Log.w(TAG, "Accessibility service enabled but never bound after 5s — Android may be slow")
+        Log.w(TAG, "Accessibility service enabled but never bound after 10s — Android may be slow")
         return AgentAccessibilityService.getInstance()  // last try
     }
 

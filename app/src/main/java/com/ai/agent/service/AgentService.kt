@@ -323,7 +323,10 @@ class AgentService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val a11yStatus = if (AgentAccessibilityService.isRunning()) "ON" else "OFF"
+        // v2.2.5: Use isEnabled(context) instead of isRunning() — the in-memory
+        // instance can be null after ANR/BrowserActivity, but the system setting
+        // still shows enabled. This fixes "A11y OFF" in notification when it's ON.
+        val a11yStatus = if (com.ai.agent.accessibility.AgentAccessibilityService.isEnabled(this)) "ON" else "OFF"
         val taskText = if (taskRunning) "Executing task..." else "Ready"
 
         // v2.2.2: Add Stop Task action button to notification
