@@ -4,6 +4,93 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v2.3.3 (versionCode 24) — getWeather + webSearch fetchTop + AppProfileManager
+**Date:** 2026-10-12
+**Commit:** `145c93d`
+**APK:** 43.3 MB
+
+### Major Changes
+
+#### 1. getWeather tool (1 call vs 3+)
+- **Problem:** "What's the weather?" used to require webSearch → fetchPageText loop = 3+ API calls
+- **Solution:** New `getWeather()` tool — uses GPS + free Open-Meteo API (no API key, works globally including India)
+- **Returns:** Current temp, feels-like, humidity, wind, precipitation, condition, location + 3-day forecast
+- Added to all 3 prompt files (smart/balanced/fast) + DynamicPromptBuilder Device category
+- Added to batchable READ-ONLY list — can be batched with getBatteryLevel, getCurrentTime, etc.
+- DynamicPromptBuilder keywords expanded: `weather`, `temperature`, `forecast`, `rain` → Device category
+
+#### 2. webSearch fetchTop — 1 call instead of 1+N
+- **Problem:** webSearch returned 8 short snippets → AI called fetchPageText on each → 1+8 = 9 API calls per search
+- **Solution:** New `fetchTop=N` param on webSearch
+  - When fetchTop=1 → returns search results + full text of #1 result in 1 call (saves 1 API call)
+  - When fetchTop=2 → returns search results + full text of top 2 results in 1 call (saves 2 API calls)
+  - Concurrent fetch via `kotlinx.coroutines.async` + `awaitAll` on IO dispatcher (parallel HTTP)
+- **Prompt rule added:** "After webSearch without fetchTop: ANSWER FROM SNIPPETS. Only call fetchPageText if snippets incomplete OR user explicitly asks for full article."
+- **Example workflow:** "what is quantum computing" → webSearch("quantum computing", fetchTop=1) → done in 1 call
+
+#### 3. Removed PluginManager (10 JSON files + Kotlin class)
+- **Problem:** PluginManager + 10 JSON files in `assets/plugins/` just re-listed tools that ALREADY exist in ToolExecutor + system prompts. Wasted ~3000 tokens per request.
+- **Removed:**
+  - `app/src/main/java/com/ai/agent/llm/PluginManager.kt`
+  - `app/src/main/assets/plugins/{browser,calendar,calendar_extended,communication,device,device_advanced,media_advanced,social_media,system,whatsapp}.json`
+  - HubScreen "Plugins" section + PluginCard composable
+  - Plugin injection in `AgentService.kt` + `ChatViewModel.kt`
+
+#### 4. New AppProfileManager — replaces PluginManager
+- **Insight:** Instead of duplicating tool lists, AppProfileManager knows what apps are ACTUALLY INSTALLED on this device and tells the AI how to interact with each one.
+- **18 built-in profiles:**
+  - **Messaging:** WhatsApp (openWhatsAppChat), Telegram (openTelegramChat), Messenger, Gmail (composeEmail)
+  - **Social:** Instagram (openInstagramProfile), YouTube (searchInApp), X/Twitter, Facebook
+  - **Media:** Spotify (playSpotify), YouTube Music, Netflix
+  - **Shopping:** Amazon, Flipkart
+  - **Utility:** Google Maps (openMapsLocation), Chrome, Phone (makePhoneCall)
+  - **Productivity:** Google Keep, Calendar (createCalendarEvent)
+- **Auto-detect:** Scans `PackageManager` on first launch → marks installed profiles
+- **Privacy control:** User toggles per-app AI access (Hub → Apps section)
+- **Custom apps:** User can add custom app profiles (packageName + displayName + category)
+- **Prompt section:** ~150-300 tokens listing only installed+enabled apps with shortcut tool + tip
+- **Token cost:** 10-20× smaller than old PluginManager
+
+### Modified Files
+- `app/build.gradle.kts` — versionCode 23 → 24, versionName 2.3.2 → 2.3.3
+- `app/src/main/assets/system_prompt_smart.txt` — getWeather added (3 locations), webSearch fetchTop docs, anti-fetchPageText-loop rule
+- `app/src/main/assets/system_prompt_balanced.txt` — getWeather + webSearch fetchTop
+- `app/src/main/assets/system_prompt_fast.txt` — getWeather + webSearch fetchTop
+- `app/src/main/java/com/ai/agent/llm/AppProfileManager.kt` — NEW (380 lines)
+- `app/src/main/java/com/ai/agent/llm/DynamicPromptBuilder.kt` — getWeather in Device category + weather keywords + webSearch fetchTop docs
+- `app/src/main/java/com/ai/agent/tools/ToolExecutor.kt` — getWeather impl (134 lines) + webSearch fetchTop impl (74 lines) + param spec update
+- `app/src/main/java/com/ai/agent/service/AgentService.kt` — PluginManager → AppProfileManager
+- `app/src/main/java/com/ai/agent/ui/screens/ChatViewModel.kt` — PluginManager → AppProfileManager
+- `app/src/main/java/com/ai/agent/ui/screens/HubScreen.kt` — PluginsSection + PluginCard → AppsSection + AppCard
+
+### Removed Files
+- `app/src/main/java/com/ai/agent/llm/PluginManager.kt`
+- `app/src/main/assets/plugins/*.json` (10 files)
+
+### API Call Savings (per task)
+- Weather query: 3+ calls → **1 call** (getWeather)
+- "What is X" research: 1+5=6 calls → **1 call** (webSearch fetchTop=1)
+- App interaction (WhatsApp/Spotify/etc): already 1 call (unchanged)
+- Per-prompt token cost: ~3000 → ~150-300 (10-20× smaller from AppProfileManager)
+
+### Download
+- APK: `ai-agent-v2.3.3-debug.apk` (43.3 MB)
+- Source: https://github.com/arun6a/ai-agent-v2/commit/145c93d
+
+---
+
+## v2.3.2 (versionCode 23) — Group step messages + WebView on top + Rules edit/delete
+**Date:** 2026-10-12
+**Commit:** `99f1cb3`
+**APK:** 43.3 MB
+
+### v2.3.2 Changes (already released)
+- Step messages grouped into single collapsible card
+- WebView fixed to display on top of chat
+- Rules support edit/delete via long-press menu
+
+---
+
 ## v2.3.0 (versionCode 21) — Embedded WebView
 **Date:** 2026-10-12
 **Commit:** `67fd976`
