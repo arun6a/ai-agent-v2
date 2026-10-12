@@ -258,18 +258,6 @@ fun ChatScreen(
                 .background(custom.canvas)
                 .padding(inner),
         ) {
-            // v2.3.0: Embedded WebView overlay (on top of chat, full screen)
-            // No Activity switch → accessibility service stays alive!
-            com.ai.agent.ui.components.EmbeddedWebView(
-                url = state.webViewUrl,
-                visible = state.webViewVisible,
-                onHide = { viewModel.hideEmbeddedWebView() },
-                onWebViewReady = { wv ->
-                    com.ai.agent.browser.BrowserController.setEmbeddedWebView(wv)
-                },
-                onUserTakeover = { viewModel.setUserMode() },
-            )
-
             if (state.messages.isEmpty() && !state.webViewVisible) {
                 WelcomeEmptyState(
                     modifier = Modifier.fillMaxSize(),
@@ -345,6 +333,18 @@ fun ChatScreen(
                         .padding(horizontal = 12.dp, vertical = 80.dp),
                 )
             }
+
+            // v2.3.1: Embedded WebView overlay — rendered LAST so it appears ON TOP of chat.
+            // No Activity switch → accessibility service stays alive!
+            com.ai.agent.ui.components.EmbeddedWebView(
+                url = state.webViewUrl,
+                visible = state.webViewVisible,
+                onHide = { viewModel.hideEmbeddedWebView() },
+                onWebViewReady = { wv ->
+                    com.ai.agent.browser.BrowserController.setEmbeddedWebView(wv)
+                },
+                onUserTakeover = { viewModel.setUserMode() },
+            )
         }
     }
 

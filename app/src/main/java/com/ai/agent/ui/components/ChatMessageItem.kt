@@ -107,10 +107,11 @@ fun ChatMessageItem(
         }
     } else {
         // ----- AI message: left-aligned with emerald orb avatar -----
-        // v2.2.4: Step messages (with [N/M] prefix) are collapsible.
-        // Collapsed: shows first line + tool count. Expanded: shows full text + tools.
+        // v2.3.1: Step messages are always collapsed (show summary only).
+        // Only the final AI reply (no [N/M] prefix) shows full text.
+        // Tap a step message to expand/collapse its full text + tool calls.
         val isStepMessage = message.text.startsWith("[")
-        var expanded by remember { mutableStateOf(!isStepMessage) }  // steps start collapsed
+        var expanded by remember { mutableStateOf(false) }  // steps always start collapsed
 
         Column(
             modifier = modifier
@@ -188,7 +189,7 @@ fun ChatMessageItem(
                                     Spacer(Modifier.height(4.dp))
                                 }
 
-                                // v2.2.4: Collapsible step messages
+                                // v2.3.1: Collapsible step messages
                                 if (isStepMessage && !expanded) {
                                     // COLLAPSED: show first line + tool count + expand hint
                                     val firstLine = message.text.substringBefore("\n").take(120)
@@ -218,14 +219,15 @@ fun ChatMessageItem(
                                         )
                                     }
                                 } else {
-                                    // EXPANDED (or not a step message): show full text
+                                    // EXPANDED step OR final reply (not a step): show full text
                                     Text(
                                         text = renderMarkdown(message.text),
                                         color = if (isError) custom.error else m3.onSurface,
                                         fontSize = 13.sp,
                                         lineHeight = 18.sp,
                                     )
-                                    if (isStepMessage) {
+                                    // v2.3.1: Only show "tap to collapse" for step messages (not final reply)
+                                    if (isStepMessage && expanded) {
                                         Spacer(Modifier.height(4.dp))
                                         Text(
                                             text = "tap to collapse ▼",
