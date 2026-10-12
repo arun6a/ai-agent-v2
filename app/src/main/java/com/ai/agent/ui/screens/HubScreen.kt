@@ -71,11 +71,14 @@ import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -799,14 +802,35 @@ private fun RulesSection() {
             item { LoadingCard() }
         } else {
             items(rules, key = { it.id }) { rule ->
-                RuleRow(rule = rule, onToggle = { newValue ->
-                    try {
-                        AgentDatabase(context).toggleRule(rule.id, newValue)
-                        rules = rules.map { if (it.id == rule.id) it.copy(enabled = newValue) else it }
-                    } catch (e: Exception) {
-                        lastToast = "Toggle failed: ${e.message}"
-                    }
-                })
+                RuleRow(
+                    rule = rule,
+                    onToggle = { newValue ->
+                        try {
+                            AgentDatabase(context).toggleRule(rule.id, newValue)
+                            rules = rules.map { if (it.id == rule.id) it.copy(enabled = newValue) else it }
+                        } catch (e: Exception) {
+                            lastToast = "Toggle failed: ${e.message}"
+                        }
+                    },
+                    onEdit = { newName, newAction ->
+                        try {
+                            AgentDatabase(context).updateRule(rule.id, name = newName, action = newAction)
+                            rules = rules.map { if (it.id == rule.id) it.copy(name = newName, action = newAction) else it }
+                            lastToast = "Rule updated: $newName"
+                        } catch (e: Exception) {
+                            lastToast = "Update failed: ${e.message}"
+                        }
+                    },
+                    onDelete = {
+                        try {
+                            AgentDatabase(context).deleteRule(rule.id)
+                            rules = rules.filterNot { it.id == rule.id }
+                            lastToast = "Rule deleted: ${rule.name}"
+                        } catch (e: Exception) {
+                            lastToast = "Delete failed: ${e.message}"
+                        }
+                    },
+                )
             }
         }
     }
@@ -819,14 +843,29 @@ private fun RulesSection() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RuleRow(rule: AgentDatabase.Rule, onToggle: (Boolean) -> Unit) {
+private fun RuleRow(
+    rule: AgentDatabase.Rule,
+    onToggle: (Boolean) -> Unit,
+    onEdit: (String, String) -> Unit,
+    onDelete: () -> Unit,
+) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
-    Row(
+    // v2.3.2: Long-press menu state
+    var showMenu by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { showMenu = true },
+            )
             .background(
                 if (rule.enabled) custom.accent.copy(alpha = 0.06f) else custom.ink2,
                 RoundedCornerShape(8.dp),
@@ -837,59 +876,149 @@ private fun RuleRow(rule: AgentDatabase.Rule, onToggle: (Boolean) -> Unit) {
                 RoundedCornerShape(8.dp),
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .background(
-                    if (rule.enabled) custom.accent.copy(alpha = 0.15f) else custom.surface3,
-                    RoundedCornerShape(8.dp),
-                ),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                Icons.Outlined.Rule,
-                contentDescription = null,
-                tint = if (rule.enabled) custom.accent else custom.fg3,
-                modifier = Modifier.size(14.dp),
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(
+                        if (rule.enabled) custom.accent.copy(alpha = 0.15f) else custom.surface3,
+                        RoundedCornerShape(8.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Rule,
+                    contentDescription = null,
+                    tint = if (rule.enabled) custom.accent else custom.fg3,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = rule.name,
+                    color = if (rule.enabled) m3.onSurface else custom.fg2,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.size(2.dp))
+                Text(
+                    text = "trigger: ${rule.triggerType} · ${rule.triggerValue}",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                )
+                Spacer(Modifier.size(2.dp))
+                Text(
+                    text = "→ ${rule.action}",
+                    color = custom.fg2,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Switch(
+                checked = rule.enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = custom.accent,
+                    uncheckedThumbColor = custom.fg3,
+                    uncheckedTrackColor = custom.surface3,
+                ),
             )
         }
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = rule.name,
-                color = if (rule.enabled) m3.onSurface else custom.fg2,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-            )
-            Spacer(Modifier.size(2.dp))
-            Text(
-                text = "trigger: ${rule.triggerType} · ${rule.triggerValue}",
-                color = custom.fg3,
-                fontFamily = MonoFontFamily,
-                fontSize = 10.sp,
-            )
-            Spacer(Modifier.size(2.dp))
-            Text(
-                text = "→ ${rule.action}",
-                color = custom.fg2,
-                fontSize = 11.sp,
-                lineHeight = 14.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Switch(
-            checked = rule.enabled,
-            onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White,
-                checkedTrackColor = custom.accent,
-                uncheckedThumbColor = custom.fg3,
-                uncheckedTrackColor = custom.surface3,
-            ),
+
+        // v2.3.2: Long-press hint
+        Text(
+            text = "long-press to edit/delete",
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 9.sp,
+            modifier = Modifier.padding(top = 4.dp, start = 38.dp),
+        )
+    }
+
+    // v2.3.2: Long-press menu
+    if (showMenu) {
+        AlertDialog(
+            onDismissRequest = { showMenu = false },
+            title = { Text(rule.name) },
+            text = { Text("trigger: ${rule.triggerType} · ${rule.triggerValue}\naction: ${rule.action}") },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        showMenu = false
+                        showEditDialog = true
+                    }) { Text("Edit", color = custom.accent) }
+                    TextButton(onClick = {
+                        showMenu = false
+                        showDeleteDialog = true
+                    }) { Text("Delete", color = Color(0xFFEF4444)) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMenu = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // v2.3.2: Edit dialog
+    if (showEditDialog) {
+        var editName by remember { mutableStateOf(rule.name) }
+        var editAction by remember { mutableStateOf(rule.action) }
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("Edit Rule") },
+            text = {
+                Column {
+                    Text("Name", color = custom.fg3, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    )
+                    Text("Action", color = custom.fg3, fontSize = 11.sp)
+                    OutlinedTextField(
+                        value = editAction,
+                        onValueChange = { editAction = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onEdit(editName, editAction)
+                    showEditDialog = false
+                }) { Text("Save", color = custom.accent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // v2.3.2: Delete confirmation
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Rule") },
+            text = { Text("Are you sure you want to delete \"${rule.name}\"?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete()
+                    showDeleteDialog = false
+                }) { Text("Delete", color = Color(0xFFEF4444)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            },
         )
     }
 }

@@ -87,6 +87,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ai.agent.llm.ApiUsageTracker
@@ -268,6 +269,11 @@ fun ChatScreen(
                 // as the first item so it scrolls with messages instead of
                 // floating on top of (and overlapping) the first chat bubble.
                 val showBanner = state.isThinking || state.isExecuting || state.currentIteration > 0
+                
+                // v2.3.2: Group consecutive step messages into one collapsed card.
+                // Final AI reply (no [N/M] prefix) is always expanded separately.
+                var stepsExpanded by remember { mutableStateOf(false) }
+                
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -290,21 +296,77 @@ fun ChatScreen(
                         }
                     }
 
-                    items(
-                        count = state.messages.size,
-                        key = { state.messages[it].id },
-                    ) { i ->
-                        // Task 37 — message slide-in animation: animateItem() (Compose
-                        // Foundation 1.7+) automatically animates insert / move / remove
-                        // for items keyed by id, so new messages slide in from the right.
+                    // v2.3.2: Render messages — step messages grouped into one collapsed card.
+                    // Iterate through messages, grouping consecutive step messages.
+                    var i = 0
+                    while (i < state.messages.size) {
                         val msg = state.messages[i]
-                        val isLastAi = !msg.isUser && i == state.messages.lastIndex
-                        ChatMessageItem(
-                            message = msg,
-                            isLastAi = isLastAi,
-                            thinking = state.isThinking,
-                            modifier = Modifier.animateItem(),
-                        )
+                        
+                        if (!msg.isUser && msg.text.startsWith("[")) {
+                            // This is a step message — find all consecutive step messages
+                            val stepStart = i
+                            while (i < state.messages.size && 
+                                   !state.messages[i].isUser && 
+                                   state.messages[i].text.startsWith("[")) {
+                                i++
+                            }
+                            val stepEnd = i  // exclusive
+                            val stepCount = stepEnd - stepStart
+                            val totalTools = (stepStart until stepEnd).sumOf { state.messages[it].toolCalls.size }
+                            
+                            if (stepsExpanded) {
+                                // Show all step messages individually + a collapse button
+                                item(key = "steps-collapse-btn") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                                            .clickable { stepsExpanded = false },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = "📁 $stepCount steps · $totalTools tool calls · tap to collapse ▼",
+                                            color = custom.fg3,
+                                            fontFamily = MonoFontFamily,
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                }
+                                for (j in stepStart until stepEnd) {
+                                    val stepMsg = state.messages[j]
+                                    item(key = stepMsg.id) {
+                                        ChatMessageItem(
+                                            message = stepMsg,
+                                            isLastAi = false,
+                                            thinking = false,
+                                            modifier = Modifier.animateItem(),
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Show ONE collapsed card for all steps
+                                item(key = "steps-group-$stepStart") {
+                                    StepGroupCard(
+                                        stepCount = stepCount,
+                                        toolCount = totalTools,
+                                        firstLine = state.messages[stepStart].text.substringBefore("\n").take(100),
+                                        onExpand = { stepsExpanded = true },
+                                    )
+                                }
+                            }
+                        } else {
+                            // Non-step message (user message or final AI reply) — render normally
+                            val isLastAi = !msg.isUser && i == state.messages.lastIndex
+                            item(key = msg.id) {
+                                ChatMessageItem(
+                                    message = msg,
+                                    isLastAi = isLastAi,
+                                    thinking = state.isThinking,
+                                    modifier = Modifier.animateItem(),
+                                )
+                            }
+                            i++
+                        }
                     }
 
                     // Inline thinking indicator at the very end while the LLM is responding.
@@ -629,6 +691,63 @@ private fun PulsingDot(active: Boolean, color: Color) {
             .alpha(if (active) alpha else 1f)
             .background(color, CircleShape),
     )
+}
+
+// ---------------------------------------------------------------------------
+// v2.3.2: StepGroupCard — ONE collapsed card for ALL step messages.
+// Shows: step count + tool count + first line preview + "tap to expand ▶"
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun StepGroupCard(
+    stepCount: Int,
+    toolCount: Int,
+    firstLine: String,
+    onExpand: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .background(custom.surface2, RoundedCornerShape(12.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(12.dp))
+            .clickable { onExpand() }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "📁",
+                fontSize = 16.sp,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "$stepCount API step${if (stepCount > 1) "s" else ""} · $toolCount tool call${if (toolCount > 1) "s" else ""}",
+                color = custom.accent,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "tap to expand ▶",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 11.sp,
+            )
+        }
+        if (firstLine.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = firstLine,
+                color = custom.fg2,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
