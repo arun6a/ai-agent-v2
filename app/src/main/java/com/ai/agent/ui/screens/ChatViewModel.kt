@@ -97,6 +97,10 @@ data class ChatUiState(
     val currentSessionId: Long = 0L,
     /** v2.2.0 Issue 113b — list of all chat sessions (most recently active first). */
     val sessions: List<AgentDatabase.ChatSession> = emptyList(),
+    /** v2.3.0: Embedded WebView state — in-app browser without Activity switch. */
+    val webViewVisible: Boolean = false,
+    val webViewUrl: String = "",
+    val webViewUserMode: Boolean = false,
 )
 
 class ChatViewModel(
@@ -119,10 +123,17 @@ class ChatViewModel(
     init {
         loadProviderInfo()
         loadTtsPref()
-        checkAccessibilityStatus()  // v2.2.0 Issue 112 — log a11y status at launch
-        loadOrCreateSession()       // v2.2.0 Issue 113b — resume last chat session
-        loadChatHistory()           // v2.2.0 Issue 113b — load saved messages from DB
-        refreshSessions()           // v2.2.0 Issue 113b — populate session list for sidebar/drawers
+        checkAccessibilityStatus()
+        loadOrCreateSession()
+        loadChatHistory()
+        refreshSessions()
+        // v2.3.0: Register for embedded browser bridge (so ToolExecutor can show WebView)
+        com.ai.agent.tools.EmbeddedBrowserBridge.register(this)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        com.ai.agent.tools.EmbeddedBrowserBridge.unregister()
     }
 
     // ---- public API ----
@@ -440,6 +451,35 @@ class ChatViewModel(
     /** Dismiss the save-skill prompt without saving. */
     fun dismissSaveSkillPrompt() {
         _state.update { it.copy(showSaveSkillPrompt = false) }
+    }
+
+    // ---- v2.3.0: Embedded WebView (in-app browser without Activity switch) ----
+
+    /** Show the embedded WebView with a URL (called by ToolExecutor.browserOpen). */
+    fun showEmbeddedWebView(url: String) {
+        _state.update {
+            it.copy(
+                webViewVisible = true,
+                webViewUrl = url,
+                webViewUserMode = false,
+            )
+        }
+    }
+
+    /** Hide the embedded WebView (return to chat). */
+    fun hideEmbeddedWebView() {
+        _state.update { it.copy(webViewVisible = false) }
+        com.ai.agent.browser.BrowserController.clearEmbeddedWebView()
+    }
+
+    /** User took over the browser (tapped the WebView) — AI should pause browser tools. */
+    fun setUserMode() {
+        _state.update { it.copy(webViewUserMode = true) }
+    }
+
+    /** AI resumes control of the browser. */
+    fun resumeAiMode() {
+        _state.update { it.copy(webViewUserMode = false) }
     }
 
     /**

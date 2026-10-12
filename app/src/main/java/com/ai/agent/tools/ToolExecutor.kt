@@ -10,6 +10,7 @@ import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -1216,17 +1217,15 @@ class ToolExecutor(private val context: Context) {
             // In Chrome mode, browser tools (except browserOpen) don't work — they operate
             // on the in-app WebView, not Chrome. Auto-route to accessibility tools instead.
             "browserOpen" -> {
-                val isChromeMode = AIProvider.getBrowserMode(context) == "chrome"
                 val url = call.args["url"] as? String ?: return ToolResult(false, "missing url")
                 val finalUrl = if (!url.startsWith("http")) "https://$url" else url
                 val browserMode = AIProvider.getBrowserMode(context)
                 when (browserMode) {
                     "chrome" -> {
-                        // User chose Chrome mode — open in Chrome (needs accessibility for AI to read results)
+                        // User chose Chrome mode — open in Chrome (needs accessibility)
                         val opened = BrowserController.openInChrome(context, finalUrl)
-                        delay(3000)  // v2.2.6: non-blocking delay (was Thread.sleep → ANR)
+                        delay(3000)
                         if (opened) {
-                            // Auto-read the screen so the AI can see what's on Chrome
                             val screenText = try { service?.readScreen() ?: "(readScreen failed)" } catch (e: Exception) { "(readScreen error: ${e.message})" }
                             val finalScreen = if (screenText.length > 2000) screenText.take(2000) + "\n...[truncated]" else screenText
                             ToolResult(true, "Opened in Chrome: $finalUrl\n\nScreen content:\n$finalScreen\n\nNOTE: Chrome mode is active. Use accessibility tools (readScreen, tap, clickByText) to interact with Chrome. Do NOT use browserClickText/browserReadStructured — they operate on the in-app WebView, not Chrome.")
@@ -1234,19 +1233,39 @@ class ToolExecutor(private val context: Context) {
                             ToolResult(false, "Chrome not available")
                         }
                     }
-                    "auto", "in_app" -> {
-                        // Use the visible in-app browser (BrowserActivity)
-                        // v2.2.6: Don't use Thread.sleep — it blocks the main thread and
-                        // causes ANR because BrowserActivity.onCreate is also on main thread.
-                        // Instead, use coroutine delay (non-blocking) + return immediately.
-                        BrowserController.openUrl(context, finalUrl)
-                        delay(2000)  // non-blocking delay (was Thread.sleep which blocked main thread → ANR)
-                        ToolResult(true, "Browser opened (visible in-app): $finalUrl — use browserReadStructured/browserClickText to interact. Wait for page to load before clicking.")
+                    // v2.3.0: "auto" + "in_app" + "embedded" all use the embedded WebView overlay
+                    // (no Activity switch → a11y stays alive). Chrome is only used when
+                    // browserMode == "chrome".
+                    "auto", "in_app", "embedded" -> {
+                        // v2.3.0: Use embedded WebView (inside ChatScreen, no Activity switch).
+                        // This is the KEY fix: no Activity launch → no foreground change →
+                        // MIUI never unbinds accessibility → a11y stays alive.
+                        BrowserController.pageLoadDeferred = CompletableDeferred()
+
+                        // Show the embedded WebView overlay (must be on main thread)
+                        // ChatViewModel.showEmbeddedWebView updates the Compose state.
+                        // We need to call it via the ViewModel reference.
+                        // But ToolExecutor doesn't have the ViewModel — use a static bridge.
+                        EmbeddedBrowserBridge.show(finalUrl)
+
+                        // Wait for page to load (non-blocking, 10s timeout)
+                        try {
+                            kotlinx.coroutines.withTimeoutOrNull(10000) {
+                                BrowserController.pageLoadDeferred?.await()
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Embedded browser: page load timeout — continuing")
+                        }
+
+                        delay(1000)  // give the page a moment to render
+                        ToolResult(true, "Browser opened (embedded in-app): $finalUrl — page loaded. Use browserReadStructured/browserClickText/browserFill to interact. The user can see the page and take over if needed.")
                     }
                     else -> {
-                        BrowserController.openUrl(context, finalUrl)
-                        delay(2000)  // non-blocking delay
-                        ToolResult(true, "Browser opened: $finalUrl — wait for page to load before interacting.")
+                        // Default: embedded WebView
+                        BrowserController.pageLoadDeferred = CompletableDeferred()
+                        EmbeddedBrowserBridge.show(finalUrl)
+                        delay(2000)
+                        ToolResult(true, "Browser opened: $finalUrl — use browser tools to interact.")
                     }
                 }
             }

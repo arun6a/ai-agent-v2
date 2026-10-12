@@ -42,17 +42,40 @@ object BrowserController {
     private const val TAG = "BrowserController"
     private var webView: WebView? = null  // background fallback (if BrowserActivity not open)
     private var handler = Handler(Looper.getMainLooper())
-    private var pageLoadDeferred: CompletableDeferred<Boolean>? = null
+    // v2.3.0: Changed to internal so ToolExecutor can set it for embedded browser
+    internal var pageLoadDeferred: CompletableDeferred<Boolean>? = null
+
+    // v2.3.0: Embedded WebView — lives inside ChatScreen, no Activity switch.
+    // When AI calls browserOpen, we use this instead of BrowserActivity.
+    @Volatile
+    private var embeddedWebView: WebView? = null
+
+    /** v2.3.0: Set the embedded WebView reference (called by EmbeddedWebView composable). */
+    fun setEmbeddedWebView(wv: WebView) {
+        embeddedWebView = wv
+        android.util.Log.i(TAG, "Embedded WebView registered")
+    }
+
+    /** v2.3.0: Clear the embedded WebView reference (called when overlay hides). */
+    fun clearEmbeddedWebView() {
+        embeddedWebView?.let {
+            it.stopLoading()
+            it.removeAllViews()
+            it.destroy()
+        }
+        embeddedWebView = null
+        android.util.Log.i(TAG, "Embedded WebView cleared + destroyed (saves RAM)")
+    }
 
     /**
-     * Get the active WebView — ONLY the visible BrowserActivity's WebView.
-     * v5.0.8: Removed the hidden background WebView fallback — it was causing the
-     * "invisible browser" bug where the AI worked on a page the user couldn't see.
-     * Now, if BrowserActivity isn't open, browser tools return an error telling the
-     * AI to call browserOpen first (which brings the browser to foreground).
+     * Get the active WebView.
+     * v2.3.0: Check embedded WebView FIRST (AI-initiated, no Activity switch → a11y alive).
+     * Fall back to BrowserActivity's WebView (user-initiated manual browser).
      */
     private fun getWebView(context: Context): WebView? {
-        // ONLY use the visible WebView from BrowserActivity
+        // v2.3.0: Prefer embedded WebView (no Activity switch, a11y stays alive)
+        embeddedWebView?.let { return it }
+        // Fall back to BrowserActivity (manual user-initiated browser)
         return BrowserActivity.activeWebView
     }
 

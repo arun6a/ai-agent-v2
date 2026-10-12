@@ -2401,7 +2401,7 @@ private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             SettingsGroup(title = "BROWSER MODE") {
                 SelectorRow(
                     label = "Browser Mode",
-                    options = listOf("auto", "in_app", "chrome"),
+                    options = listOf("auto", "in_app", "chrome"),  // v2.3.0: "auto" uses embedded WebView
                     selected = browserMode,
                     onSelect = {
                         browserMode = it
