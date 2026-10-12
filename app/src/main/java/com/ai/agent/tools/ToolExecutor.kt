@@ -153,55 +153,79 @@ class ToolExecutor(private val context: Context) {
         return when (call.name) {
             // === SCREEN TOOLS (require accessibility — service is non-null here) ===
             "readScreen" -> {
-                val text = service!!.readScreen()
-                // 3-TIER HYBRID SCREEN READING:
-                // 1. Accessibility text (free, instant) — already have it
-                // 2. ML Kit OCR (free, offline, 0.1s) — try if accessibility failed
-                // 3. VLM API (1 API call, 2-5s) — last resort fallback
-                if (text.isNotEmpty() && text != "(no text on screen)" && text != "(screen is null)" && text.length >= 10) {
-                    // Tier 1: Accessibility found text — use it
-                    ToolResult(true, text)
-                } else {
-                    // Accessibility found nothing — try ML Kit (free, offline)
-                    Log.i(TAG, "readScreen: accessibility found no text — trying ML Kit OCR")
-                    try {
-                        val screenshotDeferred = kotlinx.coroutines.CompletableDeferred<String?>()
-                        service!!.captureScreen { base64 ->
-                            if (base64 != null) {
-                                // Decode base64 → bitmap → ML Kit OCR
-                                try {
-                                    val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
-                                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                                    if (bitmap != null) {
-                                        val mlText = com.ai.agent.ml.MLKitHelper.tryRecognize(bitmap)
-                                        screenshotDeferred.complete(mlText)
-                                    } else {
-                                        screenshotDeferred.complete(null)
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "ML Kit bitmap decode failed", e)
-                                    screenshotDeferred.complete(null)
-                                }
+                val a11yText = service!!.readScreen()
+                val visionMode = AIProvider.getVisionMode(context)  // "auto" | "mlkit" | "vlm"
+
+                // v2.2.3: Vision mode controls how the screen is read.
+                // - "auto": Accessibility text first. If short (<200 chars), supplement with ML Kit.
+                //   If still empty, fall back to VLM. (0 API calls for 95% of screens)
+                // - "mlkit": ML Kit OCR first (catches text in images/canvas that a11y misses).
+                //   If ML Kit finds nothing, fall back to a11y, then VLM.
+                // - "vlm": VLM API directly (1 API call, most capable but slowest).
+
+                Log.i(TAG, "readScreen: visionMode=$visionMode, a11yText=${a11yText.length} chars")
+
+                when (visionMode) {
+                    "vlm" -> {
+                        // VLM mode — skip a11y + ML Kit, go straight to VLM
+                        Log.i(TAG, "readScreen: VLM mode — calling VLM directly")
+                        val vlmResult = analyzeScreenWithVLM("Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
+                        ToolResult(true, "Screen text (VLM): $vlmResult")
+                    }
+                    "mlkit" -> {
+                        // ML Kit mode — OCR first, then a11y supplement, then VLM fallback
+                        Log.i(TAG, "readScreen: ML Kit mode — trying OCR first")
+                        val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
+                        if (mlText != null && mlText.length >= 10) {
+                            // ML Kit found text — supplement with a11y if available
+                            val combined = if (a11yText.length >= 10 && !mlText.contains(a11yText.take(50))) {
+                                "ML Kit text: $mlText\n\nAccessibility text: $a11yText"
                             } else {
-                                screenshotDeferred.complete(null)
+                                "Screen text (ML Kit): $mlText"
+                            }
+                            ToolResult(true, combined)
+                        } else if (a11yText.length >= 10) {
+                            // ML Kit found nothing but a11y has text
+                            ToolResult(true, "Screen text (accessibility): $a11yText")
+                        } else {
+                            // Both empty — fall back to VLM
+                            Log.i(TAG, "readScreen: ML Kit + a11y both empty — VLM fallback")
+                            val vlmResult = analyzeScreenWithVLM("Describe what's on the screen.")
+                            ToolResult(true, "Screen text (VLM): $vlmResult")
+                        }
+                    }
+                    else -> {
+                        // AUTO mode (default) — a11y first, supplement with ML Kit if short
+                        if (a11yText.isNotEmpty() && a11yText != "(no text on screen)" && a11yText != "(screen is null)" && a11yText.length >= 200) {
+                            // Accessibility found enough text — use it (instant, free)
+                            ToolResult(true, a11yText)
+                        } else if (a11yText.length >= 10) {
+                            // Accessibility found SOME text but it's short (< 200 chars).
+                            // v2.2.3: Supplement with ML Kit to catch text that a11y missed
+                            // (e.g., email subjects in Gmail, custom list view items).
+                            Log.i(TAG, "readScreen: a11y text short (${a11yText.length} chars) — supplementing with ML Kit")
+                            val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
+                            if (mlText != null && mlText.length >= 10 && mlText != a11yText) {
+                                // Combine a11y + ML Kit for maximum coverage
+                                ToolResult(true, "Screen text:\n[Accessibility]: $a11yText\n[ML Kit OCR]: $mlText")
+                            } else {
+                                // ML Kit didn't add anything new — use a11y text
+                                ToolResult(true, a11yText)
+                            }
+                        } else {
+                            // Accessibility found nothing — try ML Kit (free, offline)
+                            Log.i(TAG, "readScreen: accessibility found no text — trying ML Kit OCR")
+                            val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
+                            if (mlText != null && mlText.length >= 10) {
+                                // Tier 2: ML Kit found text — use it (0 API calls!)
+                                ToolResult(true, "Screen text (ML Kit): $mlText")
+                            } else {
+                                // Tier 3: ML Kit couldn't help — fall back to VLM
+                                Log.i(TAG, "readScreen: ML Kit found no text — falling back to VLM")
+                                val vlmResult = analyzeScreenWithVLM("Describe what's on the screen. Include app name, visible elements, and any images or icons.")
+                                ToolResult(true, "Screen text (VLM): $vlmResult")
                             }
                         }
-                        val mlResult = screenshotDeferred.await()
-
-                        if (mlResult != null) {
-                            // Tier 2: ML Kit found text — use it (0 API calls!)
-                            ToolResult(true, "ML Kit screen text: $mlResult")
-                        } else {
-                            // Tier 3: ML Kit couldn't help — fall back to VLM
-                            Log.i(TAG, "readScreen: ML Kit found no text — falling back to VLM")
-                            val vlmResult = analyzeScreenWithVLM("Describe what's on the screen. Include app name, visible elements, and any images or icons.")
-                            ToolResult(true, "VLM analysis: $vlmResult")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "readScreen ML Kit pipeline failed", e)
-                        // Fallback to VLM if ML Kit crashes
-                        val vlmResult = analyzeScreenWithVLM("Describe what's on the screen.")
-                        ToolResult(true, "VLM analysis: $vlmResult")
                     }
                 }
             }
@@ -2133,6 +2157,43 @@ $instructions
      * - If current provider is Groq + vision-capable model → call Groq directly
      * - If current provider is Gemini → call Gemini directly (all Gemini models are vision-capable)
      * - Else (Z.ai proxy, custom, non-vision models) → fall back to sandbox /api/llm/vision
+     */
+    /**
+     * v2.2.3: Capture screenshot via accessibility service + run ML Kit OCR.
+     * Returns recognized text, or null if capture/OCR failed.
+     * Free, offline, ~200-500ms. No API calls.
+     */
+    private suspend fun captureAndOCR(service: com.ai.agent.accessibility.AgentAccessibilityService): String? {
+        val screenshotDeferred = kotlinx.coroutines.CompletableDeferred<String?>()
+        service.captureScreen { base64 ->
+            if (base64 != null) {
+                try {
+                    val bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT)
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bitmap != null) {
+                        val mlText = com.ai.agent.ml.MLKitHelper.tryRecognize(bitmap)
+                        screenshotDeferred.complete(mlText)
+                    } else {
+                        screenshotDeferred.complete(null)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "captureAndOCR: bitmap decode failed", e)
+                    screenshotDeferred.complete(null)
+                }
+            } else {
+                screenshotDeferred.complete(null)
+            }
+        }
+        return screenshotDeferred.await()
+    }
+
+    /**
+     * Analyze the screen using the VLM (Vision Language Model).
+     * Uses the current provider if it's vision-capable, otherwise falls back
+     * to the sandbox /api/llm/vision endpoint.
+     *
+     * Costs 1 API call. Use sparingly — readScreen() should be tried first
+     * (it's free via accessibility + ML Kit).
      */
     private suspend fun analyzeScreenWithVLM(prompt: String): String {
         val service = waitForAccessibilityService()

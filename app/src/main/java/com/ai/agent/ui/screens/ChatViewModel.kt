@@ -577,6 +577,30 @@ RULE: Pick ONE web method per task and STICK with it. Do NOT mix browserOpen wit
 """.trimIndent()
             systemPrompt += "\n\n$browserGuidance\n$webGuide"
 
+            // v2.2.3: Vision mode + screen loading guidance
+            val visionMode = AIProvider.getVisionMode(context)  // "auto" | "mlkit" | "vlm"
+            val visionGuide = """
+## Screen Reading & Vision
+Vision mode: $visionMode
+
+CRITICAL RULES FOR SCREEN READING:
+1. After launchApp() — the tool waits 2.5s + returns screen text. But some apps need MORE time to load (Gmail, YouTube, Chrome). If the returned text shows "Loading" or is very short, call wait(2000) then readScreen() again. Do NOT retry the action — the screen hasn't loaded yet.
+2. After browserOpen() — the browser takes 3-5 seconds to load a page. ALWAYS call wait(3000) after browserOpen, then readScreen() or browserGetText() to verify the page loaded. Do NOT click anything until you've verified the page content.
+3. After tap() on a button that navigates to a new screen — call wait(1000) then readScreen() to verify the new screen loaded. Do NOT assume the tap worked — verify with readScreen().
+4. After type() + submitInput() — call wait(2000) then readScreen() to verify the action completed.
+5. If readScreen() returns text with "Loading" or very little text — call wait(2000) then readScreen() again. The screen is still loading.
+
+WAIT STRATEGY:
+- After opening ANY app: wait(2500) is automatic in launchApp, but if the screen shows loading, call wait(2000) + readScreen() again.
+- After opening browser: ALWAYS wait(3000) before any browser tool. The page needs time to render.
+- After clicking a link/button: wait(1000) + readScreen() to verify.
+- NEVER retry an action (tap, type, click) if the screen hasn't loaded. Instead: wait() + readScreen() to check again.
+
+readScreen() reads the screen using: accessibility text → ML Kit OCR → VLM (3-tier fallback, 0 API calls for 95% of screens).
+analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). Use readScreen() first, only use analyzeScreen() if you need to find visual elements (icons, images, positions).
+""".trimIndent()
+            systemPrompt += "\n\n$visionGuide"
+
             // v2.0.9: Inject available skills (so AI can executeSkill(name))
             // AND check if the user's message matches a skill trigger — if so,
             // auto-load that skill's body into the prompt. Mirrors v1 behavior.

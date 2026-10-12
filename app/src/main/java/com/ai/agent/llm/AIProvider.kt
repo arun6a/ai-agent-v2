@@ -401,6 +401,23 @@ object AIProvider {
         getPrefs(context).edit().putString(KEY_BROWSER_MODE, mode).apply()
     }
 
+    // === Vision Mode (v2.2.3) ===
+    // Controls how the AI reads the screen:
+    // "auto" → Accessibility text first, then ML Kit OCR, then VLM (3-tier fallback)
+    // "mlkit" → ML Kit OCR FIRST (free, offline, finds text in images/icons that
+    //           accessibility misses), then VLM only if ML Kit finds nothing
+    // "vlm" → VLM API directly (most capable, costs 1 API call per screen read)
+    private const val KEY_VISION_MODE = "vision_mode"
+    val DEFAULT_VISION_MODE = "auto"
+
+    fun getVisionMode(context: Context): String {
+        return getPrefs(context).getString(KEY_VISION_MODE, DEFAULT_VISION_MODE) ?: DEFAULT_VISION_MODE
+    }
+
+    fun setVisionMode(context: Context, mode: String) {
+        getPrefs(context).edit().putString(KEY_VISION_MODE, mode).apply()
+    }
+
     // === Prompt Mode (v6.3.0) ===
     // "dynamic" → auto-selects relevant tools per task (default, saves tokens)
     // "smart" → full prompt (all tools + tips + examples, ~11K tokens)

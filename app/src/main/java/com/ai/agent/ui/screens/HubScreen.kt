@@ -2326,6 +2326,7 @@ private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
     var browserMode by remember { mutableStateOf(AIProvider.getBrowserMode(context)) }
     var searchMethod by remember { mutableStateOf(AIProvider.getSearchMethod(context)) }
+    var visionMode by remember { mutableStateOf(AIProvider.getVisionMode(context)) }  // v2.2.3
     var dynamicPrompt by remember { mutableStateOf(promptMode == "dynamic") }
     var alwaysLearn by remember { mutableStateOf(true) }
     // v2.0.7: Overlay toggle — persists via SharedPreferences("ai_agent_prefs","overlay_enabled")
@@ -2420,6 +2421,21 @@ private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                         searchMethod = it
                         AIProvider.setSearchMethod(context, it)
                         toast = "Search method: $it"
+                    },
+                )
+            }
+        }
+        // v2.2.3: Vision Mode — controls how AI reads the screen
+        item {
+            SettingsGroup(title = "VISION MODE") {
+                SelectorRow(
+                    label = "Screen Reading",
+                    options = listOf("auto", "mlkit", "vlm"),
+                    selected = visionMode,
+                    onSelect = {
+                        visionMode = it
+                        AIProvider.setVisionMode(context, it)
+                        toast = "Vision mode: $it"
                     },
                 )
             }
