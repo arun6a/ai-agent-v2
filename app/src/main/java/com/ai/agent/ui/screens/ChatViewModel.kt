@@ -185,7 +185,7 @@ class ChatViewModel(
         val messages = conversations.map { (role, text, timestamp) ->
             ChatMessage(
                 text = text,
-                isUser = role == "user",
+                isUser = role == "user",  // v2.2.1: "ai_step" and "ai" are both AI
                 timestamp = timestamp,
             )
         }
@@ -232,7 +232,7 @@ class ChatViewModel(
         val messages = conversations.map { (role, text, timestamp) ->
             ChatMessage(
                 text = text,
-                isUser = role == "user",
+                isUser = role == "user",  // v2.2.1: "ai_step" and "ai" are both AI
                 timestamp = timestamp,
             )
         }
@@ -954,6 +954,17 @@ class ChatViewModel(
             status = status,
         )
         _state.update { s -> s.copy(messages = s.messages + msg) }
+        // v2.2.1: Save step messages to DB so they persist across app restarts.
+        // Previously only the final reply was saved — steps were lost on reopen.
+        try {
+            database.addConversationToSession(
+                _state.value.currentSessionId,
+                "ai_step",
+                header.take(2000),  // truncate to avoid DB bloat
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to save step message: ${e.message}")
+        }
     }
 
     /** Append the final AI message (no tools, just the reply). */
