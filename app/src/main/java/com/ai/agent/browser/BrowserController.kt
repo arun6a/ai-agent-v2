@@ -80,7 +80,7 @@ object BrowserController {
 
         // Wait for page to load (15s timeout)
         try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(15000) { pageLoadDeferred?.await() }
             }
         } catch (e: Exception) {
@@ -127,7 +127,7 @@ object BrowserController {
     fun getCurrentUrl(context: Context): String? {
         val wv = getWebView(context) ?: return null
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 val deferred = CompletableDeferred<String?>()
                 handler.post { deferred.complete(wv.url) }
                 kotlinx.coroutines.withTimeoutOrNull(2000) { deferred.await() }
@@ -149,7 +149,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(5000) { deferred.await() }
             }
         } catch (e: Exception) { null }
@@ -242,7 +242,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(8000) { deferred.await() } ?: "{}"
             }
         } catch (e: Exception) {
@@ -282,7 +282,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(5000) { deferred.await() } ?: "[]"
             }
         } catch (e: Exception) { "[]" }
@@ -328,7 +328,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(5000) { deferred.await() } ?: "[]"
             }
         } catch (e: Exception) { "[]" }
@@ -388,7 +388,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(3000) { deferred.await() } ?: false
             }
         } catch (e: Exception) { false }
@@ -418,7 +418,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(3000) { deferred.await() } ?: false
             }
         } catch (e: Exception) { false }
@@ -532,7 +532,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(5000) { deferred.await() } ?: false
             }
         } catch (e: Exception) { false }
@@ -570,7 +570,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(3000) { deferred.await() } ?: "[]"
             }
         } catch (e: Exception) { "[]" }
@@ -595,7 +595,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(3000) { deferred.await() } ?: ""
             }
         } catch (e: Exception) { "" }
@@ -618,7 +618,7 @@ object BrowserController {
                 }
             }
             val found = try {
-                kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                     kotlinx.coroutines.withTimeoutOrNull(1000) { deferred.await() } ?: false
                 }
             } catch (e: Exception) { false }
@@ -673,7 +673,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(5000) { deferred.await() }
             }
         } catch (e: Exception) { null }
@@ -691,7 +691,7 @@ object BrowserController {
             }
         }
         return try {
-            kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
                 kotlinx.coroutines.withTimeoutOrNull(5000) { deferred.await() }
             }
         } catch (e: Exception) { null }

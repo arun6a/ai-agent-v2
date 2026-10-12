@@ -693,16 +693,18 @@ class ToolExecutor(private val context: Context) {
                 val url = call.args["url"] as? String ?: return ToolResult(false, "missing url")
                 val method = call.args["method"] as? String ?: "GET"
                 try {
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val request = okhttp3.Request.Builder().url(url).build()
-                    val response = client.newCall(request).execute()
-                    val body = response.body?.string() ?: ""
-                    // Truncate to 2000 chars for LLM context
-                    val truncated = if (body.length > 2000) body.take(2000) + "\n[...truncated]" else body
-                    ToolResult(true, "HTTP ${response.code}:\n$truncated")
+                    // v2.2.7: Wrap in withContext(IO) — was blocking main thread → ANR
+                    val (respCode, respBody) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val client = okhttp3.OkHttpClient.Builder()
+                            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        val request = okhttp3.Request.Builder().url(url).build()
+                        val response = client.newCall(request).execute()
+                        response.code to (response.body?.string() ?: "")
+                    }
+                    val truncated = if (respBody.length > 2000) respBody.take(2000) + "\n[...truncated]" else respBody
+                    ToolResult(true, "HTTP $respCode:\n$truncated")
                 } catch (e: Exception) {
                     ToolResult(false, "HTTP error: ${e.message}")
                 }
@@ -713,17 +715,21 @@ class ToolExecutor(private val context: Context) {
             "fetchPageText" -> {
                 val url = call.args["url"] as? String ?: return ToolResult(false, "missing url")
                 try {
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val request = okhttp3.Request.Builder()
-                        .url(url)
-                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
-                        .build()
-                    val response = client.newCall(request).execute()
-                    val html = response.body?.string() ?: ""
-                    // Strip HTML → clean text
+                    // v2.2.7: Wrap in withContext(IO) — was blocking main thread → ANR
+                    val (respCode, rawHtml) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val client = okhttp3.OkHttpClient.Builder()
+                            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        val request = okhttp3.Request.Builder()
+                            .url(url)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                            .build()
+                        val response = client.newCall(request).execute()
+                        response.code to (response.body?.string() ?: "")
+                    }
+                    // Strip HTML → clean text (CPU-bound, fast — OK on main thread)
+                    val html = rawHtml
                     var text = html
                         .replace(Regex("(?is)<script[^>]*>.*?</script>"), " ")
                         .replace(Regex("(?is)<style[^>]*>.*?</style>"), " ")
@@ -751,7 +757,7 @@ class ToolExecutor(private val context: Context) {
                     if (text.length > 3000) text = text.take(3000) + "\n\n[...page truncated]"
                     val titleMatch = Regex("(?i)<title[^>]*>(.*?)</title>").find(html)
                     val title = titleMatch?.groupValues?.get(1)?.trim()?.take(200) ?: "(no title)"
-                    ToolResult(true, "Page: $title\nURL: $url\nHTTP ${response.code}\n\nContent:\n$text")
+                    ToolResult(true, "Page: $title\nURL: $url\nHTTP $respCode\n\nContent:\n$text")
                 } catch (e: Exception) {
                     ToolResult(false, "Fetch error: ${e.message}")
                 }
@@ -760,17 +766,25 @@ class ToolExecutor(private val context: Context) {
                 val url = call.args["url"] as? String ?: return ToolResult(false, "missing url")
                 val path = call.args["path"] as? String ?: "/storage/emulated/0/Documents/ai-workspace/downloads/$(System.currentTimeMillis()).bin"
                 try {
-                    val client = okhttp3.OkHttpClient.Builder()
-                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val request = okhttp3.Request.Builder().url(url).build()
-                    val response = client.newCall(request).execute()
-                    val bytes = response.body?.bytes() ?: return ToolResult(false, "Empty response")
-                    val file = java.io.File(path)
-                    file.parentFile?.mkdirs()
-                    file.writeBytes(bytes)
-                    ToolResult(true, "Downloaded ${bytes.size} bytes to $path")
+                    // v2.2.7: Wrap in withContext(IO) — was blocking main thread → ANR
+                    val downloaded = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val client = okhttp3.OkHttpClient.Builder()
+                            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        val request = okhttp3.Request.Builder().url(url).build()
+                        val response = client.newCall(request).execute()
+                        val bytes = response.body?.bytes() ?: return@withContext null
+                        val file = java.io.File(path)
+                        file.parentFile?.mkdirs()
+                        file.writeBytes(bytes)
+                        bytes.size
+                    }
+                    if (downloaded != null) {
+                        ToolResult(true, "Downloaded $downloaded bytes to $path")
+                    } else {
+                        ToolResult(false, "Empty response")
+                    }
                 } catch (e: Exception) {
                     ToolResult(false, "Download error: ${e.message}")
                 }
