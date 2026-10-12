@@ -267,9 +267,9 @@ class AgentService : Service() {
                     append("If the action would reply to a notification, be brief (the user may be busy).")
                 }
 
-                val pluginPrompt = com.ai.agent.llm.PluginManager.getEnabledPluginsPrompt(this@AgentService)
+                val appsPrompt = com.ai.agent.llm.AppProfileManager.getActiveAppsPromptSection(this@AgentService)
                 val skillPrompt = com.ai.agent.skills.SkillManager(this@AgentService).also { it.loadSkills() }.generatePromptSection()
-                val systemPrompt = basePrompt + pluginPrompt + skillPrompt + contextBlock
+                val systemPrompt = basePrompt + appsPrompt + skillPrompt + contextBlock
 
                 val llm = llmClient ?: LLMClient(this@AgentService)
                 val tools = toolExecutor ?: ToolExecutor(this@AgentService)

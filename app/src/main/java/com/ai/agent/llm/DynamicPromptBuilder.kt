@@ -75,7 +75,7 @@ After readScreenStructured returns bounds "x1,y1,x2,y2" → tap center: ((x1+x2)
         ToolCategory(
             name = "Web",
             keywords = listOf("search", "weather", "news", "research", "find info", "google", "look up", "what is", "who is", "how to"),
-            tools = "Web (BACKGROUND — no browser): webSearch(query), fetchPageText(url), makeHttpRequest(url), downloadFile(url,path)"
+            tools = "Web (BACKGROUND — no browser): webSearch(query, fetchTop=0), fetchPageText(url), makeHttpRequest(url), downloadFile(url,path). fetchTop=N: auto-fetch top N results inline (1 call). For 'what is X' use fetchTop=1. After webSearch without fetchTop: answer from snippets. NEVER fetchPageText every result."
         ),
         ToolCategory(
             name = "Memory",
@@ -110,8 +110,8 @@ Triggers: time(HH:MM), notification(pkg:name), battery_low(%), charging, incomin
         ),
         ToolCategory(
             name = "Device",
-            keywords = listOf("battery", "wifi", "bluetooth", "volume", "brightness", "flashlight", "device", "time", "location", "network", "storage"),
-            tools = "Device: getBatteryLevel, getCurrentTime, getNetworkInfo, getDeviceInfo, getVolume, setVolume, setBrightness, toggleFlashlight, toggleWifi, getBluetoothState, pingHost, getCurrentLocation, openMaps"
+            keywords = listOf("battery", "wifi", "bluetooth", "volume", "brightness", "flashlight", "device", "time", "location", "network", "storage", "weather", "temperature", "forecast", "rain"),
+            tools = "Device: getBatteryLevel, getCurrentTime, getNetworkInfo, getDeviceInfo, getVolume, setVolume, setBrightness, toggleFlashlight, toggleWifi, getBluetoothState, pingHost, getCurrentLocation, openMaps, getWeather (1 call, GPS+Open-Meteo, NO webSearch needed for weather)"
         ),
         ToolCategory(
             name = "Media",

@@ -8,9 +8,10 @@ import com.ai.agent.browser.BrowserController
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.CompletableDeferred
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -55,7 +56,7 @@ class ToolExecutor(private val context: Context) {
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "getClipboard", "setClipboard",
             // Location
-            "getCurrentLocation", "openMaps",
+            "getCurrentLocation", "openMaps", "getWeather",
             // Rules
             "createRule", "listRules", "deleteRule", "modifyRule",
             // Contacts & Phone
@@ -119,7 +120,7 @@ class ToolExecutor(private val context: Context) {
             "toggleFlashlight", "toggleWifi",
             "remember", "recall", "recallAll",
             "getClipboard", "setClipboard",
-            "getCurrentLocation", "openMaps",
+            "getCurrentLocation", "openMaps", "getWeather",
             "createRule", "listRules", "deleteRule", "modifyRule",
             "readContacts", "searchContacts",
             "getCalendarEvents", "createCalendarEvent", "setAlarm", "setTimer",
@@ -792,6 +793,8 @@ class ToolExecutor(private val context: Context) {
             }
             "webSearch" -> {
                 val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
+                // v2.3.3: fetchTop — auto-fetch full text of top N results inline (1 call, saves N+1 calls)
+                val fetchTop = (call.args["fetchTop"] as? Number)?.toInt() ?: 0
                 val searchMethod = AIProvider.getSearchMethod(context)
                 try {
                     val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
@@ -836,6 +839,7 @@ class ToolExecutor(private val context: Context) {
                     }
 
                     val results = StringBuilder()
+                    val urlsToFetch = mutableListOf<String>()
 
                     if (parseMode == "proxy") {
                         // Proxy returns JSON
@@ -843,7 +847,11 @@ class ToolExecutor(private val context: Context) {
                         val json = parsed.optJSONArray("results") ?: org.json.JSONArray()
                         for (i in 0 until json.length()) {
                             val item = json.optJSONObject(i) ?: continue
-                            results.append("${i+1}. ${item.optString("name")}\n   ${item.optString("snippet")}\n   ${item.optString("url")}\n\n")
+                            val title = item.optString("name")
+                            val snippet = item.optString("snippet")
+                            val url = item.optString("url")
+                            results.append("${i+1}. $title\n   $snippet\n   $url\n\n")
+                            if (i < maxOf(1, fetchTop) && url.isNotEmpty()) urlsToFetch.add(url)
                         }
                     } else {
                         // HTML parsing — extract results based on search engine
@@ -865,13 +873,84 @@ class ToolExecutor(private val context: Context) {
                             val title = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
                             val snippet = if (match.groupValues.size > 3) match.groupValues[3].replace(Regex("<[^>]+>"), "").trim() else ""
                             results.append("$count. $title\n   $snippet\n   $url\n\n")
+                            if (count <= maxOf(1, fetchTop) && url.startsWith("http")) urlsToFetch.add(url)
                         }
                     }
 
                     if (results.isEmpty()) {
                         ToolResult(true, "No results found for: $query (via $searchMethod). Try a different search method in Settings, or use fetchPageText on a specific URL.")
                     } else {
-                        ToolResult(true, results.toString())
+                        // v2.3.3: If fetchTop > 0, fetch full text of top N URLs inline
+                        val finalResult = if (fetchTop > 0 && urlsToFetch.isNotEmpty()) {
+                            val fetchCount = minOf(fetchTop, urlsToFetch.size)
+                            val fullTexts = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                // Fetch concurrently for speed
+                                urlsToFetch.take(fetchCount).map { url ->
+                                    kotlinx.coroutines.async {
+                                        try {
+                                            val client = okhttp3.OkHttpClient.Builder()
+                                                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                                                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                                                .build()
+                                            val req = okhttp3.Request.Builder()
+                                                .url(url)
+                                                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                                                .build()
+                                            val resp = client.newCall(req).execute()
+                                            val html = resp.body?.string() ?: ""
+                                            resp.code to html
+                                        } catch (e: Exception) {
+                                            -1 to ""
+                                        }
+                                    }
+                                }.awaitAll()
+                            }
+                            val sb = StringBuilder()
+                            sb.append("=== SEARCH RESULTS ===\n")
+                            sb.append(results.toString())
+                            sb.append("\n=== FULL CONTENT (top $fetchCount) ===\n")
+                            for (i in fullTexts.indices) {
+                                val url = urlsToFetch[i]
+                                val (code, html) = fullTexts[i]
+                                sb.append("\n--- #${i+1}: $url (HTTP $code) ---\n")
+                                if (html.isEmpty()) {
+                                    sb.append("(fetch failed)\n")
+                                } else {
+                                    var text = html
+                                        .replace(Regex("(?is)<script[^>]*>.*?</script>"), " ")
+                                        .replace(Regex("(?is)<style[^>]*>.*?</style>"), " ")
+                                        .replace(Regex("(?is)<nav[^>]*>.*?</nav>"), " ")
+                                        .replace(Regex("(?is)<footer[^>]*>.*?</footer>"), " ")
+                                        .replace(Regex("(?is)<header[^>]*>.*?</header>"), " ")
+                                        .replace(Regex("(?is)<!--.*?-->"), " ")
+                                        .replace(Regex("(?i)<br\\s*/?>"), "\n")
+                                        .replace(Regex("(?i)</p>"), "\n\n")
+                                        .replace(Regex("(?i)</div>"), "\n")
+                                        .replace(Regex("(?i)</li>"), "\n")
+                                        .replace(Regex("(?i)</h[1-6]>"), "\n\n")
+                                        .replace(Regex("<[^>]+>"), " ")
+                                        .replace(Regex("&nbsp;"), " ")
+                                        .replace(Regex("&amp;"), "&")
+                                        .replace(Regex("&lt;"), "<")
+                                        .replace(Regex("&gt;"), ">")
+                                        .replace(Regex("&quot;"), "\"")
+                                        .replace(Regex("&#39;"), "'")
+                                        .replace(Regex("&[a-z]+;"), " ")
+                                        .replace(Regex("[ \\t]+"), " ")
+                                        .replace(Regex("\\n[ \\t]+"), "\n")
+                                        .replace(Regex("\\n{3,}"), "\n\n")
+                                        .trim()
+                                    if (text.length > 2500) text = text.take(2500) + "\n[...truncated]"
+                                    val titleMatch = Regex("(?i)<title[^>]*>(.*?)</title>").find(html)
+                                    val title = titleMatch?.groupValues?.get(1)?.trim()?.take(150) ?: "(no title)"
+                                    sb.append("Title: $title\nContent:\n$text\n")
+                                }
+                            }
+                            sb.toString()
+                        } else {
+                            results.toString()
+                        }
+                        ToolResult(true, finalResult)
                     }
                 } catch (e: Exception) {
                     val errorMsg = e.message ?: e.toString()
@@ -957,6 +1036,134 @@ class ToolExecutor(private val context: Context) {
                     }
                 } catch (e: Exception) {
                     ToolResult(false, "Maps error: ${e.message}")
+                }
+            }
+            // v2.3.3: getWeather — uses GPS location + free Open-Meteo API (no key needed, works in India)
+            "getWeather" -> {
+                try {
+                    // Step 1: Get GPS location
+                    val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+                    val providers = lm.getProviders(true)
+                    var location: android.location.Location? = null
+                    for (provider in providers) {
+                        try {
+                            @Suppress("MissingPermission")
+                            val loc = lm.getLastKnownLocation(provider)
+                            if (loc != null && (location == null || loc.accuracy < location!!.accuracy)) {
+                                location = loc
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (location == null) {
+                        return ToolResult(false, "GPS location not available. Enable GPS and try again, or specify a city: getWeather(city=\"Bangalore\")")
+                    }
+                    val lat = location.latitude
+                    val lon = location.longitude
+
+                    // Step 2: Call free Open-Meteo API (no API key, works globally including India)
+                    val (weatherBody, weatherCode) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+                            "&current=temperature_2m,relative_humidity_2m,apparent_temperature," +
+                            "weather_code,wind_speed_10m,precipitation" +
+                            "&daily=temperature_2m_max,temperature_2m_min,weather_code" +
+                            "&timezone=auto&forecast_days=3"
+                        val client = okhttp3.OkHttpClient.Builder()
+                            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        val request = okhttp3.Request.Builder().url(url).build()
+                        val response = client.newCall(request).execute()
+                        (response.body?.string() ?: "") to response.code
+                    }
+
+                    if (weatherCode != 200 || weatherBody.isEmpty()) {
+                        return ToolResult(false, "Weather API error: HTTP $weatherCode")
+                    }
+
+                    // Step 3: Parse JSON response
+                    val json = org.json.JSONObject(weatherBody)
+                    val current = json.optJSONObject("current")
+                    val daily = json.optJSONObject("daily")
+
+                    val temp = current?.optDouble("temperature_2m", 0.0) ?: 0.0
+                    val humidity = current?.optInt("relative_humidity_2m", 0) ?: 0
+                    val feelsLike = current?.optDouble("apparent_temperature", temp) ?: temp
+                    val windSpeed = current?.optDouble("wind_speed_10m", 0.0) ?: 0.0
+                    val precip = current?.optDouble("precipitation", 0.0) ?: 0.0
+                    val wmoCode = current?.optInt("weather_code", -1) ?: -1
+                    val timezone = json.optString("timezone", "unknown")
+
+                    // WMO weather description
+                    val weatherDesc = when (wmoCode) {
+                        0 -> "Clear sky"
+                        1 -> "Mainly clear"
+                        2 -> "Partly cloudy"
+                        3 -> "Overcast"
+                        45 -> "Foggy"
+                        48 -> "Rime fog"
+                        51 -> "Light drizzle"
+                        53 -> "Moderate drizzle"
+                        55 -> "Dense drizzle"
+                        61 -> "Slight rain"
+                        63 -> "Moderate rain"
+                        65 -> "Heavy rain"
+                        71 -> "Slight snow"
+                        73 -> "Moderate snow"
+                        75 -> "Heavy snow"
+                        80 -> "Rain showers"
+                        81 -> "Heavy rain showers"
+                        82 -> "Violent rain showers"
+                        95 -> "Thunderstorm"
+                        96 -> "Thunderstorm with hail"
+                        else -> "Unknown ($wmoCode)"
+                    }
+
+                    // Build 3-day forecast
+                    val forecast = StringBuilder()
+                    if (daily != null) {
+                        val maxTemps = daily.optJSONArray("temperature_2m_max")
+                        val minTemps = daily.optJSONArray("temperature_2m_min")
+                        val dates = daily.optJSONArray("time")
+                        val codes = daily.optJSONArray("weather_code")
+                        val days = minOf(3, maxTemps?.length() ?: 0)
+                        for (i in 0 until days) {
+                            val date = dates?.optString(i, "") ?: ""
+                            val max = maxTemps?.optDouble(i, 0.0) ?: 0.0
+                            val min = minTemps?.optDouble(i, 0.0) ?: 0.0
+                            val dc = codes?.optInt(i, -1) ?: -1
+                            val desc = when (dc) {
+                                0 -> "Clear"
+                                1 -> "Mainly clear"
+                                2 -> "Partly cloudy"
+                                3 -> "Cloudy"
+                                51 -> "Drizzle"
+                                61 -> "Rain"
+                                63 -> "Rain"
+                                80 -> "Showers"
+                                95 -> "Thunderstorm"
+                                else -> "—"
+                            }
+                            forecast.append("  $date: $min°C - $max°C ($desc)\n")
+                        }
+                    }
+
+                    val result = buildString {
+                        append("Current Weather ($timezone)\n")
+                        append("Temperature: ${String.format("%.1f", temp)}°C (feels like ${String.format("%.1f", feelsLike)}°C)\n")
+                        append("Condition: $weatherDesc\n")
+                        append("Humidity: $humidity%\n")
+                        append("Wind: ${String.format("%.1f", windSpeed)} km/h\n")
+                        append("Precipitation: ${String.format("%.1f", precip)} mm\n")
+                        append("Location: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}\n")
+                        if (forecast.isNotEmpty()) {
+                            append("\n3-day forecast:\n")
+                            append(forecast.toString().trimEnd())
+                        }
+                    }
+
+                    ToolResult(true, result)
+                } catch (e: Exception) {
+                    ToolResult(false, "Weather error: ${e.message}")
                 }
             }
             // === DEVICE INFO ===
@@ -2487,7 +2694,7 @@ $instructions
             "type", "clickByText" -> listOf("text")
             "launchApp" -> listOf("package")
             "searchInApp" -> listOf("package", "query")
-            "webSearch", "openGoogleSearch" -> listOf("query")
+            "webSearch", "openGoogleSearch" -> listOf("query", "fetchTop")
             "browserOpen", "openUrl" -> listOf("url")
             "browserClickText", "browserClickElement", "browserGetText" -> listOf("selector")
             "browserFillForm" -> listOf("field", "value")

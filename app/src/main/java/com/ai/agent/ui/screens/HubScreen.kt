@@ -38,6 +38,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -130,7 +131,7 @@ enum class HubSection(val label: String, val icon: ImageVector, val count: Strin
     SKILLS("Skills", Icons.Outlined.Psychology, "20"),
     RULES("Rules", Icons.Outlined.Rule, "36"),
     TOOLS("Tools", Icons.Outlined.Build, "100+"),
-    PLUGINS("Plugins", Icons.Outlined.Extension, "8"),
+    PLUGINS("Apps", Icons.Outlined.Apps, "15"),
     MEMORY("Memory", Icons.Outlined.Memory, "142"),
     KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder, "23"),
     HISTORY("History", Icons.Outlined.History, "487"),
@@ -245,7 +246,7 @@ fun HubScreen(
                     HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
                     HubSection.RULES -> RulesSection()
                     HubSection.TOOLS -> ToolsSection()
-                    HubSection.PLUGINS -> PluginsSection()
+                    HubSection.PLUGINS -> AppsSection()
                     HubSection.MEMORY -> MemorySection()
                     HubSection.KNOWLEDGE -> KnowledgeSection()
                     HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
@@ -1247,79 +1248,109 @@ private fun ToolCategoryCard(category: ToolCategory) {
 }
 
 // ---------------------------------------------------------------------------
-// Task 25 — Functional section: Plugins (uses PluginManager.loadPlugins)
+// v2.3.3: Apps section — replaces old Plugins. Uses AppProfileManager
+// to detect installed apps and let user enable/disable AI access per-app.
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun PluginsSection() {
+private fun AppsSection() {
     val context = LocalContext.current
+    val custom = LocalCustomColors.current
 
-    var plugins by remember { mutableStateOf<List<PluginManager.Plugin>>(emptyList()) }
+    var profiles by remember { mutableStateOf<List<com.ai.agent.llm.AppProfileManager.AppProfile>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        plugins = try {
-            PluginManager.loadPlugins(context)
+        profiles = try {
+            com.ai.agent.llm.AppProfileManager.refreshAndGet(context)
         } catch (e: Exception) {
             emptyList()
         }
         loaded = true
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+    val installed = profiles.filter { it.installed }
+    val notInstalled = profiles.filter { !it.installed }
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+        item {
             SectionHeader(
-                title = "Plugins",
-                subtitle = "${plugins.size} loaded · ${plugins.count { it.enabled }} enabled · ${if (loaded) "ready" else "loading…"}",
+                title = "Apps",
+                subtitle = "${installed.size} installed · ${installed.count { it.enabled }} AI-enabled",
             )
         }
-        if (plugins.isEmpty() && loaded) {
-            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                PlaceholderCard(
-                    title = "No plugins loaded",
-                    detail = "Drop .json plugin files in assets/plugins/ or install via PluginManager.installPlugin().",
+        if (profiles.isEmpty() && !loaded) {
+            item { LoadingCard() }
+        }
+        if (installed.isNotEmpty()) {
+            item {
+                Text(
+                    text = "DETECTED ON DEVICE",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
                 )
             }
-        } else if (plugins.isEmpty()) {
-            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) { LoadingCard() }
-        } else {
-            items(plugins, key = { it.name }) { plugin ->
-                PluginCard(plugin = plugin, onToggle = { newValue ->
-                    try {
-                        PluginManager.setPluginEnabled(context, plugin.name, newValue)
-                        plugins = plugins.map {
-                            if (it.name == plugin.name) it.copy(enabled = newValue) else it
+            items(installed, key = { it.packageName }) { profile ->
+                AppCard(
+                    profile = profile,
+                    onToggle = { newValue ->
+                        com.ai.agent.llm.AppProfileManager.setEnabled(context, profile.packageName, newValue)
+                        profiles = profiles.map {
+                            if (it.packageName == profile.packageName) it.copy(enabled = newValue) else it
                         }
-                    } catch (_: Exception) {
-                    }
-                })
+                    },
+                )
+            }
+        }
+        if (notInstalled.isNotEmpty()) {
+            item {
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = "NOT INSTALLED (tap to enable anyway)",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            items(notInstalled, key = { it.packageName }) { profile ->
+                AppCard(
+                    profile = profile,
+                    onToggle = { newValue ->
+                        com.ai.agent.llm.AppProfileManager.setEnabled(context, profile.packageName, newValue)
+                        profiles = profiles.map {
+                            if (it.packageName == profile.packageName) it.copy(enabled = newValue) else it
+                        }
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun PluginCard(plugin: PluginManager.Plugin, onToggle: (Boolean) -> Unit) {
+private fun AppCard(profile: com.ai.agent.llm.AppProfileManager.AppProfile, onToggle: (Boolean) -> Unit) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
+    val active = profile.installed && profile.enabled
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (plugin.enabled) custom.accent.copy(alpha = 0.06f) else custom.ink2,
+                if (active) custom.accent.copy(alpha = 0.06f) else custom.ink2,
                 RoundedCornerShape(8.dp),
             )
             .border(
                 1.dp,
-                if (plugin.enabled) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
+                if (active) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
                 RoundedCornerShape(8.dp),
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -1329,22 +1360,23 @@ private fun PluginCard(plugin: PluginManager.Plugin, onToggle: (Boolean) -> Unit
                 modifier = Modifier
                     .size(28.dp)
                     .background(
-                        if (plugin.enabled) custom.accent else custom.surface3,
+                        if (active) custom.accent else custom.surface3,
                         RoundedCornerShape(8.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    Icons.Outlined.Extension,
-                    contentDescription = null,
-                    tint = if (plugin.enabled) Color.White else custom.fg3,
-                    modifier = Modifier.size(14.dp),
+                Text(
+                    text = profile.displayName.take(2).uppercase(),
+                    color = if (active) Color.White else custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
                 )
             }
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = plugin.name,
+                    text = profile.displayName,
                     color = m3.onSurface,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
@@ -1352,14 +1384,14 @@ private fun PluginCard(plugin: PluginManager.Plugin, onToggle: (Boolean) -> Unit
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${plugin.tools.size} tools · v${plugin.version}",
+                    text = profile.category.lowercase() + if (profile.shortcutTool != null) " · has shortcut" else "",
                     color = custom.fg3,
                     fontFamily = MonoFontFamily,
                     fontSize = 10.sp,
                 )
             }
             Switch(
-                checked = plugin.enabled,
+                checked = profile.enabled,
                 onCheckedChange = onToggle,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
@@ -1369,22 +1401,37 @@ private fun PluginCard(plugin: PluginManager.Plugin, onToggle: (Boolean) -> Unit
                 ),
             )
         }
-        Spacer(Modifier.size(6.dp))
-        Text(
-            text = plugin.description.ifBlank { "(no description)" },
-            color = custom.fg2,
-            fontSize = 11.sp,
-            lineHeight = 14.sp,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.size(4.dp))
-        Text(
-            text = "source: ${plugin.source}",
-            color = custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 9.sp,
-        )
+        if (profile.shortcutTool != null) {
+            Spacer(Modifier.size(6.dp))
+            Text(
+                text = "→ ${profile.shortcutTool}",
+                color = custom.fg2,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (profile.tip != null) {
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = profile.tip,
+                color = custom.fg3,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (!profile.installed) {
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = "pkg: ${profile.packageName}",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 9.sp,
+            )
+        }
     }
 }
 

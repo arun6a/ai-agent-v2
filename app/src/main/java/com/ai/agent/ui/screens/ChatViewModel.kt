@@ -561,15 +561,15 @@ class ChatViewModel(
             }
             var systemPrompt = "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
 
-            // v2.0.9: Inject enabled plugins into the system prompt so the AI
-            // knows which plugin tools are available. Mirrors v1 behavior.
+            // v2.3.3: Inject enabled app profiles into the system prompt so the AI
+            // knows which apps are installed + how to interact with each (shortcut tools, tips).
             try {
-                val pluginsPrompt = com.ai.agent.llm.PluginManager.getEnabledPluginsPrompt(context)
-                if (pluginsPrompt.isNotBlank()) {
-                    systemPrompt += "\n\n$pluginsPrompt"
+                val appsPrompt = com.ai.agent.llm.AppProfileManager.getActiveAppsPromptSection(context)
+                if (appsPrompt.isNotBlank()) {
+                    systemPrompt += "\n\n$appsPrompt"
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Plugin injection failed: ${e.message}")
+                Log.w(TAG, "App profile injection failed: ${e.message}")
             }
 
             // v2.2.0 Issue 112 — Inject accessibility status into the system prompt.

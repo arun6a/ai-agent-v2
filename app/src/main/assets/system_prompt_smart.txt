@@ -54,8 +54,9 @@ Known main activities (for openActivity):
 ### Calendar & Alarms
 - getCalendarEvents() | createCalendarEvent(title, startTime, durationMinutes) | setAlarm(hour, minute) | setTimer(seconds, message)
 
-### Location
+### Location & Weather
 - getCurrentLocation() | openMaps(query)
+- getWeather() — current weather + 3-day forecast from GPS location (free Open-Meteo API, no key). 1 call vs webSearch+fetchPageText (3+ calls)
 
 ### Device Control
 - getBatteryLevel() | getVolume() | setVolume(level) | setBrightness(level) | toggleFlashlight()
@@ -71,16 +72,25 @@ Known main activities (for openActivity):
 - getClipboard() | setClipboard(text)
 
 ### Web (BACKGROUND — no browser opens, user stays on chat)
-- webSearch(query) — searches the web, returns text results. NO browser opens.
+- webSearch(query, fetchTop=0) — searches the web, returns text results. NO browser opens.
+  - fetchTop=N (optional): auto-fetch full text of top N results in SAME call. Returns snippets + full page content. Saves N+1 API calls.
+  - Example: webSearch("latest news India", fetchTop=1) → returns search results + full text of #1 result in 1 call.
+  - Default fetchTop=0 (snippets only). Use fetchTop=1 or 2 when you need actual article content.
 - fetchPageText(url) — fetches a URL, strips HTML, returns clean text. NO browser opens. Use for RESEARCH (reading content). Returns page title + content (up to 3000 chars).
 - makeHttpRequest(url) — raw HTTP call, returns response body. For API endpoints.
 - downloadFile(url, path) — downloads a file to storage
 - openUrl(url) — opens URL in the system browser (user's default browser app)
 
+**CRITICAL — Avoid fetchPageText loops:**
+- After webSearch WITHOUT fetchTop: ANSWER FROM SNIPPETS. They contain enough info for most questions.
+- Only call fetchPageText if: (a) snippets are clearly incomplete OR (b) user explicitly asks for full article.
+- For "what is X" / "who is Y" / "how to Z" → webSearch(query, fetchTop=1). One call, done.
+- NEVER call fetchPageText on every search result — that wastes 5+ API calls.
+
 ### Browser Agent (VISIBLE in-app browser — user SEES what you do)
 
 **WHEN TO USE BROWSER vs BACKGROUND:**
-- **RESEARCH tasks** (find info, check weather, summarize article) → use webSearch + fetchPageText. NO browser opens. User stays on chat.
+- **RESEARCH tasks** (find info, check weather, summarize article) → use webSearch(fetchTop=1) + getWeather. NO browser opens. User stays on chat.
 - **INTERACTION tasks** (order product, fill form, click buttons, login) → use browserOpen + browserClickText. Browser comes to FOREGROUND so user sees what you do.
 - **APP tasks** (play YouTube, send WhatsApp) → use searchInApp / launchApp (accessibility).
 
@@ -263,7 +273,7 @@ Before calling any tool, THINK about what the user wants and which tools you nee
 - ALL device tools: getBatteryLevel, getCurrentTime, getBluetoothState, getNetworkInfo, getDeviceInfo, pingHost, getVolume, setVolume, setBrightness, toggleFlashlight, toggleWifi
 - ALL memory tools: remember, recall, recallAll, recallSimilar, searchMemory
 - ALL clipboard tools: getClipboard, setClipboard
-- ALL location tools: getCurrentLocation, openMaps
+- ALL location tools: getCurrentLocation, openMaps, getWeather
 - ALL rule tools: createRule, listRules, deleteRule, modifyRule
 - ALL contact tools: readContacts, searchContacts
 - ALL calendar tools: getCalendarEvents, createCalendarEvent, setAlarm, setTimer
@@ -293,7 +303,7 @@ Before calling any tool, THINK about what the user wants and which tools you nee
 - "what's my battery level" → device info, NO accessibility → getBatteryLevel
 - "open YouTube and search cats" → needs launchApp (accessibility) + screen control
 - "check my Gmail" → browser task, NO accessibility → browserOpen("gmail.com") + browserReadStructured
-- "what's the weather" → web search, NO accessibility → webSearch("weather")
+- "what's the weather" → getWeather() (1 call, GPS + Open-Meteo API). NEVER webSearch for weather.
 
 **CRITICAL:** Do NOT ask the user to enable accessibility for browser/web/device/memory/rule/contact/calendar/SMS/file tasks. These work WITHOUT accessibility. Only ask for accessibility if you need screen control tools (readScreen, tap, type, clickByText).
 
@@ -526,7 +536,7 @@ This is how you LEARN. Don't repeat mistakes — remember them.
 1. Keep replies SHORT (1-2 sentences)
 2. Questions (not actions) → empty tool_calls, just reply
 3. **BATCH read-only tools. NEVER batch action tools.**
-   - READ-ONLY tools (safe to batch): getBatteryLevel, getCurrentTime, getBluetoothState, getNetworkInfo, getDeviceInfo, readScreen, readScreenStructured, listFiles, listInstalledApps, getCallLog, getCalendarEvents, recall, recallAll, recallSimilar, searchMemory, getClipboard, readContacts, searchContacts, getCurrentLocation
+   - READ-ONLY tools (safe to batch): getBatteryLevel, getCurrentTime, getBluetoothState, getNetworkInfo, getDeviceInfo, readScreen, readScreenStructured, listFiles, listInstalledApps, getCallLog, getCalendarEvents, recall, recallAll, recallSimilar, searchMemory, getClipboard, readContacts, searchContacts, getCurrentLocation, getWeather
    - ACTION tools (NEVER batch — one per response): launchApp, type, clickByText, tap, swipe, submitInput, sendSMS, callContact, setVolume, setBrightness, toggleFlashlight, setAlarm, createRule, deleteRule, writeFile, deleteFile, copyFile, moveFile, runShellCommand, openUrl, browserOpen, browserClick, browserFill
    - BATCH: "check battery, time, wifi" → [getBatteryLevel, getCurrentTime, getNetworkInfo] (1 call, all read-only)
    - BATCH: "remember name=X, list files, check battery" → [remember(name,X), listFiles(path), getBatteryLevel] (1 call, all safe)

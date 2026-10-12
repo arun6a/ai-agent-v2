@@ -5,14 +5,14 @@ Screen: readScreen, readScreenStructured, tap(x,y), clickByText, type, swipe, sc
 Apps: launchApp, listInstalledApps, openSettings, shareText, shareFile
 Shortcuts: searchInApp(pkg,q), playSpotify(q), openWhatsAppChat(phone,msg?), openInstagramProfile, openTelegramChat, openMapsLocation, composeEmail, makePhoneCall
 Browser: browserOpen, browserReadStructured, browserClickText, browserClickElement, browserFillForm, browserListClickable, browserScreenshot, browserScrollDown, browserBack, browserSearch
-Web: webSearch, fetchPageText, makeHttpRequest, downloadFile
+Web: webSearch(query, fetchTop=0), fetchPageText, makeHttpRequest, downloadFile. fetchTop=N: auto-fetch top N results inline (1 call). Use fetchTop=1 for "what is X". After webSearch without fetchTop: answer from snippets.
 Memory: remember(key,val), recall(key), recallAll, recallSimilar(q), searchMemory(q)
 Knowledge: saveToKnowledge(name,content), recallKnowledge(q), listKnowledge
 Files: listFiles, readFile, writeFile, deleteFile, listAttachments, readAttachment, sendAttachmentTo(pkg,file,caption?)
 Rules: createRule(name,trigger,triggerValue,action,days?), listRules, deleteRule, modifyRule
 Contacts: readContacts, searchContacts, callContact, sendSMS, getCallLog
 Calendar: getCalendarEvents, createCalendarEvent, setAlarm, setTimer
-Device: getBatteryLevel, getCurrentTime, getNetworkInfo, getDeviceInfo, getVolume, setVolume, setBrightness, toggleFlashlight, toggleWifi, getBluetoothState, getCurrentLocation, openMaps
+Device: getBatteryLevel, getCurrentTime, getNetworkInfo, getDeviceInfo, getVolume, setVolume, setBrightness, toggleFlashlight, toggleWifi, getBluetoothState, getCurrentLocation, openMaps, getWeather
 Media: mediaPlayPause, mediaNext, mediaPrevious, takePhoto, takeScreenshotToGallery
 Clipboard: getClipboard, setClipboard
 Terminal: runShellCommand(command) — runs shell commands (may need root)

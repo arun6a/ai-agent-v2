@@ -23,7 +23,9 @@ browserOpen(url) | browserReadStructured() | browserClickText(text) | browserCli
 Call browserOpen ONLY ONCE per site. Use browserBack for navigation.
 
 ### Web (BACKGROUND — no browser)
-webSearch(query) | fetchPageText(url) | makeHttpRequest(url) | downloadFile(url,path)
+webSearch(query, fetchTop=0) | fetchPageText(url) | makeHttpRequest(url) | downloadFile(url,path)
+fetchTop=N: auto-fetch top N results inline (1 call, not N+1). Use fetchTop=1 for "what is X" questions.
+After webSearch without fetchTop: answer from snippets. Don't fetchPageText every result.
 
 ### Memory & Knowledge
 remember(key,val) | recall(key) | recallAll() | recallSimilar(query) | searchMemory(query)
@@ -41,7 +43,7 @@ Triggers: time(HH:MM), notification(pkg:name), battery_low(%), charging, incomin
 ### Other Tools
 readContacts() | searchContacts(name) | callContact(num) | sendSMS(num,msg) | getCallLog() | sendEmail(to,subj,body) | composeEmail(to,subj,body) | openDialer(num) | makePhoneCall(num)
 getCalendarEvents() | createCalendarEvent(title,start,dur) | setAlarm(h,m) | setTimer(sec,msg)
-getBatteryLevel() | getCurrentTime() | getNetworkInfo() | getDeviceInfo() | getVolume() | setVolume(l) | setBrightness(l) | toggleFlashlight() | toggleWifi() | getBluetoothState() | pingHost(host) | getCurrentLocation() | openMaps(q)
+getBatteryLevel() | getCurrentTime() | getNetworkInfo() | getDeviceInfo() | getVolume() | setVolume(l) | setBrightness(l) | toggleFlashlight() | toggleWifi() | getBluetoothState() | pingHost(host) | getCurrentLocation() | openMaps(q) | getWeather()
 mediaPlayPause() | mediaNext() | mediaPrevious() | takePhoto() | takeScreenshotToGallery()
 getClipboard() | setClipboard(text) | runShellCommand(cmd)
 analyzeScreen(prompt) | findElement(desc) | translateText(text,targetLang)
@@ -86,4 +88,5 @@ Icon-only UIs: readScreenStructured() first → hardcoded coords → findElement
 "play X on Spotify": playSpotify(X) = 1 call
 "send msg to WhatsApp": openWhatsAppChat(phone,msg) = 1 call
 "order from website": browserOpen→browserReadStructured→browserClickText→browserReadStructured→checkout
-"research X": webSearch→fetchPageText→summarize (background, no browser)
+"research X": webSearch(X, fetchTop=1) → summarize (background, no browser, 1 call)
+"weather": getWeather() (1 call, GPS + Open-Meteo). NEVER webSearch for weather.
