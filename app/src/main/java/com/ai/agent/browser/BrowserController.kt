@@ -78,14 +78,11 @@ object BrowserController {
         // Launch BrowserActivity (reuses existing instance via SINGLE_TOP)
         BrowserActivity.launch(context, finalUrl)
 
-        // Wait for page to load (15s timeout)
-        try {
-            kotlinx.coroutines.runBlocking { // FIXME v2.2.7
-                kotlinx.coroutines.withTimeoutOrNull(15000) { pageLoadDeferred?.await() }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Page load timeout for $url — continuing anyway")
-        }
+        // v2.2.7: REMOVED runBlocking — was blocking the main thread for up to 15s → ANR!
+        // The page will load asynchronously. BrowserActivity.onPageFinished() completes
+        // pageLoadDeferred. The AI should call wait(3000) + readScreen() after browserOpen
+        // to verify the page loaded (as the system prompt now instructs).
+        // No blocking wait here — return immediately.
     }
 
     /**
@@ -113,7 +110,8 @@ object BrowserController {
                 }
             }
         }
-        Thread.sleep(500)
+        // v2.2.7: Removed Thread.sleep(500) — was blocking the calling thread.
+        // WebView is ready immediately after creation.
         return webView!!
     }
 

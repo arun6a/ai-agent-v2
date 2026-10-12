@@ -327,7 +327,7 @@ class ChatViewModel(
             )
         }
 
-        loopJob = viewModelScope.launch { runAgentLoop(effectiveMessage) }
+        loopJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { runAgentLoop(effectiveMessage) }
     }
 
     fun stopAgent() {
