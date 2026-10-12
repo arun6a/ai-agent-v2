@@ -2414,7 +2414,7 @@ private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             SettingsGroup(title = "SEARCH METHOD") {
                 SelectorRow(
                     label = "Search Method",
-                    options = listOf("duckduckgo", "google", "bing", "proxy"),
+                    options = listOf("duckduckgo", "google", "bing", "google_app"),
                     selected = searchMethod,
                     onSelect = {
                         searchMethod = it

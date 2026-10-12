@@ -28,6 +28,7 @@ import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.components.Routes
 import com.ai.agent.ui.screens.BrowserScreen
 import com.ai.agent.ui.screens.ChatScreen
+import com.ai.agent.ui.screens.BackgroundTasksScreen
 import com.ai.agent.ui.screens.HubScreen
 import com.ai.agent.ui.screens.HubSectionArg
 import com.ai.agent.ui.screens.OnboardingScreen
@@ -172,6 +173,11 @@ fun AppNavigation() {
                                 restoreState = true
                             }
                         },
+                        onOpenBackgroundTasks = {
+                            nav.navigate(Routes.BACKGROUND_TASKS) {
+                                launchSingleTop = true
+                            }
+                        },
                         pendingSessionId = pendingSessionId,
                         onSessionIdConsumed = {
                             backStackEntry.savedStateHandle.remove<Long>("session_id")
@@ -293,6 +299,19 @@ fun AppNavigation() {
                     popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
                 ) {
                     ProviderSettingsScreen(
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+
+                // ---- Background Tasks (v2.2.2) ----
+                composable(
+                    route = Routes.BACKGROUND_TASKS,
+                    enterTransition = { slideInVertically(tween(300)) { it / 3 } + fadeIn(tween(300)) },
+                    exitTransition = { slideOutVertically(tween(250)) { it / 3 } + fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) },
+                    popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
+                ) {
+                    BackgroundTasksScreen(
                         onBack = { nav.popBackStack() },
                     )
                 }

@@ -113,6 +113,9 @@ class ChatViewModel(
     /** The currently running agent-loop coroutine (so Stop can cancel it). */
     private var loopJob: Job? = null
 
+    // v2.2.2: Browser method lock — once AI picks in_app or chrome, stick with it
+    private var lockedBrowserMethod: String? = null  // "in_app" | "chrome" | null
+
     init {
         loadProviderInfo()
         loadTtsPref()
@@ -551,6 +554,29 @@ class ChatViewModel(
                 Log.w(TAG, "A11y status injection failed: ${e.message}")
             }
 
+            // v2.2.2: Browser mode guidance — tell AI which browser method to use + lock it
+            val browserMode = AIProvider.getBrowserMode(context)  // "auto" | "in_app" | "chrome"
+            val browserGuidance = if (lockedBrowserMethod != null) {
+                "IMPORTANT: You already chose '$lockedBrowserMethod' browser mode for this task. " +
+                    "Do NOT switch to a different browser method. Continue using '$lockedBrowserMethod'."
+            } else {
+                when (browserMode) {
+                    "in_app" -> "Browser mode: IN-APP. Use browserOpen + browserClickText + browserFill for ALL browser operations. Do NOT use openInChrome."
+                    "chrome" -> "Browser mode: CHROME. Use openInChrome / searchInChrome for ALL browser operations. Do NOT use browserOpen."
+                    else -> "Browser mode: AUTO. For logged-in sites (Gmail, YouTube, social media), use Chrome via openInChrome. For web scraping/research, use in-app browser (browserOpen). Pick ONE method and STICK with it for the entire task. Do NOT mix."
+                }
+            }
+            val webGuide = """
+## Web Tools Guide
+- **webSearch(query)**: Get search results WITHOUT opening a browser. Returns text snippets. Fast, no visual feedback. Best for: "what is X", "latest news".
+- **browserOpen(url)**: Opens IN-APP browser (user can see what's happening). Has AI Mode + User Mode. If user touches browser, AI pauses. Best for: forms, scraping, logged-out sites.
+- **openInChrome(url)**: Opens Chrome app (uses Chrome login state). Best for: Gmail, YouTube, Google services, social media.
+- **searchInApp(query)**: Opens search within a specific app (e.g., YouTube search).
+
+RULE: Pick ONE web method per task and STICK with it. Do NOT mix browserOpen with openInChrome in the same task.
+""".trimIndent()
+            systemPrompt += "\n\n$browserGuidance\n$webGuide"
+
             // v2.0.9: Inject available skills (so AI can executeSkill(name))
             // AND check if the user's message matches a skill trigger — if so,
             // auto-load that skill's body into the prompt. Mirrors v1 behavior.
@@ -606,6 +632,14 @@ class ChatViewModel(
             var finalReply = ""
             var iteration = 0
 
+            // v2.2.2: Notify AgentService that a task is running (updates notification)
+            com.ai.agent.service.AgentService.notifyTaskStarted()
+            // v2.2.2: Reset stop flag from notification
+            com.ai.agent.service.TaskStopReceiver.reset()
+
+            // v2.2.2: Reset browser method lock for this new task
+            lockedBrowserMethod = null
+
             // v2.0.9 Task 93: Per-task + per-step timeout guards.
             //   • TASK_TIMEOUT_MS (3 min) — overall wall-clock budget for a
             //     single user message. Prevents pathological loops from
@@ -621,7 +655,7 @@ class ChatViewModel(
 
             ApiUsageTracker.startNewTask()
 
-            while (iteration < MAX_ITERATIONS && !_state.value.stopRequested) {
+            while (iteration < MAX_ITERATIONS && !_state.value.stopRequested && !com.ai.agent.service.TaskStopReceiver.stopRequested) {
                 // ---- Task-level timeout (3 minutes total) ----
                 if (System.currentTimeMillis() - taskStartTime > TASK_TIMEOUT_MS) {
                     finalReply = "⏰ Task timed out after 3 minutes. Here's what I accomplished:\n$workLog"
@@ -893,6 +927,8 @@ class ChatViewModel(
                 database.addConversationToSession(_state.value.currentSessionId, "ai", msg)
             } catch (_: Exception) {}
         } finally {
+            // v2.2.2: Notify AgentService that task completed (updates notification)
+            com.ai.agent.service.AgentService.notifyTaskCompleted()
             _state.update {
                 it.copy(
                     isThinking = false,

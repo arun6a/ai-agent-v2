@@ -39,9 +39,26 @@ class AgentAccessibilityService : AccessibilityService() {
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             ) ?: return false
-            val serviceName = context.packageName + "/" +
-                AgentAccessibilityService::class.java.name
-            return enabledServices.contains(serviceName)
+            // v2.2.2: Robust matching — try multiple formats because:
+            // 1. applicationId is "com.ai.agent.v2" but namespace is "com.ai.agent"
+            // 2. MIUI/custom ROMs may store the component name differently
+            // 3. Some devices store just the class name without the package prefix
+            val className = AgentAccessibilityService::class.java.name
+            val pkgName = context.packageName  // "com.ai.agent.v2"
+            val possibleFormats = listOf(
+                "$pkgName/$className",           // standard: com.ai.agent.v2/com.ai.agent.accessibility.AgentAccessibilityService
+                "com.ai.agent/$className",       // if namespace was used: com.ai.agent/com.ai.agent.accessibility.AgentAccessibilityService
+                "com.ai.agent.v2/.accessibility.AgentAccessibilityService",  // relative from package
+                "com.ai.agent/.accessibility.AgentAccessibilityService",     // relative from namespace
+                className,                        // just the class name (some MIUI versions)
+                "AgentAccessibilityService",     // just the short name (some custom ROMs)
+            )
+            val matched = possibleFormats.any { enabledServices.contains(it) }
+            if (!matched) {
+                android.util.Log.w(TAG, "Accessibility not found in enabled services. " +
+                    "Enabled: $enabledServices | Checked: ${possibleFormats.take(3)}")
+            }
+            return matched
         }
     }
 

@@ -33,10 +33,26 @@ class AgentService : Service() {
         const val NOTIFICATION_ID = 1
         private const val TAG = "AgentService"
 
+        // v2.2.2: Track task running state for notification + background tasks screen
+        @Volatile
+        var taskRunning: Boolean = false
+            private set
+
         const val ACTION_START = "com.ai.agent.START"
         const val ACTION_STOP = "com.ai.agent.STOP"
         const val ACTION_PROCESS_COMMAND = "com.ai.agent.PROCESS_COMMAND"
         const val EXTRA_COMMAND = "command"
+
+        // v2.2.2: Called by ChatViewModel when a task starts
+        fun notifyTaskStarted() {
+            taskRunning = true
+        }
+
+        // v2.2.2: Called by ChatViewModel when a task completes/stops
+        fun notifyTaskCompleted() {
+            taskRunning = false
+            TaskStopReceiver.reset()
+        }
         // Rules — fired by AlarmManager (time rules) or NotificationListener (notification rules)
         const val ACTION_PROCESS_RULE = "com.ai.agent.PROCESS_RULE"
         const val EXTRA_RULE_NAME = "rule_name"
@@ -308,10 +324,22 @@ class AgentService : Service() {
 
     private fun createNotification(): Notification {
         val a11yStatus = if (AgentAccessibilityService.isRunning()) "ON" else "OFF"
+        val taskText = if (taskRunning) "Executing task..." else "Ready"
+
+        // v2.2.2: Add Stop Task action button to notification
+        val stopIntent = android.content.Intent(this, TaskStopReceiver::class.java).apply {
+            action = TaskStopReceiver.ACTION_STOP_TASK
+        }
+        val stopPendingIntent = android.app.PendingIntent.getBroadcast(
+            this, 0, stopIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("AI Agent")
-            .setContentText("Running • Accessibility $a11yStatus")
+            .setContentTitle("Aira")
+            .setContentText("$taskText • A11y $a11yStatus")
             .setSmallIcon(R.drawable.ic_mic)
+            .addAction(R.drawable.ic_mic, "Stop Task", stopPendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()

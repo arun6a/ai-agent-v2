@@ -372,9 +372,9 @@ object AIProvider {
     // === Search Method (v5.1.1) ===
     // Controls which search engine webSearch() uses:
     // "duckduckgo" → DuckDuckGo HTML (default, works directly, no proxy)
-    // "google" → Google search (may get blocked by anti-bot)
-    // "bing" → Bing search
-    // "proxy" → sandbox proxy (needs sandbox running)
+    // "google" → Google search via HTTP (may get blocked by anti-bot)
+    // "bing" → Bing search via HTTP
+    // "google_app" → Opens Google Search app directly via Intent (v2.2.2 NEW)
     private const val KEY_SEARCH_METHOD = "search_method"
     val DEFAULT_SEARCH_METHOD = "duckduckgo"
 

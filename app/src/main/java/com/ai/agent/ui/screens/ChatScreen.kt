@@ -42,11 +42,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Pending
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Mic
@@ -109,6 +111,7 @@ import com.ai.agent.ui.theme.MonoFontFamily
 fun ChatScreen(
     onOpenHub: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
+    onOpenBackgroundTasks: () -> Unit = {},
     /** v2.2.0 Issue 113e — session id passed from Hub → History's "Continue" tap. */
     pendingSessionId: Long? = null,
     /** Called after the pending session id has been consumed by the ViewModel. */
@@ -219,6 +222,7 @@ fun ChatScreen(
                 ttsEnabled = state.ttsEnabled,
                 onToggleTts = { viewModel.setTtsEnabled(!state.ttsEnabled) },
                 onOpenBrowser = onOpenBrowser,
+                onOpenBackgroundTasks = onOpenBackgroundTasks,
                 onClear = { viewModel.clearChat() },
                 onNewChat = { viewModel.createNewChatSession() },  // v2.2.0 Issue 113c
             )
@@ -456,6 +460,7 @@ private fun ChatTopBar(
     ttsEnabled: Boolean,
     onToggleTts: () -> Unit,
     onOpenBrowser: () -> Unit,
+    onOpenBackgroundTasks: () -> Unit,
     onClear: () -> Unit,
     onNewChat: () -> Unit,
 ) {
@@ -530,6 +535,14 @@ private fun ChatTopBar(
                     imageVector = Icons.Outlined.Public,
                     contentDescription = "Open browser",
                     tint = custom.fg2,
+                )
+            }
+            // v2.2.2: Background Tasks icon — shows running task + recent activity
+            IconButton(onClick = onOpenBackgroundTasks) {
+                Icon(
+                    imageVector = if (isThinking) Icons.Filled.Pending else Icons.Outlined.History,
+                    contentDescription = "Background tasks",
+                    tint = if (isThinking) custom.accent else custom.fg2,
                 )
             }
             IconButton(onClick = onClear) {
