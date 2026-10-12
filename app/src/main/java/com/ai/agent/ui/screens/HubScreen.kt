@@ -147,6 +147,8 @@ fun HubScreen(
     onOpenProviderSettings: () -> Unit = {},
     onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit = { _, _ -> },
     onOpenSystemPromptEditor: () -> Unit = {},
+    /** v2.2.0 Issue 113d — Tap a chat session in History → continue it on the chat screen. */
+    onContinueSession: (Long) -> Unit = {},
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -243,7 +245,7 @@ fun HubScreen(
                     HubSection.PLUGINS -> PluginsSection()
                     HubSection.MEMORY -> MemorySection()
                     HubSection.KNOWLEDGE -> KnowledgeSection()
-                    HubSection.HISTORY -> HistorySection()
+                    HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
                     HubSection.FILES -> FilesSection()
                     HubSection.LLM -> LlmSection(onOpenProviderSettings = onOpenProviderSettings)
                     HubSection.USAGE -> UsageSection()
@@ -1614,33 +1616,54 @@ private fun KnowledgeRow(
 }
 
 // ---------------------------------------------------------------------------
-// Task 27 — Functional section: History (getRecentConversations + filters)
+// Task 27 — Functional section: History
+// v2.2.0 Issue 113d — now shows chat SESSIONS (not flat messages). Each row
+// shows the session title (first user message), last active time, and message
+// count. Tap → continue session on chat screen. Long-press → Delete option.
 // ---------------------------------------------------------------------------
 
-private enum class HistoryFilter(val label: String) { ALL("All"), USER("User"), AI("AI") }
-
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HistorySection() {
+private fun HistorySection(
+    onContinueSession: (Long) -> Unit = {},
+) {
     val context = LocalContext.current
+    val custom = LocalCustomColors.current
 
-    var conversations by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var sessions by remember { mutableStateOf<List<AgentDatabase.ChatSession>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
-    var filter by remember { mutableStateOf(HistoryFilter.ALL) }
+    // Per-session message count cache — populated on the same LaunchedEffect.
+    var messageCounts by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+    // Per-session first-user-message preview cache (used as the title if the
+    // session title is just "New Chat" / "Default").
+    var previews by remember { mutableStateOf<Map<Long, String>>(emptyMap()) }
+    // Delete-confirmation dialog target.
+    var deleteTarget by remember { mutableStateOf<AgentDatabase.ChatSession?>(null) }
 
-    LaunchedEffect(Unit) {
-        conversations = try {
-            AgentDatabase(context).getRecentConversations(50)
+    fun reload() {
+        val all = try {
+            AgentDatabase(context).getChatSessions()
         } catch (e: Exception) {
             emptyList()
         }
+        sessions = all
+        // Fetch message count + first user message for each session in a single pass.
+        val counts = mutableMapOf<Long, Int>()
+        val previewsMap = mutableMapOf<Long, String>()
+        try {
+            val db = AgentDatabase(context)
+            for (s in all) {
+                counts[s.id] = db.getSessionMessageCount(s.id)
+                val firstUser = db.getConversationsForSession(s.id).firstOrNull { it.first == "user" }
+                previewsMap[s.id] = firstUser?.second?.take(80) ?: ""
+            }
+        } catch (_: Exception) {}
+        messageCounts = counts
+        previews = previewsMap
         loaded = true
     }
 
-    val filtered = when (filter) {
-        HistoryFilter.ALL -> conversations
-        HistoryFilter.USER -> conversations.filter { it.first == "user" }
-        HistoryFilter.AI -> conversations.filter { it.first == "ai" }
-    }
+    LaunchedEffect(Unit) { reload() }
 
     LazyColumn(
         modifier = Modifier
@@ -1650,124 +1673,159 @@ private fun HistorySection() {
     ) {
         item {
             SectionHeader(
-                title = "History",
-                subtitle = "${conversations.size} messages · ${if (loaded) "ready" else "loading…"}",
+                title = "Chat History",
+                subtitle = "${sessions.size} sessions · ${if (loaded) "ready" else "loading…"}",
             )
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                HistoryFilter.entries.forEach { f ->
-                    FilterChip(
-                        label = f.label,
-                        count = when (f) {
-                            HistoryFilter.ALL -> conversations.size
-                            HistoryFilter.USER -> conversations.count { it.first == "user" }
-                            HistoryFilter.AI -> conversations.count { it.first == "ai" }
-                        },
-                        active = f == filter,
-                        onClick = { filter = f },
-                    )
-                }
-            }
-        }
-        if (filtered.isEmpty() && loaded) {
+        if (sessions.isEmpty() && loaded) {
             item {
                 PlaceholderCard(
-                    title = "No messages yet",
-                    detail = "Send a message on the Chat tab — it'll show up here in chronological order.",
+                    title = "No chats yet",
+                    detail = "Send a message on the Chat tab — your conversations will be grouped into sessions you can resume later.",
                 )
             }
-        } else if (filtered.isEmpty()) {
+        } else if (sessions.isEmpty()) {
             item { LoadingCard() }
         } else {
-            itemsIndexed(filtered, key = { i, pair -> "$filter-$i-${pair.hashCode()}" }) { _, (role, text) ->
-                HistoryRow(role = role, text = text)
+            items(sessions, key = { it.id }) { session ->
+                val count = messageCounts[session.id] ?: 0
+                val preview = previews[session.id] ?: ""
+                SessionRow(
+                    session = session,
+                    messageCount = count,
+                    preview = preview,
+                    onClick = { onContinueSession(session.id) },
+                    onLongPress = { deleteTarget = session },
+                )
             }
+        }
+    }
+
+    // Delete-confirmation dialog.
+    if (deleteTarget != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete chat?", color = custom.fg2) },
+            text = {
+                Text(
+                    "This will permanently remove this chat and all its messages. This cannot be undone.",
+                    color = custom.fg3,
+                    fontSize = 12.sp,
+                )
+            },
+            confirmButton = {
+                Text(
+                    text = "Delete",
+                    color = custom.error,
+                    modifier = Modifier.clickable {
+                        val target = deleteTarget
+                        if (target != null) {
+                            try {
+                                AgentDatabase(context).deleteChatSession(target.id)
+                            } catch (_: Exception) {}
+                            deleteTarget = null
+                            reload()
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "Cancel",
+                    color = custom.fg3,
+                    modifier = Modifier.clickable { deleteTarget = null },
+                )
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SessionRow(
+    session: AgentDatabase.ChatSession,
+    messageCount: Int,
+    preview: String,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    val title = when {
+        preview.isNotBlank() -> preview
+        session.title != "New Chat" && session.title != "Default" -> session.title
+        else -> "New Chat"
+    }
+    val timeAgo = formatTimeAgo(session.lastActive)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.surface2, RoundedCornerShape(12.dp))
+            .border(1.dp, custom.border, RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Accent dot
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(custom.accent, CircleShape),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = title,
+                color = m3.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "$messageCount msgs",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
+        }
+        Spacer(Modifier.size(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Last active $timeAgo",
+                color = custom.fg3,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+            )
+            Text(
+                text = "Tap to continue →",
+                color = custom.accent,
+                fontFamily = MonoFontFamily,
+                fontSize = 10.sp,
+            )
         }
     }
 }
 
-@Composable
-private fun FilterChip(label: String, count: Int, active: Boolean, onClick: () -> Unit) {
-    val custom = LocalCustomColors.current
-    Row(
-        modifier = Modifier
-            .background(
-                if (active) custom.accent.copy(alpha = 0.15f) else custom.surface2,
-                RoundedCornerShape(14.dp),
-            )
-            .border(
-                1.dp,
-                if (active) custom.accent.copy(alpha = 0.5f) else custom.border,
-                RoundedCornerShape(14.dp),
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            color = if (active) custom.accent else custom.fg2,
-            fontSize = 11.sp,
-            fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
-        )
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = count.toString(),
-            color = if (active) custom.accent else custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 10.sp,
-        )
-    }
-}
-
-@Composable
-private fun HistoryRow(role: String, text: String) {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
-    val isUser = role == "user"
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(if (isUser) 0.85f else 0.95f)
-                .background(
-                    if (isUser) custom.accent.copy(alpha = 0.10f) else custom.ink2,
-                    RoundedCornerShape(
-                        topStart = 8.dp,
-                        topEnd = 8.dp,
-                        bottomEnd = if (isUser) 4.dp else 8.dp,
-                        bottomStart = if (isUser) 8.dp else 4.dp,
-                    ),
-                )
-                .border(
-                    1.dp,
-                    if (isUser) custom.accent.copy(alpha = 0.3f) else custom.inkBorder,
-                    RoundedCornerShape(8.dp),
-                )
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-        ) {
-            Column {
-                Text(
-                    text = if (isUser) "USER" else "AI",
-                    color = if (isUser) custom.accent else custom.fg3,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.size(2.dp))
-                Text(
-                    text = text,
-                    color = m3.onSurface,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 5,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+private fun formatTimeAgo(timestamp: Long): String {
+    if (timestamp <= 0L) return "unknown"
+    val delta = System.currentTimeMillis() - timestamp
+    return when {
+        delta < 60_000L -> "just now"
+        delta < 3_600_000L -> "${delta / 60_000L}m ago"
+        delta < 86_400_000L -> "${delta / 3_600_000L}h ago"
+        delta < 604_800_000L -> "${delta / 86_400_000L}d ago"
+        else -> {
+            val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+            sdf.format(java.util.Date(timestamp))
         }
     }
 }

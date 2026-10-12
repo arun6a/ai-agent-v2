@@ -13,7 +13,7 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
 
     companion object {
         private const val DB_NAME = "ai_agent.db"
-        private const val DB_VERSION = 3  // v6.0.0: added knowledge table
+        private const val DB_VERSION = 4  // v2.2.0: added chat_sessions table + session_id col
 
         // Conversations table
         const val TABLE_CONVERSATIONS = "conversations"
@@ -21,6 +21,14 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         const val COL_ROLE = "role"  // "user" or "ai"
         const val COL_TEXT = "text"
         const val COL_TIMESTAMP = "timestamp"
+        // v2.2.0 Issue 113a — session grouping
+        const val COL_SESSION_ID = "session_id"
+
+        // v2.2.0 Issue 113a — Sessions table (chat thread grouping)
+        const val TABLE_CHAT_SESSIONS = "chat_sessions"
+        const val COL_SESSION_TITLE = "title"
+        const val COL_SESSION_CREATED_AT = "created_at"
+        const val COL_SESSION_LAST_ACTIVE = "last_active"
 
         // Memory table (user facts and preferences)
         const val TABLE_MEMORY = "memory"
@@ -52,9 +60,27 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_ROLE TEXT,
                 $COL_TEXT TEXT,
-                $COL_TIMESTAMP INTEGER
+                $COL_TIMESTAMP INTEGER,
+                $COL_SESSION_ID INTEGER DEFAULT 1
             )
         """.trimIndent())
+
+        // v2.2.0 Issue 113a — Chat sessions table
+        db.execSQL("""
+            CREATE TABLE $TABLE_CHAT_SESSIONS (
+                $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_SESSION_TITLE TEXT,
+                $COL_SESSION_CREATED_AT INTEGER,
+                $COL_SESSION_LAST_ACTIVE INTEGER
+            )
+        """.trimIndent())
+        // Seed a default session so legacy conversations (session_id=1) have a parent row.
+        val now = System.currentTimeMillis()
+        db.execSQL(
+            "INSERT INTO $TABLE_CHAT_SESSIONS " +
+                "($COL_ID, $COL_SESSION_TITLE, $COL_SESSION_CREATED_AT, $COL_SESSION_LAST_ACTIVE) " +
+                "VALUES (1, 'Default', 0, $now)"
+        )
 
         db.execSQL("""
             CREATE TABLE $TABLE_MEMORY (
@@ -125,6 +151,37 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 android.util.Log.i("AgentDatabase", "Upgraded DB to v3 — added knowledge table")
             } catch (e: Exception) {
                 android.util.Log.e("AgentDatabase", "Failed to create knowledge table", e)
+            }
+        }
+        if (oldVersion < 4) {
+            // v2.2.0 Issue 113a — chat sessions table + session_id column.
+            try {
+                db.execSQL(
+                    "ALTER TABLE $TABLE_CONVERSATIONS ADD COLUMN $COL_SESSION_ID INTEGER DEFAULT 1"
+                )
+                android.util.Log.i("AgentDatabase", "Added $COL_SESSION_ID column to $TABLE_CONVERSATIONS")
+            } catch (e: Exception) {
+                android.util.Log.w("AgentDatabase", "session_id column already exists: ${e.message}")
+            }
+            try {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS $TABLE_CHAT_SESSIONS (
+                        $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                        $COL_SESSION_TITLE TEXT,
+                        $COL_SESSION_CREATED_AT INTEGER,
+                        $COL_SESSION_LAST_ACTIVE INTEGER
+                    )
+                """.trimIndent())
+                // Insert a default session for existing conversations (session_id=1)
+                val now = System.currentTimeMillis()
+                db.execSQL(
+                    "INSERT OR IGNORE INTO $TABLE_CHAT_SESSIONS " +
+                        "($COL_ID, $COL_SESSION_TITLE, $COL_SESSION_CREATED_AT, $COL_SESSION_LAST_ACTIVE) " +
+                        "VALUES (1, 'Default', 0, $now)"
+                )
+                android.util.Log.i("AgentDatabase", "Upgraded DB to v4 — added chat_sessions table")
+            } catch (e: Exception) {
+                android.util.Log.e("AgentDatabase", "Failed to create chat_sessions table", e)
             }
         }
     }
@@ -217,6 +274,141 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
     fun clearConversations() {
         writableDatabase.delete(TABLE_CONVERSATIONS, null, null)
     }
+
+    // === v2.2.0 Issue 113a — Chat Sessions ===
+
+    /** Create a new chat session and return its row id. */
+    fun createChatSession(title: String = "New Chat"): Long {
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put(COL_SESSION_TITLE, title)
+            put(COL_SESSION_CREATED_AT, now)
+            put(COL_SESSION_LAST_ACTIVE, now)
+        }
+        return writableDatabase.insert(TABLE_CHAT_SESSIONS, null, values)
+    }
+
+    /**
+     * Persist a conversation row tagged with its session id, and bump the
+     * session's last_active timestamp so the session list stays ordered by
+     * recency.
+     */
+    fun addConversationToSession(sessionId: Long, role: String, text: String) {
+        val now = System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put(COL_ROLE, role)
+            put(COL_TEXT, text)
+            put(COL_TIMESTAMP, now)
+            put(COL_SESSION_ID, sessionId)
+        }
+        writableDatabase.insert(TABLE_CONVERSATIONS, null, values)
+        val sessionValues = ContentValues().apply { put(COL_SESSION_LAST_ACTIVE, now) }
+        writableDatabase.update(
+            TABLE_CHAT_SESSIONS, sessionValues,
+            "$COL_ID = ?", arrayOf(sessionId.toString()),
+        )
+    }
+
+    /**
+     * Return all conversations for a given session in chronological order,
+     * as (role, text, timestamp) triples.
+     */
+    fun getConversationsForSession(sessionId: Long): List<Triple<String, String, Long>> {
+        val result = mutableListOf<Triple<String, String, Long>>()
+        val cursor = readableDatabase.query(
+            TABLE_CONVERSATIONS,
+            arrayOf(COL_ROLE, COL_TEXT, COL_TIMESTAMP),
+            "$COL_SESSION_ID = ?", arrayOf(sessionId.toString()),
+            null, null, "$COL_TIMESTAMP ASC",
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(Triple(it.getString(0), it.getString(1), it.getLong(2)))
+            }
+        }
+        return result
+    }
+
+    /** Count messages in a session (used by Hub → History). */
+    fun getSessionMessageCount(sessionId: Long): Int {
+        val cursor = readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM $TABLE_CONVERSATIONS WHERE $COL_SESSION_ID = ?",
+            arrayOf(sessionId.toString()),
+        )
+        return cursor.use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
+    /** All chat sessions, most recently active first. */
+    fun getChatSessions(): List<ChatSession> {
+        val result = mutableListOf<ChatSession>()
+        val cursor = readableDatabase.query(
+            TABLE_CHAT_SESSIONS,
+            arrayOf(COL_ID, COL_SESSION_TITLE, COL_SESSION_CREATED_AT, COL_SESSION_LAST_ACTIVE),
+            null, null, null, null,
+            "$COL_SESSION_LAST_ACTIVE DESC",
+        )
+        cursor.use {
+            while (it.moveToNext()) {
+                result.add(
+                    ChatSession(
+                        id = it.getLong(0),
+                        title = it.getString(1) ?: "Untitled",
+                        createdAt = it.getLong(2),
+                        lastActive = it.getLong(3),
+                    ),
+                )
+            }
+        }
+        return result
+    }
+
+    /** Delete a chat session and all of its messages. */
+    fun deleteChatSession(sessionId: Long) {
+        writableDatabase.delete(
+            TABLE_CONVERSATIONS,
+            "$COL_SESSION_ID = ?", arrayOf(sessionId.toString()),
+        )
+        writableDatabase.delete(
+            TABLE_CHAT_SESSIONS,
+            "$COL_ID = ?", arrayOf(sessionId.toString()),
+        )
+    }
+
+    /**
+     * Return the most recently active session id, creating a fresh session
+     * if the table is empty. Used at app launch to resume the last chat.
+     */
+    fun getCurrentSessionId(): Long {
+        val cursor = readableDatabase.query(
+            TABLE_CHAT_SESSIONS, arrayOf(COL_ID),
+            null, null, null, null,
+            "$COL_SESSION_LAST_ACTIVE DESC", "1",
+        )
+        cursor.use {
+            if (it.moveToFirst()) return it.getLong(0)
+        }
+        return createChatSession()
+    }
+
+    /** Rename an existing chat session. */
+    fun renameChatSession(sessionId: Long, newTitle: String) {
+        val values = ContentValues().apply {
+            put(COL_SESSION_TITLE, newTitle)
+            put(COL_SESSION_LAST_ACTIVE, System.currentTimeMillis())
+        }
+        writableDatabase.update(
+            TABLE_CHAT_SESSIONS, values,
+            "$COL_ID = ?", arrayOf(sessionId.toString()),
+        )
+    }
+
+    /** v2.2.0 — chat session row model. */
+    data class ChatSession(
+        val id: Long,
+        val title: String,
+        val createdAt: Long,
+        val lastActive: Long,
+    )
 
     fun clearMemory() {
         writableDatabase.delete(TABLE_MEMORY, null, null)

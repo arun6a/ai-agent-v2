@@ -54,6 +54,7 @@ import androidx.compose.material.icons.outlined.VolumeOff
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -108,6 +109,10 @@ import com.ai.agent.ui.theme.MonoFontFamily
 fun ChatScreen(
     onOpenHub: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
+    /** v2.2.0 Issue 113e — session id passed from Hub → History's "Continue" tap. */
+    pendingSessionId: Long? = null,
+    /** Called after the pending session id has been consumed by the ViewModel. */
+    onSessionIdConsumed: () -> Unit = {},
     viewModel: ChatViewModel = viewModel(factory = ChatViewModelFactory(LocalContext.current)),
 ) {
     val custom = LocalCustomColors.current
@@ -117,6 +122,14 @@ fun ChatScreen(
     val state by viewModel.state.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    // v2.2.0 Issue 113e — Load the session id passed from navigation.
+    LaunchedEffect(pendingSessionId) {
+        if (pendingSessionId != null && pendingSessionId != 0L) {
+            viewModel.loadSession(pendingSessionId)
+            onSessionIdConsumed()
+        }
+    }
 
     // ===== Voice input launcher (Google Voice Intent) =====
     // Modern Compose-native API — no onActivityResult, no MainActivity changes.
@@ -207,6 +220,7 @@ fun ChatScreen(
                 onToggleTts = { viewModel.setTtsEnabled(!state.ttsEnabled) },
                 onOpenBrowser = onOpenBrowser,
                 onClear = { viewModel.clearChat() },
+                onNewChat = { viewModel.createNewChatSession() },  // v2.2.0 Issue 113c
             )
         },
         bottomBar = {
@@ -246,12 +260,32 @@ fun ChatScreen(
                     onSuggestion = { viewModel.sendMessage(it) },
                 )
             } else {
+                // v2.2.0 Issue 111 — TaskBanner now lives INSIDE the LazyColumn
+                // as the first item so it scrolls with messages instead of
+                // floating on top of (and overlapping) the first chat bubble.
+                val showBanner = state.isThinking || state.isExecuting || state.currentIteration > 0
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
+                    // v2.2.0 Issue 111 — Banner as the first scrollable item.
+                    if (showBanner) {
+                        item(key = "task-banner") {
+                            TaskBanner(
+                                currentIteration = state.currentIteration,
+                                maxIterations = state.maxIterations,
+                                apiCalls = state.apiCallCount,
+                                isExecuting = state.isExecuting,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                onStop = { viewModel.stopAgent() },
+                            )
+                        }
+                    }
+
                     items(
                         count = state.messages.size,
                         key = { state.messages[it].id },
@@ -282,20 +316,6 @@ fun ChatScreen(
                         }
                     }
                 }
-            }
-
-            // Floating task banner (when the loop is active).
-            if (state.isThinking || state.isExecuting || state.currentIteration > 0) {
-                TaskBanner(
-                    currentIteration = state.currentIteration,
-                    maxIterations = state.maxIterations,
-                    apiCalls = state.apiCallCount,
-                    isExecuting = state.isExecuting,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp, start = 12.dp, end = 12.dp),
-                    onStop = { viewModel.stopAgent() },
-                )
             }
 
             // Task 40 — Save-skill prompt card (bottom-anchored, dismissable).
@@ -437,6 +457,7 @@ private fun ChatTopBar(
     onToggleTts: () -> Unit,
     onOpenBrowser: () -> Unit,
     onClear: () -> Unit,
+    onNewChat: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -486,6 +507,14 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            // v2.2.0 Issue 113c — New Chat button (creates a fresh session).
+            IconButton(onClick = onNewChat) {
+                Icon(
+                    imageVector = Icons.Outlined.AddComment,
+                    contentDescription = "New chat",
+                    tint = custom.fg2,
+                )
+            }
             // v2.0.4: TTS toggle (default OFF). Emerald when enabled, gray when off.
             IconButton(onClick = onToggleTts) {
                 Icon(

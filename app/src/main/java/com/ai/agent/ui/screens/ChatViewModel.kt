@@ -93,6 +93,10 @@ data class ChatUiState(
     val toast: String? = null,
     /** v2.0.4: TTS auto-speak toggle. Default OFF (was ON, annoyed user). */
     val ttsEnabled: Boolean = false,
+    /** v2.2.0 Issue 113b — id of the currently active chat session. */
+    val currentSessionId: Long = 0L,
+    /** v2.2.0 Issue 113b — list of all chat sessions (most recently active first). */
+    val sessions: List<AgentDatabase.ChatSession> = emptyList(),
 )
 
 class ChatViewModel(
@@ -112,6 +116,10 @@ class ChatViewModel(
     init {
         loadProviderInfo()
         loadTtsPref()
+        checkAccessibilityStatus()  // v2.2.0 Issue 112 — log a11y status at launch
+        loadOrCreateSession()       // v2.2.0 Issue 113b — resume last chat session
+        loadChatHistory()           // v2.2.0 Issue 113b — load saved messages from DB
+        refreshSessions()           // v2.2.0 Issue 113b — populate session list for sidebar/drawers
     }
 
     // ---- public API ----
@@ -120,6 +128,142 @@ class ChatViewModel(
         val provider = AIProvider.getCurrentProvider(context)
         val model = AIProvider.getModel(context)
         _state.update { it.copy(providerName = provider.name, modelName = model) }
+    }
+
+    /**
+     * v2.2.0 Issue 113b — Check accessibility status from the Android system
+     * setting (source of truth) instead of the in-memory `instance`.
+     *
+     * The instance is null until the system binds the service — a race
+     * condition that made the AI wrongly claim "accessibility is off" when
+     * the app was reopened. The system setting is checked here for logging,
+     * and again per agent-loop run inside the system prompt injection.
+     */
+    private fun checkAccessibilityStatus() {
+        try {
+            val enabled = com.ai.agent.accessibility.AgentAccessibilityService.isEnabled(context)
+            Log.i(TAG, "Accessibility service enabled (system setting)? $enabled")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not check accessibility status: ${e.message}")
+        }
+    }
+
+    // ---- v2.2.0 Issue 113b: Chat session management ----
+
+    /** Load the most-recently-active session id (creating one if none exists). */
+    fun loadOrCreateSession() {
+        val sessionId = try {
+            database.getCurrentSessionId()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load current session id", e)
+            0L
+        }
+        _state.update { it.copy(currentSessionId = sessionId) }
+    }
+
+    /** Populate the sessions list from the database. */
+    fun refreshSessions() {
+        val sessions = try {
+            database.getChatSessions()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load sessions", e)
+            emptyList()
+        }
+        _state.update { it.copy(sessions = sessions) }
+    }
+
+    /** Load all messages for the current session from the database into UI state. */
+    fun loadChatHistory() {
+        val sessionId = _state.value.currentSessionId
+        if (sessionId == 0L) return
+        val conversations = try {
+            database.getConversationsForSession(sessionId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load chat history", e)
+            emptyList()
+        }
+        val messages = conversations.map { (role, text, timestamp) ->
+            ChatMessage(
+                text = text,
+                isUser = role == "user",
+                timestamp = timestamp,
+            )
+        }
+        _state.update { it.copy(messages = messages) }
+        Log.i(TAG, "Loaded ${messages.size} messages from session $sessionId")
+    }
+
+    /** Start a brand-new chat session and clear the message list. */
+    fun createNewChatSession() {
+        loopJob?.cancel()
+        val newId = try {
+            database.createChatSession()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create new session", e)
+            0L
+        }
+        _state.update {
+            it.copy(
+                currentSessionId = newId,
+                messages = emptyList(),
+                currentIteration = 0,
+                apiCallCount = 0,
+                isThinking = false,
+                isExecuting = false,
+                error = null,
+                stopRequested = false,
+                attachments = emptyList(),
+                showSaveSkillPrompt = false,
+                toast = "New chat started",
+            )
+        }
+        refreshSessions()
+    }
+
+    /** Switch to an existing session and load its messages. */
+    fun loadSession(sessionId: Long) {
+        loopJob?.cancel()
+        val conversations = try {
+            database.getConversationsForSession(sessionId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load session $sessionId", e)
+            emptyList()
+        }
+        val messages = conversations.map { (role, text, timestamp) ->
+            ChatMessage(
+                text = text,
+                isUser = role == "user",
+                timestamp = timestamp,
+            )
+        }
+        _state.update {
+            it.copy(
+                currentSessionId = sessionId,
+                messages = messages,
+                currentIteration = 0,
+                apiCallCount = 0,
+                isThinking = false,
+                isExecuting = false,
+                error = null,
+                stopRequested = false,
+                attachments = emptyList(),
+            )
+        }
+        Log.i(TAG, "Loaded session $sessionId — ${messages.size} messages")
+    }
+
+    /** Delete a session (and all of its messages). If it's the current one, switch to another. */
+    fun deleteSession(sessionId: Long) {
+        try {
+            database.deleteChatSession(sessionId)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete session $sessionId", e)
+        }
+        if (_state.value.currentSessionId == sessionId) {
+            loadOrCreateSession()
+            loadChatHistory()
+        }
+        refreshSessions()
     }
 
     /** v2.0.4: TTS toggle — persists across launches. Default OFF. */
@@ -142,6 +286,12 @@ class ChatViewModel(
         // Cancel any in-flight loop (re-entrant send = stop previous task).
         loopJob?.cancel()
 
+        // v2.2.0 Issue 113b — make sure we have a valid current session before saving.
+        if (_state.value.currentSessionId == 0L) {
+            loadOrCreateSession()
+        }
+        val sessionId = _state.value.currentSessionId
+
         // Build the effective message text — append attachment metadata so the LLM
         // knows what files the user has shared.
         val attachments = _state.value.attachments
@@ -153,7 +303,12 @@ class ChatViewModel(
         }
 
         // Persist + display the user message (display the trimmed text, not the augmented one).
-        database.addConversation("user", trimmed)
+        // v2.2.0 Issue 113b — persist under the current session.
+        try {
+            database.addConversationToSession(sessionId, "user", trimmed)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist user message to session $sessionId: ${e.message}")
+        }
         val userMsg = ChatMessage(text = trimmed, isUser = true, status = MessageStatus.IDLE)
         _state.update { s ->
             s.copy(
@@ -177,15 +332,13 @@ class ChatViewModel(
         loopJob?.cancel()
     }
 
+    /**
+     * v2.2.0 Issue 113b — Clear chat now creates a new chat session instead
+     * of deleting all DB rows. Previous sessions remain accessible from
+     * Hub → History.
+     */
     fun clearChat() {
-        loopJob?.cancel()
-        database.clearConversations()
-        _state.update {
-            ChatUiState(
-                providerName = it.providerName,
-                modelName = it.modelName,
-            )
-        }
+        createNewChatSession()
     }
 
     fun dismissError() {
@@ -376,6 +529,28 @@ class ChatViewModel(
                 Log.w(TAG, "Plugin injection failed: ${e.message}")
             }
 
+            // v2.2.0 Issue 112 — Inject accessibility status into the system prompt.
+            //
+            // The AI was wrongly telling users "accessibility is off" on app
+            // reopen because the in-memory `instance` is null until the system
+            // binds the service. The system setting is the source of truth —
+            // use it here so the AI knows the real state.
+            try {
+                val a11yEnabled = com.ai.agent.accessibility.AgentAccessibilityService.isEnabled(context)
+                val a11yStatus = if (a11yEnabled) {
+                    "Accessibility service is ENABLED — you can control the phone " +
+                        "(tap, type, read screen, swipe, scroll, take screenshots)."
+                } else {
+                    "Accessibility service is DISABLED — phone control tools " +
+                        "(tap, type, readScreen, etc.) will NOT work. " +
+                        "Ask the user to enable it in Hub → Permissions → Accessibility."
+                }
+                systemPrompt += "\n\n## Accessibility Status\n$a11yStatus"
+                Log.i(TAG, "Injected a11y status into system prompt: enabled=$a11yEnabled")
+            } catch (e: Exception) {
+                Log.w(TAG, "A11y status injection failed: ${e.message}")
+            }
+
             // v2.0.9: Inject available skills (so AI can executeSkill(name))
             // AND check if the user's message matches a skill trigger — if so,
             // auto-load that skill's body into the prompt. Mirrors v1 behavior.
@@ -400,11 +575,24 @@ class ChatViewModel(
             }
 
             // === 2. Build the conversation: recent history + user message ===
+            // v2.2.0 Issue 113b — scope history to the CURRENT session only,
+            // so the AI doesn't bleed context across unrelated chat threads.
             val conversation = StringBuilder()
-            val history = database.getRecentConversations(4)
+            val currentSession = _state.value.currentSessionId
+            val history = if (currentSession != 0L) {
+                try {
+                    database.getConversationsForSession(currentSession)
+                        .takeLast(4)
+                        .map { Triple(it.first, it.second, it.third) }
+                } catch (e: Exception) {
+                    emptyList<Triple<String, String, Long>>()
+                }
+            } else {
+                emptyList<Triple<String, String, Long>>()
+            }
             if (history.isNotEmpty()) {
                 conversation.append("[Recent conversation history:\n")
-                for ((role, text) in history) {
+                for ((role, text, _) in history) {
                     conversation.append(if (role == "user") "User: " else "AI: ")
                     conversation.append(text.take(150))
                     conversation.append("\n")
@@ -667,7 +855,12 @@ class ChatViewModel(
 
             // Final reply as a separate message (does NOT overwrite step messages).
             addAiFinalMessage(finalReply)
-            database.addConversation("ai", finalReply)
+            // v2.2.0 Issue 113b — save under current session.
+            try {
+                database.addConversationToSession(_state.value.currentSessionId, "ai", finalReply)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to persist AI reply: ${e.message}")
+            }
             database.logAction("Processed: $userMessage → $finalReply")
             // v2.0.4: Only speak if user explicitly enabled TTS (default OFF).
             if (_state.value.ttsEnabled) {
@@ -686,7 +879,9 @@ class ChatViewModel(
                 val msg = "Task interrupted (a new message was sent or the task was stopped). " +
                     "Last progress:\n$workLog"
                 addAiFinalMessage(msg)
-                database.addConversation("ai", msg)
+                try {
+                    database.addConversationToSession(_state.value.currentSessionId, "ai", msg)
+                } catch (_: Exception) {}
             }
             throw e
         } catch (e: Exception) {
@@ -694,7 +889,9 @@ class ChatViewModel(
             val msg = "Error: ${e.message ?: e::class.simpleName}"
             _state.update { it.copy(error = msg, isThinking = false, isExecuting = false) }
             addAiFinalMessage(msg, MessageStatus.ERROR)
-            database.addConversation("ai", msg)
+            try {
+                database.addConversationToSession(_state.value.currentSessionId, "ai", msg)
+            } catch (_: Exception) {}
         } finally {
             _state.update {
                 it.copy(

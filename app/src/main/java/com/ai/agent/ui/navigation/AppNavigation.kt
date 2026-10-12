@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -148,7 +149,14 @@ fun AppNavigation() {
                     exitTransition = { fadeOut(tween(200)) },
                     popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
                     popExitTransition = { fadeOut(tween(200)) },
-                ) {
+                ) { backStackEntry ->
+                    // v2.2.0 Issue 113e — Hub → History passes a session id here.
+                    // We observe it as a StateFlow so a new "Continue" tap triggers
+                    // a recomposition + LaunchedEffect inside ChatScreen.
+                    val pendingSessionId by backStackEntry.savedStateHandle
+                        .getStateFlow<Long?>("session_id", null)
+                        .collectAsState()
+
                     ChatScreen(
                         onOpenHub = {
                             nav.navigate(Routes.HUB) {
@@ -163,6 +171,10 @@ fun AppNavigation() {
                                 launchSingleTop = true
                                 restoreState = true
                             }
+                        },
+                        pendingSessionId = pendingSessionId,
+                        onSessionIdConsumed = {
+                            backStackEntry.savedStateHandle.remove<Long>("session_id")
                         },
                     )
                 }
@@ -193,6 +205,27 @@ fun AppNavigation() {
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
                         },
                         onOpenSystemPromptEditor = { nav.navigate(Routes.SYSTEM_PROMPT_EDITOR) },
+                        onContinueSession = { sessionId ->
+                            // v2.2.0 Issue 113e — hand the session id to the Chat
+                            // destination via its savedStateHandle, then navigate.
+                            try {
+                                nav.getBackStackEntry(Routes.CHAT)
+                                    .savedStateHandle["session_id"] = sessionId
+                            } catch (_: IllegalArgumentException) {
+                                // Chat not on the back-stack yet — fall back to
+                                // setting it after navigation.
+                            }
+                            nav.navigate(Routes.CHAT) {
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                            // If the chat entry didn't exist on the back-stack, set
+                            // it now after navigating (the new top will be chat).
+                            try {
+                                nav.currentBackStackEntry?.savedStateHandle?.set("session_id", sessionId)
+                            } catch (_: Exception) {}
+                        },
                     )
                 }
 
@@ -210,6 +243,20 @@ fun AppNavigation() {
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
                         },
                         onOpenSystemPromptEditor = { nav.navigate(Routes.SYSTEM_PROMPT_EDITOR) },
+                        onContinueSession = { sessionId ->
+                            try {
+                                nav.getBackStackEntry(Routes.CHAT)
+                                    .savedStateHandle["session_id"] = sessionId
+                            } catch (_: IllegalArgumentException) {}
+                            nav.navigate(Routes.CHAT) {
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                            try {
+                                nav.currentBackStackEntry?.savedStateHandle?.set("session_id", sessionId)
+                            } catch (_: Exception) {}
+                        },
                     )
                 }
 
