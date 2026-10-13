@@ -1153,12 +1153,13 @@ class ToolExecutor(private val context: Context) {
 
                     val result = buildString {
                         append("Current Weather ($timezone)\n")
-                        append("Temperature: ${String.format("%.1f", temp)}°C (feels like ${String.format("%.1f", feelsLike)}°C)\n")
+                        // v2.3.3: Use Locale.US to force dot decimal separator (some Indian locales use comma → parse errors)
+                        append("Temperature: ${String.format(java.util.Locale.US, "%.1f", temp)}°C (feels like ${String.format(java.util.Locale.US, "%.1f", feelsLike)}°C)\n")
                         append("Condition: $weatherDesc\n")
                         append("Humidity: $humidity%\n")
-                        append("Wind: ${String.format("%.1f", windSpeed)} km/h\n")
-                        append("Precipitation: ${String.format("%.1f", precip)} mm\n")
-                        append("Location: ${String.format("%.4f", lat)}, ${String.format("%.4f", lon)}\n")
+                        append("Wind: ${String.format(java.util.Locale.US, "%.1f", windSpeed)} km/h\n")
+                        append("Precipitation: ${String.format(java.util.Locale.US, "%.1f", precip)} mm\n")
+                        append("Location: ${String.format(java.util.Locale.US, "%.4f", lat)}, ${String.format(java.util.Locale.US, "%.4f", lon)}\n")
                         if (forecast.isNotEmpty()) {
                             append("\n3-day forecast:\n")
                             append(forecast.toString().trimEnd())

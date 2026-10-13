@@ -316,7 +316,7 @@ fun ChatScreen(
                             
                             if (stepsExpanded) {
                                 // Show all step messages individually + a collapse button
-                                item(key = "steps-collapse-btn") {
+                                item(key = "steps-collapse-btn-$stepStart") {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -334,12 +334,14 @@ fun ChatScreen(
                                 }
                                 for (j in stepStart until stepEnd) {
                                     val stepMsg = state.messages[j]
-                                    item(key = stepMsg.id) {
+                                    item(key = "step-${stepMsg.id}") {
                                         ChatMessageItem(
                                             message = stepMsg,
                                             isLastAi = false,
                                             thinking = false,
-                                            modifier = Modifier.animateItem(),
+                                            // v2.3.3: NO animateItem() here — animating items that appear/disappear
+                                            // on toggle causes crash on some devices (IllegalStateException in LazyColumn).
+                                            modifier = Modifier,
                                         )
                                     }
                                 }
