@@ -157,82 +157,92 @@ class ToolExecutor(private val context: Context) {
         return when (call.name) {
             // === SCREEN TOOLS (require accessibility — service is non-null here) ===
             "readScreen" -> {
-                val a11yText = service!!.readScreen()
                 val visionMode = AIProvider.getVisionMode(context)  // "auto" | "mlkit" | "vlm"
 
-                // v2.2.3: Vision mode controls how the screen is read.
-                // - "auto": Accessibility text first. If short (<200 chars), supplement with ML Kit.
-                //   If still empty, fall back to VLM. (0 API calls for 95% of screens)
-                // - "mlkit": ML Kit OCR first (catches text in images/canvas that a11y misses).
-                //   If ML Kit finds nothing, fall back to a11y, then VLM.
-                // - "vlm": VLM API directly (1 API call, most capable but slowest).
+                // v2.5.2: OPTIMIZED Screen Reading (Option C)
+                //
+                // PROBLEM with old code:
+                //   - Each tier (a11y → ML Kit → VLM) took its OWN screenshot
+                //   - When a11y clicks + retries, each retry triggered a screenshot + VLM = many API calls
+                //   - User saw "screenshot toast" repeatedly
+                //
+                // NEW approach (Option C):
+                //   1. Take ONE screenshot upfront (shared across all tiers)
+                //   2. Run a11y text + ML Kit OCR IN PARALLEL (both fast, both free)
+                //   3. Combine results (dedupe similar lines)
+                //   4. VLM only if both a11y + ML Kit return < 50 chars (last resort)
+                //   5. VLM uses the SAME screenshot (no second capture)
+                //
+                // Result: 0 API calls for 95% of screens, 1 screenshot total, no toast spam.
 
-                Log.i(TAG, "readScreen: visionMode=$visionMode, a11yText=${a11yText.length} chars")
+                Log.i(TAG, "readScreen: visionMode=$visionMode (v2.5.2 optimized)")
 
                 when (visionMode) {
                     "vlm" -> {
-                        // VLM mode — skip a11y + ML Kit, go straight to VLM
+                        // VLM mode — skip a11y + ML Kit, go straight to VLM (1 screenshot, 1 API call)
                         Log.i(TAG, "readScreen: VLM mode — calling VLM directly")
                         val vlmResult = analyzeScreenWithVLM("Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
                         ToolResult(true, "Screen text (VLM): $vlmResult")
                     }
-                    "mlkit" -> {
-                        // ML Kit mode — OCR first, then a11y supplement, then VLM fallback
-                        Log.i(TAG, "readScreen: ML Kit mode — trying OCR first")
-                        val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
-                        if (mlText != null && mlText.length >= 10) {
-                            // ML Kit found text — supplement with a11y if available
-                            val combined = if (a11yText.length >= 10 && !mlText.contains(a11yText.take(50))) {
-                                "ML Kit text: $mlText\n\nAccessibility text: $a11yText"
-                            } else {
-                                "Screen text (ML Kit): $mlText"
-                            }
-                            ToolResult(true, combined)
-                        } else if (a11yText.length >= 10) {
-                            // ML Kit found nothing but a11y has text
-                            ToolResult(true, "Screen text (accessibility): $a11yText")
-                        } else {
-                            // Both empty — fall back to VLM
-                            Log.i(TAG, "readScreen: ML Kit + a11y both empty — VLM fallback")
-                            val vlmResult = analyzeScreenWithVLM("Describe what's on the screen.")
-                            ToolResult(true, "Screen text (VLM): $vlmResult")
-                        }
-                    }
                     else -> {
-                        // AUTO mode (default) — a11y first, supplement with ML Kit if short
-                        // v2.2.4: Lowered threshold from 200 to 100 chars so ML Kit
-                        // supplements more often (catches text in Gmail/YouTube/Instagram
-                        // that accessibility misses even when there's SOME text).
-                        if (a11yText.isNotEmpty() && a11yText != "(no text on screen)" && a11yText != "(screen is null)" && a11yText.length >= 500) {
-                            // Accessibility found a LOT of text (>500 chars) — use it (instant, free)
-                            Log.i(TAG, "readScreen: auto mode — a11y has ${a11yText.length} chars, using directly")
-                            ToolResult(true, a11yText)
-                        } else if (a11yText.length >= 10) {
-                            // Accessibility found SOME text but it's short (< 500 chars).
-                            // v2.2.3: Supplement with ML Kit to catch text that a11y missed
-                            // (e.g., email subjects in Gmail, custom list view items).
-                            Log.i(TAG, "readScreen: auto mode — a11y short (${a11yText.length} chars) — supplementing with ML Kit")
-                            val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
-                            if (mlText != null && mlText.length >= 10 && mlText != a11yText) {
-                                // Combine a11y + ML Kit for maximum coverage
-                                ToolResult(true, "Screen text:\n[Accessibility]: $a11yText\n[ML Kit OCR]: $mlText")
-                            } else {
-                                // ML Kit didn't add anything new — use a11y text
-                                ToolResult(true, a11yText)
+                        // v2.5.2: AUTO + ML Kit modes now share the SAME optimized path:
+                        // 1. Capture ONE screenshot
+                        // 2. Run a11y + ML Kit in parallel (both free, both fast)
+                        // 3. Combine + dedupe
+                        // 4. VLM fallback on same screenshot if both empty
+
+                        // Step 1: Take ONE screenshot (shared)
+                        val screenshotBase64 = captureScreenshotBase64(service!!)
+
+                        // Step 2: Run a11y text + ML Kit OCR in PARALLEL (both fast, both free)
+                        val a11yText: String
+                        val mlText: String?
+                        kotlinx.coroutines.coroutineScope {
+                            val a11yDeferred = async(kotlinx.coroutines.Dispatchers.IO) {
+                                try { service!!.readScreen() } catch (e: Exception) { "" }
                             }
+                            val mlKitDeferred = async(kotlinx.coroutines.Dispatchers.IO) {
+                                if (screenshotBase64 != null) {
+                                    try {
+                                        val bytes = android.util.Base64.decode(screenshotBase64, android.util.Base64.DEFAULT)
+                                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        if (bitmap != null) com.ai.agent.ml.MLKitHelper.tryRecognize(bitmap) else null
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "ML Kit OCR failed", e)
+                                        null
+                                    }
+                                } else null
+                            }
+                            a11yText = a11yDeferred.await()
+                            mlText = mlKitDeferred.await()
+                        }
+
+                        Log.i(TAG, "readScreen: a11y=${a11yText.length} chars, mlKit=${mlText?.length ?: 0} chars")
+
+                        // Step 3: Combine + dedupe
+                        val combinedText = combineAndDedupe(a11yText, mlText)
+
+                        if (combinedText.length >= 50) {
+                            // Got enough text from a11y + ML Kit — return combined (0 API calls!)
+                            val source = when {
+                                a11yText.length >= 50 && mlText != null && mlText.length >= 10 -> "a11y+ML Kit"
+                                a11yText.length >= 50 -> "accessibility"
+                                mlText != null && mlText.length >= 50 -> "ML Kit"
+                                else -> "combined"
+                            }
+                            Log.i(TAG, "readScreen: using $source (${combinedText.length} chars) — 0 API calls")
+                            ToolResult(true, combinedText)
+                        } else if (screenshotBase64 != null) {
+                            // Both a11y + ML Kit returned < 50 chars — VLM fallback on SAME screenshot
+                            Log.i(TAG, "readScreen: a11y+ML Kit insufficient (${combinedText.length} chars) — VLM fallback (same screenshot)")
+                            val vlmResult = analyzeScreenWithVLMBase64(
+                                screenshotBase64,
+                                "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough."
+                            )
+                            ToolResult(true, "Screen text (VLM): $vlmResult")
                         } else {
-                            // Accessibility found nothing — try ML Kit (free, offline)
-                            Log.i(TAG, "readScreen: accessibility found no text — trying ML Kit OCR")
-                            val mlText = try { captureAndOCR(service!!) } catch (e: Exception) { null }
-                            if (mlText != null && mlText.length >= 10) {
-                                // Tier 2: ML Kit found text — use it (0 API calls!)
-                                ToolResult(true, "Screen text (ML Kit): $mlText")
-                            } else {
-                                // Tier 3: ML Kit couldn't help — fall back to VLM
-                                Log.i(TAG, "readScreen: ML Kit found no text — falling back to VLM")
-                                val vlmResult = analyzeScreenWithVLM("Describe what's on the screen. Include app name, visible elements, and any images or icons.")
-                                ToolResult(true, "Screen text (VLM): $vlmResult")
-                            }
+                            // Screenshot failed + a11y/ML Kit empty — last resort
+                            ToolResult(true, if (a11yText.isNotEmpty()) a11yText else "(no text on screen)")
                         }
                     }
                 }
@@ -1975,6 +1985,18 @@ $instructions
                     }
                 }
 
+                // v2.5.2: Duplicate rule detection — don't create a rule if an identical one exists.
+                val existingRules = database.getRules(enabledOnly = false)
+                val duplicate = existingRules.find { existing ->
+                    existing.triggerType == triggerType &&
+                    existing.triggerValue == triggerValue &&
+                    existing.action == action
+                }
+                if (duplicate != null) {
+                    return ToolResult(true, "Rule already exists (id=${duplicate.id}, name='${duplicate.name}'). No duplicate created. " +
+                        "Use listRules to see all rules, or deleteRule(${duplicate.id}) to remove it.")
+                }
+
                 val ruleId = database.addRule(name, triggerType, triggerValue, action, days)
                 // Schedule with AlarmManager if it's a time rule
                 if (triggerType == "time") {
@@ -2465,6 +2487,114 @@ $instructions
     }
 
     // ==================== VISION (VLM) ====================
+
+    /**
+     * v2.5.2: Capture ONE screenshot as base64 string (shared across ML Kit + VLM).
+     * Returns null if screenshot fails.
+     */
+    private suspend fun captureScreenshotBase64(service: com.ai.agent.accessibility.AgentAccessibilityService): String? {
+        val deferred = kotlinx.coroutines.CompletableDeferred<String?>()
+        try {
+            service.captureScreen { base64 ->
+                deferred.complete(base64)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "captureScreenshotBase64 failed", e)
+            deferred.complete(null)
+        }
+        return deferred.await()
+    }
+
+    /**
+     * v2.5.2: Combine accessibility text + ML Kit OCR text, deduplicating similar lines.
+     * Returns the merged text.
+     */
+    private fun combineAndDedupe(a11yText: String, mlText: String?): String {
+        if (mlText.isNullOrBlank()) return a11yText
+        if (a11yText.isBlank()) return mlText
+
+        // Simple dedupe: if a11y text is contained in ML Kit text (or vice versa), use the longer one.
+        if (mlText.contains(a11yText.take(100))) return mlText
+        if (a11yText.contains(mlText.take(100))) return a11yText
+
+        // Otherwise, combine both with section headers (dedupe exact duplicate lines)
+        val a11yLines = a11yText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val mlLines = mlText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+
+        val combined = StringBuilder()
+        // Add a11y text first (more structured — button labels, content descriptions)
+        combined.append(a11yText.trim())
+        // Add ML Kit lines that aren't already in a11y (catches text in images/canvas)
+        val newLines = mlLines - a11yLines
+        if (newLines.isNotEmpty()) {
+            combined.append("\n\n[OCR]: ")
+            combined.append(newLines.joinToString("\n"))
+        }
+        return combined.toString()
+    }
+
+    /**
+     * v2.5.2: Analyze screenshot (already captured as base64) using VLM.
+     * Reuses the existing screenshot — no second capture.
+     */
+    private suspend fun analyzeScreenWithVLMBase64(screenshotBase64: String, prompt: String): String {
+        Log.d(TAG, "VLM (reusing screenshot): ${screenshotBase64.length} chars")
+
+        val provider = AIProvider.getCurrentProvider(context)
+        val model = AIProvider.getModel(context)
+        val apiKey = AIProvider.getApiKey(context)
+        val isVisionModel = isVisionCapableModel(provider.id, model)
+
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val escapedPrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+                val bodyStr = """{"model":"$model","messages":[{"role":"user","content":[{"type":"text","text":"$escapedPrompt"},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,$screenshotBase64"}}]}]}"""
+                val body = bodyStr.toRequestBody("application/json".toMediaType())
+
+                val requestBuilder = okhttp3.Request.Builder()
+                    .header("Content-Type", "application/json")
+
+                when {
+                    provider.id == "openrouter" && isVisionModel -> {
+                        requestBuilder.url(provider.defaultEndpoint)
+                        requestBuilder.header("Authorization", "Bearer $apiKey")
+                        requestBuilder.header("HTTP-Referer", "https://github.com/arun6a/ai-agent-apk")
+                        requestBuilder.header("X-Title", "AI Agent Phone")
+                    }
+                    provider.id == "groq" && isVisionModel -> {
+                        requestBuilder.url(provider.defaultEndpoint)
+                        requestBuilder.header("Authorization", "Bearer $apiKey")
+                    }
+                    else -> {
+                        requestBuilder.url(AIProvider.getVisionUrl(context))
+                    }
+                }
+
+                val request = requestBuilder.post(body).build()
+                val response = visionClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: ""
+
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "VLM API error ${response.code}: ${responseBody.take(200)}")
+                    return@withContext "VLM error: ${response.code}"
+                }
+
+                val json = org.json.JSONObject(responseBody)
+                val content = json
+                    .optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                    ?.optString("content", "")
+                    ?: ""
+
+                Log.i(TAG, "VLM result: ${content.length} chars")
+                content
+            } catch (e: Exception) {
+                Log.e(TAG, "VLM call failed", e)
+                "VLM error: ${e.message}"
+            }
+        }
+    }
 
     private val visionClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)

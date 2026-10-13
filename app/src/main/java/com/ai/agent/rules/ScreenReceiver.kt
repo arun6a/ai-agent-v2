@@ -62,9 +62,9 @@ class ScreenReceiver : BroadcastReceiver() {
             putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
+            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
         } else {
-            context.startService(serviceIntent)
+            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
         }
     }
 

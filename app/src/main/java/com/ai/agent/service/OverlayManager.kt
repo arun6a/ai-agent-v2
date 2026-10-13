@@ -247,8 +247,7 @@ class OverlayManager(private val context: Context) {
             }, 500)
         }
 
-        Toast.makeText(context, "Looking at your screen...", Toast.LENGTH_SHORT).show()
-
+        // v2.5.2: Removed 'Looking at your screen' toast — annoying during readScreen
         scope.launch {
             try {
                 // Keep button dimmed during processing
@@ -256,18 +255,18 @@ class OverlayManager(private val context: Context) {
                 btn?.alpha = 0.3f
 
                 // Step 1: Try screenshot + VLM first (vision-first approach)
-                Toast.makeText(context, "Taking screenshot...", Toast.LENGTH_SHORT).show()
+                // v2.5.2: Removed 'Taking screenshot' toast
                 val screenshotBase64 = takeScreenshotAndSend(service)
                 
                 if (screenshotBase64 != null && screenshotBase64.isNotEmpty()) {
                     // Screenshot worked! Use VLM
-                    Toast.makeText(context, "AI vision analyzing...", Toast.LENGTH_SHORT).show()
+                    // v2.5.2: Removed 'AI vision analyzing' toast
                     val vlmDescription = callVLM(screenshotBase64, "Describe what's on this phone screen in 2-3 short bullet points. What app? What's visible?")
                     Log.i(TAG, "VLM description: $vlmDescription")
                     
                     if (vlmDescription != null && !vlmDescription.contains("error") && vlmDescription.isNotEmpty()) {
                         // Step 2: LLM makes it conversational
-                        Toast.makeText(context, "Forming response...", Toast.LENGTH_SHORT).show()
+                        // v2.5.2: Removed 'Forming response' toast
                         btn?.alpha = 1.0f
 
                         val llmResponse = llmClient?.chat(
@@ -283,7 +282,7 @@ class OverlayManager(private val context: Context) {
                 
                 // Screenshot failed or VLM failed — fallback to readScreen + LLM
                 Log.i(TAG, "Screenshot/VLM failed, falling back to readScreen + LLM")
-                Toast.makeText(context, "Reading screen text...", Toast.LENGTH_SHORT).show()
+                // v2.5.2: Removed 'Reading screen text' toast
                 val screenText = service.readScreen()
                 
                 btn?.alpha = 1.0f

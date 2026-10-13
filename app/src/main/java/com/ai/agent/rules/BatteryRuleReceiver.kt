@@ -91,10 +91,19 @@ class BatteryRuleReceiver : BroadcastReceiver() {
             putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "Battery/Power event")
             putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
+        // v2.5.2: Use startService() (not startForegroundService()).
+        // Android 14 blocks startForegroundService() from BroadcastReceivers for dataSync type.
+        // AgentService is already running as foreground (started by MainActivity on app launch).
+        try {
             context.startService(serviceIntent)
+            Log.i(TAG, "Rule dispatched to AgentService: ${rule.name}")
+        } catch (e: Exception) {
+            Log.e(TAG, "startService failed for ${rule.name}, trying WorkManager fallback", e)
+            try {
+                RuleTriggerReceiver.triggerRuleAction(context, rule, "$triggerType: $status")
+            } catch (e2: Exception) {
+                Log.e(TAG, "WorkManager fallback also failed", e2)
+            }
         }
     }
 }

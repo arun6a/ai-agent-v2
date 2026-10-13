@@ -134,9 +134,9 @@ class IncomingCallReceiver(private val context: Context) {
         }
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
+                context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
             } else {
-                context.startService(serviceIntent)
+                context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start AgentService for rule ${rule.name}", e)

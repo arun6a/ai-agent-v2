@@ -62,9 +62,9 @@ class ConnectivityReceiver : BroadcastReceiver() {
                     putExtra("from_offline_queue", true)
                 }
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    context.startForegroundService(serviceIntent)
+                    context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
                 } else {
-                    context.startService(serviceIntent)
+                    context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
                 }
                 Log.i(TAG, "Re-triggered queued rule: ${pendingRule.ruleName}")
             } catch (e: Exception) {
