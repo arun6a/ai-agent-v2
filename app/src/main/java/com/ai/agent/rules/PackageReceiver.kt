@@ -39,8 +39,7 @@ class PackageReceiver : BroadcastReceiver() {
                     val trigger = rule.triggerValue.trim()
                     val shouldFire = trigger == "*" || trigger.equals("any", true) || trigger == packageName
                     if (shouldFire) {
-                        fireRule(context, rule, "app_installed",
-                            "App installed: $packageName")
+                        fireRule(context, rule, "App installed: $packageName")
                     }
                 }
             }
@@ -49,30 +48,16 @@ class PackageReceiver : BroadcastReceiver() {
                     val trigger = rule.triggerValue.trim()
                     val shouldFire = trigger == "*" || trigger.equals("any", true) || trigger == packageName
                     if (shouldFire) {
-                        fireRule(context, rule, "app_uninstalled",
-                            "App uninstalled: $packageName")
+                        fireRule(context, rule, "App uninstalled: $packageName")
                     }
                 }
             }
         }
     }
 
-    private fun fireRule(context: Context, rule: AgentDatabase.Rule, triggerType: String, status: String) {
-        Log.i(TAG, "Firing package rule: ${rule.name}")
-        try { AgentDatabase(context).logAction("Package rule fired: ${rule.name} — $status") } catch (_: Exception) {}
-
-        val serviceIntent = Intent(context, AgentService::class.java).apply {
-            action = AgentService.ACTION_PROCESS_RULE
-            putExtra(AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, triggerType)
-            putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "Package event")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-        } else {
-            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-        }
+    private fun fireRule(context: Context, rule: AgentDatabase.Rule, status: String) {
+        Log.i(TAG, "Firing rule: " + rule.name + " — " + status)
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(context, rule, status)
     }
 }
+

@@ -51,14 +51,13 @@ class WiFiReceiver : BroadcastReceiver() {
                         val shouldFire = trigger == "*" || trigger.equals("any", true) ||
                             (ssid != null && ssid.equals("\"$trigger\"", ignoreCase = true))
                         if (shouldFire) {
-                            fireRule(context, rule, "wifi_connected",
-                                "Connected to WiFi: ${ssid ?: "unknown"}")
+                            fireRule(context, rule, "Connected to WiFi: ${ssid ?: "unknown"}")
                         }
                     }
                 } else if (networkInfo?.isConnected == false) {
                     Log.i(TAG, "WiFi disconnected")
                     rules.filter { it.triggerType == "wifi_disconnected" }.forEach { rule ->
-                        fireRule(context, rule, "wifi_disconnected", "WiFi disconnected")
+                        fireRule(context, rule, "WiFi disconnected")
                     }
                 }
             }
@@ -76,22 +75,9 @@ class WiFiReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun fireRule(context: Context, rule: AgentDatabase.Rule, triggerType: String, status: String) {
-        Log.i(TAG, "Firing WiFi rule: ${rule.name}")
-        try { AgentDatabase(context).logAction("WiFi rule fired: ${rule.name} — $status") } catch (_: Exception) {}
-
-        val serviceIntent = Intent(context, AgentService::class.java).apply {
-            action = AgentService.ACTION_PROCESS_RULE
-            putExtra(AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, triggerType)
-            putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "WiFi event")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-        } else {
-            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-        }
+    private fun fireRule(context: Context, rule: AgentDatabase.Rule, status: String) {
+        Log.i(TAG, "Firing rule: " + rule.name + " — " + status)
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(context, rule, status)
     }
 }
+

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.util.Log
+import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.service.AgentService
 
 /**
@@ -51,22 +52,21 @@ class ConnectivityReceiver : BroadcastReceiver() {
 
         queue.forEach { pendingRule ->
             try {
-                val serviceIntent = Intent(context, AgentService::class.java).apply {
-                    action = AgentService.ACTION_PROCESS_RULE
-                    putExtra(AgentService.EXTRA_RULE_NAME, pendingRule.ruleName)
-                    putExtra(AgentService.EXTRA_RULE_ACTION, pendingRule.ruleAction)
-                    putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, pendingRule.triggerType)
-                    putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, pendingRule.notifTitle)
-                    putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, pendingRule.notifText)
-                    // v2.5.0: mark as queued-so-don't-requeue-if-still-fails
-                    putExtra("from_offline_queue", true)
-                }
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-                } else {
-                    context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-                }
-                Log.i(TAG, "Re-triggered queued rule: ${pendingRule.ruleName}")
+                // v2.5.3: Use WorkManager (only reliable way on Android 14 background)
+                val fakeRule = AgentDatabase.Rule(
+                    id = 0L,
+                    name = pendingRule.ruleName,
+                    triggerType = pendingRule.triggerType,
+                    triggerValue = "",
+                    action = pendingRule.ruleAction,
+                    enabled = true,
+                    days = null,
+                )
+                RuleTriggerReceiver.triggerRuleAction(
+                    context, fakeRule,
+                    "from_offline_queue: ${pendingRule.notifTitle} — ${pendingRule.notifText}"
+                )
+                Log.i(TAG, "Re-triggered queued rule via WorkManager: ${pendingRule.ruleName}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to re-trigger rule: ${pendingRule.ruleName}", e)
             }

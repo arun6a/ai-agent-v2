@@ -93,7 +93,7 @@ class IncomingCallReceiver(private val context: Context) {
                 } else {
                     "Incoming call from $phoneNumber"
                 }
-                fireRule(rule, status)
+                fireRule(context, rule, status)
             }
         }
     }
@@ -120,26 +120,9 @@ class IncomingCallReceiver(private val context: Context) {
         }
     }
 
-    private fun fireRule(rule: AgentDatabase.Rule, status: String) {
-        val db = AgentDatabase(context)
-        db.logAction("Incoming call rule fired: ${rule.name} — $status")
-
-        val serviceIntent = Intent(context, AgentService::class.java).apply {
-            action = AgentService.ACTION_PROCESS_RULE
-            putExtra(AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, "incoming_call")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "Incoming call")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
-        }
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-            } else {
-                context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start AgentService for rule ${rule.name}", e)
-        }
+    private fun fireRule(context: Context, rule: AgentDatabase.Rule, status: String) {
+        Log.i(TAG, "Firing rule: " + rule.name + " — " + status)
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(context, rule, status)
     }
 }
+

@@ -71,30 +71,14 @@ class NotificationListener : NotificationListenerService() {
     }
 
     private fun triggerRule(rule: AgentDatabase.Rule, notifTitle: String, notifText: String) {
-        val serviceIntent = Intent(this, com.ai.agent.service.AgentService::class.java).apply {
-            action = com.ai.agent.service.AgentService.ACTION_PROCESS_RULE
-            putExtra(com.ai.agent.service.AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(com.ai.agent.service.AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(com.ai.agent.service.AgentService.EXTRA_RULE_TRIGGER_TYPE, rule.triggerType)
-            putExtra(com.ai.agent.service.AgentService.EXTRA_NOTIFICATION_TITLE, notifTitle)
-            putExtra(com.ai.agent.service.AgentService.EXTRA_NOTIFICATION_TEXT, notifText)
-        }
-        // v2.5.2: Use startService() (not startForegroundService()) because:
-        // - AgentService is ALREADY running as foreground (started by MainActivity on app launch)
-        // - Android 14 (API 34) BLOCKS startForegroundService() from BroadcastReceivers for dataSync type
-        // - startService() just delivers the intent to the already-running service → works on Android 14
-        try {
-            startService(serviceIntent)
-            Log.i(TAG, "Notification rule dispatched to AgentService: ${rule.name}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start service for rule ${rule.name}", e)
-            // Fallback: try WorkManager path (RuleWorker)
-            try {
-                com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(this, rule, "notification: $notifTitle")
-            } catch (e2: Exception) {
-                Log.e(TAG, "WorkManager fallback also failed", e2)
-            }
-        }
+        // v2.5.3: WorkManager is the ONLY reliable way to start services from background on Android 14.
+        // - startService() from background → BLOCKED
+        // - startForegroundService() from BroadcastReceiver → BLOCKED (dataSync type)
+        // - WorkManager → CAN start foreground service (it's allowed by the OS)
+        Log.i(TAG, "Notification rule → WorkManager: ${rule.name} (title=$notifTitle)")
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(
+            this, rule, "notification: $notifTitle — $notifText"
+        )
         db.logAction("Notification rule fired: ${rule.name} (title=$notifTitle) — ${rule.action}")
     }
 

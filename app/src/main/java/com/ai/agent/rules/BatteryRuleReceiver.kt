@@ -80,30 +80,9 @@ class BatteryRuleReceiver : BroadcastReceiver() {
 
     private fun fireRule(context: Context, rule: AgentDatabase.Rule, triggerType: String, status: String) {
         Log.i(TAG, "Firing rule: ${rule.name} (trigger=$triggerType, status=$status)")
-        val db = AgentDatabase(context)
-        db.logAction("Battery rule fired: ${rule.name} — $status")
-
-        val serviceIntent = Intent(context, AgentService::class.java).apply {
-            action = AgentService.ACTION_PROCESS_RULE
-            putExtra(AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, triggerType)
-            putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "Battery/Power event")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
-        }
-        // v2.5.2: Use startService() (not startForegroundService()).
-        // Android 14 blocks startForegroundService() from BroadcastReceivers for dataSync type.
-        // AgentService is already running as foreground (started by MainActivity on app launch).
-        try {
-            context.startService(serviceIntent)
-            Log.i(TAG, "Rule dispatched to AgentService: ${rule.name}")
-        } catch (e: Exception) {
-            Log.e(TAG, "startService failed for ${rule.name}, trying WorkManager fallback", e)
-            try {
-                RuleTriggerReceiver.triggerRuleAction(context, rule, "$triggerType: $status")
-            } catch (e2: Exception) {
-                Log.e(TAG, "WorkManager fallback also failed", e2)
-            }
-        }
+        // v2.5.3: WorkManager is the ONLY reliable way to start services from background on Android 14.
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(
+            context, rule, "$triggerType: $status"
+        )
     }
 }

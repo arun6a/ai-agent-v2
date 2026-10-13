@@ -51,30 +51,14 @@ class SMSReceiver : BroadcastReceiver() {
                 else -> false
             }
             if (shouldFire) {
-                fireRule(context, rule, sender, body)
+                fireRule(context, rule, "SMS from $sender: $body")
             }
         }
     }
 
-    private fun fireRule(context: Context, rule: AgentDatabase.Rule, sender: String, body: String) {
-        Log.i(TAG, "Firing SMS rule: ${rule.name}")
-        val db = AgentDatabase(context)
-        db.logAction("SMS rule fired: ${rule.name} — from $sender")
-
-        val status = "SMS from $sender: ${body.take(200)}"
-
-        val serviceIntent = Intent(context, AgentService::class.java).apply {
-            action = AgentService.ACTION_PROCESS_RULE
-            putExtra(AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, "sms_received")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "SMS from $sender")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-        } else {
-            context.startService(serviceIntent)  // v2.5.2: was startForegroundService, blocked on Android 14
-        }
+    private fun fireRule(context: Context, rule: AgentDatabase.Rule, status: String) {
+        Log.i(TAG, "Firing rule: " + rule.name + " — " + status)
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(context, rule, status)
     }
 }
+

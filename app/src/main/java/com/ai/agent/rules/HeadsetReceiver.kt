@@ -49,22 +49,8 @@ class HeadsetReceiver : BroadcastReceiver() {
     }
 
     private fun fireRule(context: Context, rule: AgentDatabase.Rule, status: String) {
-        Log.i(TAG, "Firing headset rule: ${rule.name}")
-        val db = AgentDatabase(context)
-        db.logAction("Headset rule fired: ${rule.name} — $status")
-
-        val serviceIntent = Intent(context, AgentService::class.java).apply {
-            action = AgentService.ACTION_PROCESS_RULE
-            putExtra(AgentService.EXTRA_RULE_NAME, rule.name)
-            putExtra(AgentService.EXTRA_RULE_ACTION, rule.action)
-            putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, "headset")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TITLE, "Headset event")
-            putExtra(AgentService.EXTRA_NOTIFICATION_TEXT, status)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
-            context.startService(serviceIntent)
-        }
+        Log.i(TAG, "Firing rule: " + rule.name + " — " + status)
+        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(context, rule, status)
     }
 }
+
