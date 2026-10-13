@@ -7,10 +7,6 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,17 +43,22 @@ import kotlinx.coroutines.delay
 // ============================================================================
 // EmbeddedWebView — full-screen in-app browser overlay inside ChatScreen.
 // ----------------------------------------------------------------------------
-// v2.3.0: Replaces BrowserActivity for AI-initiated browser opens.
-// NO Activity switch → MIUI never sees foreground change → a11y stays alive.
+// v2.3.6: Fix "loading forever" + "blank screen after loading" issues:
 //
-// v2.3.5: Fix "loading forever" issue:
-//   - Real progress tracking via WebChromeClient.onProgressChanged (0-100%)
-//   - LinearProgressIndicator at top shows actual page load %
-//   - Timeout fallback: if page doesn't finish in 20s, hide loading anyway
-//     (some sites hang on sub-resources forever — Google Analytics, ads, etc.)
-//   - onReceivedError handler — show error message instead of hanging
-//   - Page is shown AS SOON AS first paint happens (progress > 30%), not waiting
-//     for 100% — many sites have lazy-loaded images that never finish.
+// ROOT CAUSE of blank screen:
+//   1. AnimatedVisibility had transition issues — overlay could disappear
+//      during state changes (isLoading toggling, progress updates, etc.)
+//   2. AndroidView `update` callback ran on EVERY recomposition. When
+//      webView.url was null (during page load start), it triggered
+//      webView.loadUrl() AGAIN → infinite reload loop → page never renders.
+//
+// FIX:
+//   - Replace AnimatedVisibility with simple `if (visible)` — no transition
+//     state, no exit animation, no chance of overlay disappearing
+//   - Track last-loaded URL in remember() — only reload when URL ACTUALLY changes
+//   - Real progress tracking via WebChromeClient.onProgressChanged
+//   - Timeout fallback: hide loading at 20s even if page isn't done
+//   - Show page at 30% progress (first paint)
 // ============================================================================
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -69,32 +70,30 @@ fun EmbeddedWebView(
     onWebViewReady: (WebView) -> Unit,
     onUserTakeover: () -> Unit,
 ) {
+    // v2.3.6: Only render when visible — no AnimatedVisibility (was causing overlay to disappear)
+    if (!visible) return
+
     var isUserMode by remember { mutableStateOf(false) }
-    // v2.3.5: Track actual progress (0-100)
     var progress by remember { mutableIntStateOf(0) }
-    // isLoading = true until progress reaches 100 OR timeout fires
     var isLoading by remember { mutableStateOf(true) }
     var currentUrl by remember { mutableStateOf(url) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    // v2.3.5: Track start time for timeout
-    val loadStartTime by remember(url) { mutableStateOf(System.currentTimeMillis()) }
+    // v2.3.6: Track last loaded URL to prevent reload loops
+    var lastLoadedUrl by remember { mutableStateOf("") }
 
-    // v2.3.5: Timeout fallback — if page doesn't finish in 20s, hide loading indicator
-    LaunchedEffect(url, visible) {
-        if (!visible) return@LaunchedEffect
+    // v2.3.6: Timeout fallback — hide loading indicator after 20s
+    LaunchedEffect(url) {
         isLoading = true
         progress = 0
         errorMessage = null
-        // Wait 20 seconds max for page to finish
         var elapsed = 0
-        while (elapsed < 20 && isLoading) {
+        while (elapsed < 20000 && isLoading) {
             delay(500)
             elapsed += 500
         }
         if (isLoading) {
             android.util.Log.w("EmbeddedWebView", "Page load timeout (20s) — hiding loading indicator")
             isLoading = false
-            // Still try to complete pageLoadDeferred so AI tools don't hang
             try {
                 val field = BrowserController::class.java.getDeclaredField("pageLoadDeferred")
                 field.isAccessible = true
@@ -107,253 +106,239 @@ fun EmbeddedWebView(
         }
     }
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(durationMillis = 150)),
-        exit = fadeOut(animationSpec = tween(durationMillis = 150)),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A1A1F)),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF1A1A1F)),
+        Column(
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
+            // === Top bar: mode indicator + hide button + progress ===
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F0F12))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // === Top bar: mode indicator + hide button + progress ===
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF0F0F12))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            color = Color(0xFF10B981),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.size(8.dp))
-                    }
-                    Text(
-                        text = when {
-                            isUserMode -> "👤 User Mode — AI paused"
-                            errorMessage != null -> "⚠️ Error"
-                            isLoading && progress > 0 -> "Loading $progress%"
-                            isLoading -> "Loading…"
-                            else -> "🌐 AI Mode — browsing"
-                        },
-                        color = when {
-                            isUserMode -> Color(0xFFF59E0B)
-                            errorMessage != null -> Color(0xFFEF4444)
-                            else -> Color(0xFF10B981)
-                        },
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(
-                        onClick = onHide,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF10B981),
-                        ),
-                    ) {
-                        Text("← Chat", color = Color.White, fontSize = 12.sp)
-                    }
-                }
-
-                // v2.3.5: Linear progress bar at top (real % from WebChromeClient)
-                if (isLoading && progress in 1..99) {
-                    LinearProgressIndicator(
-                        progress = { progress / 100f },
-                        modifier = Modifier.fillMaxWidth(),
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
                         color = Color(0xFF10B981),
-                        trackColor = Color(0xFF2A2A2F),
+                        strokeWidth = 2.dp,
                     )
+                    Spacer(Modifier.size(8.dp))
                 }
+                Text(
+                    text = when {
+                        isUserMode -> "👤 User Mode — AI paused"
+                        errorMessage != null -> "⚠️ Error"
+                        isLoading && progress > 0 -> "Loading $progress%"
+                        isLoading -> "Loading…"
+                        else -> "🌐 AI Mode — browsing"
+                    },
+                    color = when {
+                        isUserMode -> Color(0xFFF59E0B)
+                        errorMessage != null -> Color(0xFFEF4444)
+                        else -> Color(0xFF10B981)
+                    },
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = onHide,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF10B981),
+                    ),
+                ) {
+                    Text("← Chat", color = Color.White, fontSize = 12.sp)
+                }
+            }
 
-                // === WebView (fills remaining space) ===
-                Box(modifier = Modifier.fillMaxSize()) {
-                    AndroidView(
-                        modifier = Modifier.fillMaxSize(),
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.databaseEnabled = true
-                                settings.javaScriptCanOpenWindowsAutomatically = true
-                                settings.loadWithOverviewMode = true
-                                settings.useWideViewPort = true
-                                settings.builtInZoomControls = true
-                                settings.displayZoomControls = false
-                                settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-                                settings.setSupportZoom(true)
-                                settings.userAgentString = (
-                                    "Mozilla/5.0 (Linux; Android 14; Pixel 8) " +
-                                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                    "Chrome/121.0.0.0 Mobile Safari/537.36"
-                                )
+            // v2.3.6: Linear progress bar (real % from WebChromeClient)
+            if (isLoading && progress in 1..99) {
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFF10B981),
+                    trackColor = Color(0xFF2A2A2F),
+                )
+            }
 
-                                webViewClient = object : WebViewClient() {
-                                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                        android.util.Log.i("EmbeddedWebView", "Page loading: $url")
-                                        isLoading = true
-                                        progress = 0
-                                        currentUrl = url ?: ""
-                                        errorMessage = null
-                                    }
+            // === WebView + overlays ===
+            Box(modifier = Modifier.fillMaxSize()) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.databaseEnabled = true
+                            settings.javaScriptCanOpenWindowsAutomatically = true
+                            settings.loadWithOverviewMode = true
+                            settings.useWideViewPort = true
+                            settings.builtInZoomControls = true
+                            settings.displayZoomControls = false
+                            settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                            settings.setSupportZoom(true)
+                            settings.userAgentString = (
+                                "Mozilla/5.0 (Linux; Android 14; Pixel 8) " +
+                                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                "Chrome/121.0.0.0 Mobile Safari/537.36"
+                            )
 
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        android.util.Log.i("EmbeddedWebView", "Page loaded: $url")
-                                        isLoading = false
-                                        progress = 100
-                                        try {
-                                            val field = BrowserController::class.java
-                                                .getDeclaredField("pageLoadDeferred")
-                                            field.isAccessible = true
-                                            val deferred = field.get(BrowserController)
-                                            if (deferred is kotlinx.coroutines.CompletableDeferred<*>) {
-                                                @Suppress("UNCHECKED_CAST")
-                                                (deferred as kotlinx.coroutines.CompletableDeferred<Boolean>).complete(true)
-                                            }
-                                        } catch (_: Throwable) {}
-                                    }
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                    android.util.Log.i("EmbeddedWebView", "Page loading: $url")
+                                    isLoading = true
+                                    progress = 0
+                                    currentUrl = url ?: ""
+                                    errorMessage = null
+                                }
 
-                                    // v2.3.5: Handle errors — show message instead of hanging
-                                    override fun onReceivedError(
-                                        view: WebView?,
-                                        request: WebResourceRequest?,
-                                        error: WebResourceError?
-                                    ) {
-                                        // Only fail on main frame errors, not sub-resources
-                                        if (request?.isForMainFrame == true) {
-                                            android.util.Log.e("EmbeddedWebView", "Page error: ${error?.description}")
-                                            errorMessage = error?.description?.toString() ?: "Failed to load page"
-                                            isLoading = false
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    android.util.Log.i("EmbeddedWebView", "Page loaded: $url")
+                                    isLoading = false
+                                    progress = 100
+                                    try {
+                                        val field = BrowserController::class.java
+                                            .getDeclaredField("pageLoadDeferred")
+                                        field.isAccessible = true
+                                        val deferred = field.get(BrowserController)
+                                        if (deferred is kotlinx.coroutines.CompletableDeferred<*>) {
+                                            @Suppress("UNCHECKED_CAST")
+                                            (deferred as kotlinx.coroutines.CompletableDeferred<Boolean>).complete(true)
                                         }
-                                    }
+                                    } catch (_: Throwable) {}
+                                }
 
-                                    override fun onReceivedSslError(
-                                        view: WebView?,
-                                        handler: android.webkit.SslErrorHandler?,
-                                        error: android.net.http.SslError?
-                                    ) {
-                                        android.util.Log.w("EmbeddedWebView", "SSL error: ${error?.primaryError}")
-                                        handler?.cancel()
-                                        errorMessage = "SSL certificate error"
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                    error: WebResourceError?
+                                ) {
+                                    if (request?.isForMainFrame == true) {
+                                        android.util.Log.e("EmbeddedWebView", "Page error: ${error?.description}")
+                                        errorMessage = error?.description?.toString() ?: "Failed to load page"
                                         isLoading = false
                                     }
                                 }
 
-                                // v2.3.5: WebChromeClient with progress tracking
-                                webChromeClient = object : WebChromeClient() {
-                                    override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                        progress = newProgress
-                                        android.util.Log.d("EmbeddedWebView", "Progress: $newProgress%")
-                                        // v2.3.5: If progress > 80%, consider it "mostly loaded" —
-                                        // many sites have lazy-loaded images that never finish 100%
-                                        if (newProgress >= 90 && isLoading) {
-                                            isLoading = false
-                                        }
+                                override fun onReceivedSslError(
+                                    view: WebView?,
+                                    handler: android.webkit.SslErrorHandler?,
+                                    error: android.net.http.SslError?
+                                ) {
+                                    android.util.Log.w("EmbeddedWebView", "SSL error: ${error?.primaryError}")
+                                    handler?.cancel()
+                                    errorMessage = "SSL certificate error"
+                                    isLoading = false
+                                }
+                            }
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                    progress = newProgress
+                                    android.util.Log.d("EmbeddedWebView", "Progress: $newProgress%")
+                                    if (newProgress >= 90 && isLoading) {
+                                        isLoading = false
                                     }
                                 }
+                            }
 
-                                // Load the URL
-                                val finalUrl = if (url.startsWith("http")) url else "https://$url"
-                                loadUrl(finalUrl)
+                            // Load the URL
+                            val finalUrl = if (url.startsWith("http")) url else "https://$url"
+                            lastLoadedUrl = finalUrl
+                            loadUrl(finalUrl)
 
-                                // User takeover detection
-                                setOnTouchListener { _, _ ->
-                                    if (!isUserMode) {
-                                        isUserMode = true
-                                        onUserTakeover()
-                                        android.util.Log.i("EmbeddedWebView", "User took over — AI paused")
-                                    }
-                                    false
+                            setOnTouchListener { _, _ ->
+                                if (!isUserMode) {
+                                    isUserMode = true
+                                    onUserTakeover()
+                                    android.util.Log.i("EmbeddedWebView", "User took over — AI paused")
                                 }
-
-                                onWebViewReady(this)
+                                false
                             }
-                        },
-                        update = { webView ->
-                            val currentWvUrl = webView.url ?: ""
-                            val targetUrl = if (url.startsWith("http")) url else "https://$url"
-                            if (currentWvUrl != targetUrl && targetUrl.isNotEmpty()) {
-                                isLoading = true
-                                progress = 0
-                                webView.loadUrl(targetUrl)
-                            }
-                        },
-                    )
 
-                    // v2.3.5: Loading overlay — show until progress > 30% (first paint)
-                    if (isLoading && progress < 30) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFF1A1A1F)),
-                            contentAlignment = Alignment.Center,
+                            onWebViewReady(this)
+                        }
+                    },
+                    // v2.3.6: ONLY reload when URL actually changes — NOT on every recomposition
+                    // This was the root cause of the reload loop + blank screen
+                    update = { webView ->
+                        val targetUrl = if (url.startsWith("http")) url else "https://$url"
+                        // Only reload if the target URL is different from what we last loaded
+                        if (targetUrl != lastLoadedUrl && targetUrl.isNotEmpty()) {
+                            android.util.Log.i("EmbeddedWebView", "URL changed: $lastLoadedUrl → $targetUrl, reloading")
+                            lastLoadedUrl = targetUrl
+                            isLoading = true
+                            progress = 0
+                            webView.loadUrl(targetUrl)
+                        }
+                    },
+                )
+
+                // Loading overlay — show until progress >= 30%
+                if (isLoading && progress < 30) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF1A1A1F)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    color = Color(0xFF10B981),
-                                    strokeWidth = 3.dp,
-                                )
-                                Text(
-                                    text = "Loading",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                )
-                                Text(
-                                    text = currentUrl.ifEmpty { url },
-                                    color = Color(0xFF888890),
-                                    fontFamily = MonoFontFamily,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                )
-                            }
+                            CircularProgressIndicator(
+                                color = Color(0xFF10B981),
+                                strokeWidth = 3.dp,
+                            )
+                            Text(
+                                text = "Loading",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                            )
+                            Text(
+                                text = currentUrl.ifEmpty { url },
+                                color = Color(0xFF888890),
+                                fontFamily = MonoFontFamily,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                            )
                         }
                     }
+                }
 
-                    // v2.3.5: Error overlay — shown if page fails to load
-                    if (errorMessage != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xFF1A1A1F)),
-                            contentAlignment = Alignment.Center,
+                // Error overlay
+                if (errorMessage != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF1A1A1F)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                Text(
-                                    text = "⚠️",
-                                    color = Color(0xFFEF4444),
-                                    fontSize = 32.sp,
-                                )
-                                Text(
-                                    text = "Failed to load page",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                )
-                                Text(
-                                    text = errorMessage ?: "",
-                                    color = Color(0xFF888890),
-                                    fontFamily = MonoFontFamily,
-                                    fontSize = 11.sp,
-                                )
-                                Text(
-                                    text = currentUrl.ifEmpty { url },
-                                    color = Color(0xFF888890),
-                                    fontFamily = MonoFontFamily,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                )
-                            }
+                            Text(
+                                text = "⚠️",
+                                color = Color(0xFFEF4444),
+                                fontSize = 32.sp,
+                            )
+                            Text(
+                                text = "Failed to load page",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                            )
+                            Text(
+                                text = errorMessage ?: "",
+                                color = Color(0xFF888890),
+                                fontFamily = MonoFontFamily,
+                                fontSize = 11.sp,
+                            )
                         }
                     }
                 }
@@ -361,15 +346,15 @@ fun EmbeddedWebView(
         }
     }
 
+    // Cleanup when overlay is hidden
     DisposableEffect(visible) {
         onDispose {
-            if (!visible) {
-                BrowserController.clearEmbeddedWebView()
-                isUserMode = false
-                isLoading = true
-                progress = 0
-                errorMessage = null
-            }
+            BrowserController.clearEmbeddedWebView()
+            isUserMode = false
+            isLoading = true
+            progress = 0
+            errorMessage = null
+            lastLoadedUrl = ""
         }
     }
 }

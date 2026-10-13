@@ -1520,11 +1520,34 @@ class ToolExecutor(private val context: Context) {
             "browserSearch" -> {
                 val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
                 val url = "https://www.google.com/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}"
-                BrowserController.openUrl(context, url)
-                delay(2000)
-                val pageText = BrowserController.getPageText(context)
-                val text = pageText?.take(3000) ?: "Page not loaded"
-                ToolResult(true, "Searched: $query\n\nPage content:\n$text")
+                // v2.3.7: Use embedded WebView path (same as browserOpen) instead of BrowserActivity.
+                // Was launching a separate Activity that didn't render — user saw blank screen.
+                val browserMode = AIProvider.getBrowserMode(context)
+                if (browserMode == "chrome") {
+                    // Chrome mode — fall back to launching Chrome
+                    val opened = BrowserController.openInChrome(context, url)
+                    delay(3000)
+                    if (opened) {
+                        val screenText = try { service?.readScreen() ?: "(readScreen failed)" } catch (e: Exception) { "(error: ${e.message})" }
+                        ToolResult(true, "Searched in Chrome: $query\n\nScreen content:\n${screenText.take(3000)}")
+                    } else {
+                        ToolResult(false, "Chrome not available")
+                    }
+                } else {
+                    // Embedded WebView — show overlay + load URL
+                    BrowserController.pageLoadDeferred = CompletableDeferred()
+                    EmbeddedBrowserBridge.show(url)
+                    try {
+                        kotlinx.coroutines.withTimeoutOrNull(10000) {
+                            BrowserController.pageLoadDeferred?.await()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "browserSearch: page load timeout — continuing")
+                    }
+                    val pageText = BrowserController.getPageText(context)
+                    val text = pageText?.take(3000) ?: "Page not loaded yet — try browserReadStructured to get current page content."
+                    ToolResult(true, "Searched: $query (URL: $url)\n\nPage content:\n$text")
+                }
             }
             // ==================== HYBRID BROWSER AGENT (v4.0.0) ====================
             "browserReadStructured" -> {
