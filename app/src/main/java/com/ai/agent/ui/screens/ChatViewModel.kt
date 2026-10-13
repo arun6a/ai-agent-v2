@@ -809,23 +809,24 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
 
                     // === Infinite-loop detection + strategy switching ===
                     // readScreen() and wait() are verification tools — expected to repeat.
-                    val actionTools = llmResponse.toolCalls.filter { it.name != "readScreen" && it.name != "wait" }
+                    val actionTools = llmResponse.toolCalls.filter { it.name != "readScreen" && it.name != "wait" && it.name != "readScreenStructured" }
                     var stuckSignature: String? = null
                     for (call in actionTools) {
                         val signature = "${call.name}(${argsStr(call.args)})"
                         toolCallHistory.add(signature)
                         val count = toolCallHistory.count { it == signature }
 
-                        // Strategy switching — after 2 failures, inject alternatives into the conversation.
-                        if (count == 2) {
+                        // v2.3.7: Strategy switching — after 1 failure, inject alternatives into the conversation.
+                        // Give the AI a chance to switch strategy BEFORE hitting the MAX_REPEATED_TOOLS stop.
+                        if (count == 1) {
                             val alternatives = getStrategyAlternatives(call.name)
                             if (alternatives.isNotEmpty()) {
                                 conversation.append(
-                                    "\n\n⚠️ STRATEGY SWITCH: You've tried \"$signature\" twice and it's not working. " +
-                                        "Try a DIFFERENT approach:\n$alternatives\n" +
-                                        "Do NOT repeat the same tool. Switch strategy NOW."
+                                    "\n\n⚠️ STRATEGY SWITCH: You just tried \"$signature\" and it may not be working. " +
+                                        "If it fails again, you MUST try a DIFFERENT approach:\n$alternatives\n" +
+                                        "Do NOT repeat the same tool with the same args. Switch strategy NOW."
                                 )
-                                Log.i(TAG, "Strategy switch injected for $signature (attempt 2)")
+                                Log.i(TAG, "Strategy switch injected for $signature (attempt 1 — early warning)")
                             }
                         }
 
@@ -1094,7 +1095,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
     companion object {
         private const val TAG = "ChatViewModel"
         private const val MAX_ITERATIONS = 50
-        private const val MAX_REPEATED_TOOLS = 3
+        private const val MAX_REPEATED_TOOLS = 2
         private const val MAX_CONVERSATION_CHARS = 8000
         const val ATTACHMENTS_DIR = "/storage/emulated/0/Documents/ai-workspace/attachments"
         /** Task 40 — user-created skills live here so SkillManager picks them up. */

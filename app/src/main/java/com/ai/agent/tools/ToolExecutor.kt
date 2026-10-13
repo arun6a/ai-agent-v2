@@ -1500,9 +1500,17 @@ class ToolExecutor(private val context: Context) {
             "browserFill" -> {
                 val selector = call.args["selector"] as? String ?: return ToolResult(false, "missing selector")
                 val value = call.args["value"] as? String ?: return ToolResult(false, "missing value")
-                val js = "document.querySelector('$selector').value = '$value'; 'filled'"
-                val result = BrowserController.evalJs(context, js)
-                ToolResult(true, "Fill attempted: $result")
+                // v2.3.7: First check if the element exists — fail clearly if not.
+                // Was silently returning "filled" even when selector matched nothing.
+                val checkJs = "document.querySelector('$selector') ? 'exists' : 'not_found'"
+                val checkResult = BrowserController.evalJs(context, checkJs)
+                if (checkResult?.contains("not_found") == true) {
+                    ToolResult(false, "Element '$selector' not found on page. Use browserGetForms() to see actual form fields, or browserListClickable() to see clickable elements. Don't fill fields that don't exist.")
+                } else {
+                    val js = "document.querySelector('$selector').value = '$value'; 'filled'"
+                    val result = BrowserController.evalJs(context, js)
+                    ToolResult(true, "Filled '$selector' with '$value': $result")
+                }
             }
             "browserScrollDown" -> {
                 BrowserController.evalJs(context, "window.scrollBy(0, 800); 'scrolled'")
