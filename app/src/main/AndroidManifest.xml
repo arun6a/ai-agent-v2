@@ -282,6 +282,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- v2.5.0: Connectivity change — processes offline rule queue when network reconnects -->
+        <receiver
+            android:name=".rules.ConnectivityReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+                <action android:name="android.net.wifi.STATE_CHANGE" />
+            </intent-filter>
+        </receiver>
+
         <!-- Brightness check (periodic) -->
         <receiver
             android:name=".rules.BrightnessReceiver"

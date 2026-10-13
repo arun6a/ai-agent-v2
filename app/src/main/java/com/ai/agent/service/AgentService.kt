@@ -167,8 +167,9 @@ class AgentService : Service() {
                 val triggerType = intent.getStringExtra(EXTRA_RULE_TRIGGER_TYPE) ?: "time"
                 val notifTitle = intent.getStringExtra(EXTRA_NOTIFICATION_TITLE) ?: ""
                 val notifText = intent.getStringExtra(EXTRA_NOTIFICATION_TEXT) ?: ""
+                val fromQueue = intent.getBooleanExtra("from_offline_queue", false)
                 if (ruleAction.isNotEmpty()) {
-                    processRuleAction(ruleName, ruleAction, triggerType, notifTitle, notifText)
+                    processRuleAction(ruleName, ruleAction, triggerType, notifTitle, notifText, fromQueue)
                 }
             }
             else -> {
@@ -239,10 +240,62 @@ class AgentService : Service() {
         ruleAction: String,
         triggerType: String,
         notifTitle: String,
-        notifText: String
+        notifText: String,
+        fromQueue: Boolean = false
     ) {
         Log.i(TAG, "Processing rule action: ruleName=$ruleName, trigger=$triggerType")
+
+        // v2.5.0: OFFLINE RULE SUPPORT
+        // Check if rule action is "direct" (no AI needed) or "smart" (needs cloud AI).
+        // - Direct: starts with tool name like "setBrightness(50)" or "sendSMS(...)" — execute directly.
+        // - Smart: starts with natural language like "Reply politely" or "Give me a briefing" — needs AI.
+        //
+        // If smart + offline → queue for later (ConnectivityReceiver processes when reconnects).
+        val isDirectRule = ruleAction.matches(Regex("^[a-zA-Z_][a-zA-Z0-9_]*\\(.*\\)$")) ||
+                           ruleAction.startsWith("direct:") ||
+                           ruleAction.startsWith("tool:")
+
+        val cleanAction = when {
+            ruleAction.startsWith("direct:") -> ruleAction.removePrefix("direct:").trim()
+            ruleAction.startsWith("tool:") -> ruleAction.removePrefix("tool:").trim()
+            else -> ruleAction
+        }
+
+        if (!isDirectRule) {
+            // SMART RULE — needs AI (cloud)
+            if (!com.ai.agent.rules.NetworkHelper.isOnline(this)) {
+                if (fromQueue) {
+                    // Already tried from queue + still offline — drop, don't re-queue forever
+                    Log.w(TAG, "Smart rule '$ruleName' still offline after queue retry — dropping")
+                    speak("Rule $ruleName couldn't run — still offline.")
+                    return
+                }
+                Log.w(TAG, "Smart rule '$ruleName' fired while offline — queueing for later")
+                com.ai.agent.rules.OfflineRuleQueue.enqueue(
+                    this,
+                    com.ai.agent.rules.OfflineRuleQueue.PendingRule(
+                        ruleName = ruleName,
+                        ruleAction = ruleAction,
+                        triggerType = triggerType,
+                        notifTitle = notifTitle,
+                        notifText = notifText,
+                    )
+                )
+                speak("Rule $ruleName queued — will run when back online.")
+                return
+            }
+        }
+
         speak("Rule triggered: $ruleName")
+
+        // v2.5.0: Direct rules — execute tools directly without calling AI.
+        // Format: "tool_name(arg1, arg2, ...)" or multiple tools separated by ";".
+        // Example: "setBrightness(50); sendSMS(+91..., Battery low)"
+        if (isDirectRule) {
+            Log.i(TAG, "Direct rule (no AI): $cleanAction")
+            executeDirectRule(cleanAction)
+            return
+        }
 
         scope.launch {
             try {
@@ -315,6 +368,66 @@ class AgentService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to process rule action", e)
             }
+        }
+    }
+
+    /**
+     * v2.5.0: Execute a DIRECT rule (no AI needed).
+     * Parses tool calls like "setBrightness(50); sendSMS(+91..., Battery low)"
+     * and runs them via ToolExecutor directly.
+     *
+     * Format:
+     *   - Single tool: "setBrightness(50)"
+     *   - Multiple tools: "setBrightness(50); setVolume(10); toggleFlashlight()"
+     *   - Prefix optional: "direct:setBrightness(50)" or "tool:setBrightness(50)"
+     *
+     * Tool args are simple strings (no nested commas in values for now).
+     */
+    private fun executeDirectRule(actionStr: String) {
+        val tools = actionStr.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+        val toolExecutor = toolExecutor ?: com.ai.agent.tools.ToolExecutor(this)
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val results = StringBuilder()
+            for (toolCall in tools) {
+                try {
+                    // Parse: toolName(arg1, arg2, ...)
+                    val match = Regex("^(\\w+)\\((.*)\\)$").find(toolCall)
+                    if (match == null) {
+                        results.append("✗ Couldn't parse: $toolCall\n")
+                        continue
+                    }
+                    val toolName = match.groupValues[1]
+                    val argsStr = match.groupValues[2]
+                    val args = mutableMapOf<String, Any>()
+                    if (argsStr.isNotEmpty()) {
+                        // Split args by comma (simple — no escaping for now)
+                        // First arg is positional → "value" (no key)
+                        // If "key=value" present → use as named arg
+                        val parts = argsStr.split(",").map { it.trim() }
+                        parts.forEachIndexed { i, part ->
+                            if (part.contains("=")) {
+                                val (k, v) = part.split("=", limit = 2)
+                                args[k.trim()] = v.trim().trim('"').trim('\'')
+                            } else {
+                                // Positional arg — assign generic key based on order
+                                args["arg$i"] = part.trim().trim('"').trim('\'')
+                            }
+                        }
+                    }
+                    android.util.Log.i(TAG, "Direct rule executing: $toolName($args)")
+                    // Call executeTools (plural, public, suspend) with a single-element list
+                    val toolResults = toolExecutor.executeTools(
+                        listOf(com.ai.agent.llm.LLMClient.ToolCall(toolName, args))
+                    )
+                    val result = toolResults.firstOrNull()
+                    results.append("${if (result?.success == true) "✓" else "✗"} $toolName: ${result?.output?.take(100) ?: "no result"}\n")
+                } catch (e: Exception) {
+                    results.append("✗ $toolCall failed: ${e.message}\n")
+                }
+            }
+            android.util.Log.i(TAG, "Direct rule results:\n$results")
+            speak("Rule complete.")
         }
     }
 

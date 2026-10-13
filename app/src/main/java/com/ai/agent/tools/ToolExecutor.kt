@@ -1913,14 +1913,29 @@ $instructions
                 val action = call.args["action"] as? String ?: return ToolResult(false, "missing action")
                 val days = call.args["days"] as? String  // nullable — "mon,tue,wed,thu,fri" or null for daily
 
-                // Validate triggerType
+                // v2.5.0: Expanded trigger types — all supported by manifest receivers.
                 val validTypes = listOf(
-                    "time", "notification", "battery_low", "charging", "discharging",
-                    "incoming_call", "sms_received",
-                    "headset_connected", "headset_disconnected",
+                    // Time-based
+                    "time",
+                    // Notifications + SMS + calls
+                    "notification", "incoming_call", "sms_received",
+                    // Battery + power
+                    "battery_low", "battery_full", "charging", "discharging",
+                    // Audio + headset
+                    "headset_connected", "headset_disconnected", "music_started",
+                    // Screen + user state
                     "screen_on", "screen_off", "user_unlocked",
+                    // Network
                     "wifi_connected", "wifi_disconnected",
-                    "app_installed", "app_uninstalled"
+                    // Apps
+                    "app_installed", "app_uninstalled", "app_opened", "app_closed",
+                    // System events
+                    "airplane_mode", "storage_low", "day_changed",
+                    "calendar_event_starting", "usb_connected", "docked",
+                    "brightness_high", "brightness_low",
+                    // v2.5.0 NEW triggers
+                    "location_entered", "location_exited",
+                    "bluetooth_connected", "bluetooth_disconnected"
                 )
                 if (triggerType !in validTypes) {
                     return ToolResult(false, "invalid triggerType. Use one of: $validTypes")

@@ -169,16 +169,24 @@ The browser opens as a VISIBLE screen — the user can see what you're doing, lo
 - createRule(name, triggerType, triggerValue, action, days?) — create a scheduled/triggered rule that fires automatically
   - **Time-based:** triggerType="time", triggerValue="HH:MM" (24-hour), days="mon,tue,wed,thu,fri" (optional, omit for daily)
   - **Notification:** triggerType="notification", triggerValue="com.whatsapp" or "com.whatsapp:Mom"
-  - **Battery:** triggerType="battery_low", triggerValue="20" (percentage threshold)
-  - **Charging:** triggerType="charging" (triggerValue="any") — fires when phone starts charging
-  - **Discharging:** triggerType="discharging" (triggerValue="any") — fires when unplugged
+  - **Battery:** triggerType="battery_low", triggerValue="20" (percentage threshold) | "battery_full" (100%)
+  - **Power:** triggerType="charging" | "discharging" (triggerValue="any")
   - **Incoming call:** triggerType="incoming_call", triggerValue="*" (any) or "+919001234567" or contact name "Mom"
   - **SMS received:** triggerType="sms_received", triggerValue="*" (any) or sender number or body keyword like "OTP"
   - **Headset:** triggerType="headset_connected" or "headset_disconnected" (triggerValue="any")
   - **Screen:** triggerType="screen_on", "screen_off", or "user_unlocked" (triggerValue="any")
   - **WiFi:** triggerType="wifi_connected" or "wifi_disconnected", triggerValue="*" (any) or SSID name like "MyHome"
-  - **App events:** triggerType="app_installed" or "app_uninstalled", triggerValue="*" (any) or package name
+  - **App events:** triggerType="app_installed", "app_uninstalled", "app_opened", "app_closed", triggerValue="*" or package name
+  - **System events:** triggerType="airplane_mode", "storage_low", "day_changed", "calendar_event_starting", "usb_connected", "docked", "brightness_high", "brightness_low"
+  - **Music:** triggerType="music_started" (triggerValue="any")
+  - **Location:** triggerType="location_entered" or "location_exited", triggerValue="lat,lng,radius_m" (geofence)
+  - **Bluetooth:** triggerType="bluetooth_connected" or "bluetooth_disconnected" (triggerValue="any" or device name)
   - action = natural language description of what to do when the rule fires
+  - **v2.5.0 DIRECT RULES (works OFFLINE — no AI/cloud needed):** If action is a tool call like "setBrightness(50)" or "sendSMS(+91..., Battery low)", Aira executes it directly without calling AI. Multiple tools separated by ";". Prefix with "direct:" to force direct mode. Examples:
+    - action="setBrightness(50)" → dims screen instantly (no AI call)
+    - action="setVolume(5); toggleFlashlight()" → two direct tool calls
+    - action="direct:sendSMS(+91..., Battery low at 20%)" → forces direct mode
+  - **SMART RULES (needs internet):** If action is natural language like "Reply politely with business info" or "Give me morning briefing", AI processes it via cloud. If offline, rule is QUEUED and runs when network reconnects.
 - listRules() — list all rules (with their ids, trigger types, days, enabled state)
 - deleteRule(id) — delete a rule by its id
 - modifyRule(id, name?, triggerType?, triggerValue?, action?, days?, enabled?) — modify an existing rule
