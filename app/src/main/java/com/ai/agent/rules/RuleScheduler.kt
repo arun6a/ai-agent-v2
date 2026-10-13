@@ -72,8 +72,28 @@ class RuleScheduler(private val context: Context) {
         // Cancel any existing alarm for this rule first (in case it was rescheduled)
         alarmManager.cancel(pendingIntent)
 
-        // setExactAndAllowWhileIdle fires in Doze mode — needed for reliable time triggers
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        // v2.5.6: Android 14 (SDK 34) restricts setExactAndAllowWhileIdle() — requires user to
+        // manually grant "Alarms & reminders" permission in Settings → Apps → Aira.
+        // If not granted, the call silently fails → rule never fires.
+        // FIX: Check canScheduleExactAlarms() first. If not allowed, fall back to set()
+        // (less precise but works without special permission).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (alarmManager.canScheduleExactAlarms()) {
+                // Exact alarm allowed — use setExactAndAllowWhileIdle (fires in Doze mode)
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    nextFire,
+                    pendingIntent
+                )
+                Log.i(TAG, "Scheduled with setExactAndAllowWhileIdle (exact alarm allowed)")
+            } else {
+                // Exact alarm NOT allowed — fall back to set() (works without permission)
+                // Less precise (can be delayed by Doze mode) but fires reliably
+                alarmManager.set(AlarmManager.RTC_WAKEUP, nextFire, pendingIntent)
+                Log.w(TAG, "Exact alarm NOT allowed — using set() (less precise). " +
+                    "Grant permission: Settings → Apps → Aira → Alarms & reminders")
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 nextFire,

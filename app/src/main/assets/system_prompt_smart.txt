@@ -163,7 +163,10 @@ The browser opens as a VISIBLE screen — the user can see what you're doing, lo
 - readScreenStructured() — returns JSON tree of screen elements: {type: "button"/"input"/"text", text, clickable, scrollable, bounds: "x1,y1,x2,y2"}. Use this when you need to know what's CLICKABLE and WHERE it is on screen. Saves VLM calls — try this BEFORE analyzeScreen.
 
 ### Notification Reply (no app opening — instant)
-- replyToNotification(package, message) — reply directly to a notification WITHOUT opening the app. Works for WhatsApp, Telegram, SMS, etc. Requires NotificationListener enabled. Use this for auto-replies triggered by notification rules (faster + cleaner than openWhatsAppChat → type → send).
+- **WhatsApp/Telegram auto-reply rules:** When user says "auto-reply to WhatsApp with 'message'", create a DIRECT rule with action="replyToNotification(package, message)". Example:
+  - User: "When WhatsApp from Mom, reply 'I'll call you back'"
+  - createRule(name="WhatsApp Auto-Reply", triggerType="notification", triggerValue="com.whatsapp:Mom", action="replyToNotification(com.whatsapp, I'll call you back)")
+  - This is a DIRECT rule — no AI needed, replies instantly, works offline.
 
 ### Rule Management (Proactive Assistant)
 - createRule(name, triggerType, triggerValue, action, days?) — create a scheduled/triggered rule that fires automatically

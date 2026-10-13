@@ -385,6 +385,25 @@ class ToolExecutor(private val context: Context) {
                 val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss EEEE", java.util.Locale.getDefault())
                 ToolResult(true, "Current time: ${sdf.format(java.util.Date())}")
             }
+            // v2.5.6: speak tool — for rules to use TTS (Text-to-Speech)
+            "speak" -> {
+                val text = call.args["text"] as? String ?: call.args["message"] as? String
+                    ?: return ToolResult(false, "missing text to speak")
+                try {
+                    val tts = android.speech.tts.TextToSpeech(context) { status ->
+                        if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                            val ttsInstance = android.speech.tts.TextToSpeech(context, null)
+                            ttsInstance.language = java.util.Locale("en", "IN")
+                            ttsInstance.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "rule_speak_${System.currentTimeMillis()}")
+                        }
+                    }
+                    // Give TTS a moment to initialize + speak
+                    delay(500)
+                    ToolResult(true, "Spoken: $text")
+                } catch (e: Exception) {
+                    ToolResult(false, "TTS error: ${e.message}")
+                }
+            }
             // === DEVICE CONTROL TOOLS ===
             "getClipboard" -> {
                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager

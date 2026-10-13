@@ -74,17 +74,25 @@ class NotificationListener : NotificationListenerService() {
                                     action.startsWith("tool:replyToNotification(")
 
                 if (isDirectReply) {
-                    // Parse: replyToNotification("com.whatsapp", "reply text")
-                    // OR: replyToNotification(package="com.whatsapp", message="reply text")
+                    // v2.5.6: WhatsApp posts notifications in 2 stages:
+                    //   1. First: basic notification (no reply action yet)
+                    //   2. Then: updates with reply action (RemoteInput)
+                    // If we reply immediately on stage 1, no reply action exists → fails.
+                    // FIX: Delay 500ms so WhatsApp finishes posting the reply action.
                     val replyText = parseReplyText(action, packageName)
-                    Log.i(TAG, "Direct reply rule — replying IMMEDIATELY: $replyText")
-                    val replied = replyToNotification(packageName, replyText)
-                    db.logAction("Direct reply ${if (replied) "✓" else "✗"}: ${rule.name} → $replyText")
-                    if (!replied) {
-                        // Fallback: queue via WorkManager (smart rule path)
-                        Log.w(TAG, "Direct reply failed — falling back to WorkManager")
-                        triggerRule(rule, title, bigText)
-                    }
+                    Log.i(TAG, "Direct reply rule — waiting 500ms then replying: $replyText")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        try {
+                            val replied = replyToNotification(packageName, replyText)
+                            db.logAction("Direct reply ${if (replied) "✓" else "✗"}: ${rule.name} → $replyText")
+                            if (!replied) {
+                                Log.w(TAG, "Direct reply failed — falling back to WorkManager")
+                                triggerRule(rule, title, bigText)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Direct reply exception", e)
+                        }
+                    }, 500L)  // 500ms delay — lets WhatsApp finish posting reply action
                 } else {
                     // Smart rule — go through WorkManager (LLM call needed)
                     triggerRule(rule, title, bigText)
