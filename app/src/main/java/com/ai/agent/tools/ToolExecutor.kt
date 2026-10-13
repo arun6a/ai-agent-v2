@@ -8,6 +8,7 @@ import com.ai.agent.browser.BrowserController
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -884,34 +885,37 @@ class ToolExecutor(private val context: Context) {
                         val finalResult = if (fetchTop > 0 && urlsToFetch.isNotEmpty()) {
                             val fetchCount = minOf(fetchTop, urlsToFetch.size)
                             val fullTexts = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                // Fetch concurrently for speed
-                                urlsToFetch.take(fetchCount).map { url ->
-                                    kotlinx.coroutines.async {
-                                        try {
-                                            val client = okhttp3.OkHttpClient.Builder()
-                                                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                                                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-                                                .build()
-                                            val req = okhttp3.Request.Builder()
-                                                .url(url)
-                                                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
-                                                .build()
-                                            val resp = client.newCall(req).execute()
-                                            val html = resp.body?.string() ?: ""
-                                            resp.code to html
-                                        } catch (e: Exception) {
-                                            -1 to ""
-                                        }
-                                    }
-                                }.awaitAll()
+                                // Fetch concurrently for speed — use coroutineScope to allow async
+                                kotlinx.coroutines.coroutineScope {
+                                    urlsToFetch.take(fetchCount).map { url ->
+                                        async(kotlinx.coroutines.Dispatchers.IO) {
+                                            try {
+                                                val client = okhttp3.OkHttpClient.Builder()
+                                                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                                                    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                                                    .build()
+                                                val req = okhttp3.Request.Builder()
+                                                    .url(url)
+                                                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                                                    .build()
+                                                val resp = client.newCall(req).execute()
+                                                val html = resp.body?.string() ?: ""
+                                                resp.code to html
+                                            } catch (e: Exception) {
+                                                -1 to ""
+                                            }
+                                        }.let { deferred -> deferred }
+                                    }.awaitAll()
+                                }
                             }
                             val sb = StringBuilder()
                             sb.append("=== SEARCH RESULTS ===\n")
                             sb.append(results.toString())
                             sb.append("\n=== FULL CONTENT (top $fetchCount) ===\n")
-                            for (i in fullTexts.indices) {
+                            fullTexts.forEachIndexed { i, pair ->
                                 val url = urlsToFetch[i]
-                                val (code, html) = fullTexts[i]
+                                val code = pair.first
+                                val html = pair.second
                                 sb.append("\n--- #${i+1}: $url (HTTP $code) ---\n")
                                 if (html.isEmpty()) {
                                     sb.append("(fetch failed)\n")

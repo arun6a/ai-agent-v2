@@ -100,7 +100,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.ApiUsageTracker
-import com.ai.agent.llm.PluginManager
 import com.ai.agent.skills.SkillManager
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
@@ -1384,7 +1383,7 @@ private fun AppCard(profile: com.ai.agent.llm.AppProfileManager.AppProfile, onTo
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = profile.category.lowercase() + if (profile.shortcutTool != null) " · has shortcut" else "",
+                    text = profile.category.name.lowercase() + if (profile.shortcutTool != null) " · has shortcut" else "",
                     color = custom.fg3,
                     fontFamily = MonoFontFamily,
                     fontSize = 10.sp,

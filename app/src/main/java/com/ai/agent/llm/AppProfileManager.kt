@@ -363,7 +363,7 @@ object AppProfileManager {
         AppCategory.values().forEach { cat ->
             val inCat = active.filter { it.category == cat }
             if (inCat.isEmpty()) return@forEach
-            sb.append("### ${cat.name.lowercase().replaceFirstChar { it.uppercase() }}\n")
+            sb.append("### ${cat.name.lowercase().replaceFirstChar { c -> c.uppercase() }}\n")
             for (app in inCat) {
                 sb.append("- ${app.displayName}")
                 if (app.shortcutTool != null) {
