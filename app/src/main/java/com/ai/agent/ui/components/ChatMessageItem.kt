@@ -282,43 +282,38 @@ fun ChatMessageItem(
                         }
                     }
 
-                    // v2.3.9: "Open browser" button — shown on messages that called browserOpen/browserSearch.
-                    // Tapping it resumes the hidden WebView (page state preserved).
-                    if (onShowBrowser != null) {
-                        val hasBrowserTool = message.toolCalls.any {
-                            it.name == "browserOpen" || it.name == "browserSearch" ||
-                            it.name == "browserClickText" || it.name == "browserReadStructured"
-                        }
-                        if (hasBrowserTool && !isStepMessage) {
-                            Spacer(Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(custom.accent.copy(alpha = 0.12f))
-                                    .border(1.dp, custom.accent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                    .clickable { onShowBrowser() }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "🌐",
-                                    fontSize = 13.sp,
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Open browser",
-                                    color = custom.accent,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                )
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    text = "▶",
-                                    color = custom.accent,
-                                    fontSize = 12.sp,
-                                )
-                            }
+                    // v2.3.9: "Open browser" button — shown when WebView is alive (hidden, page preserved).
+                    // v2.3.10: Show on the LAST AI message (not just messages with browser tool calls,
+                    // because browserOpen is usually in step messages which are collapsed/hidden).
+                    if (onShowBrowser != null && isLastAi) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(custom.accent.copy(alpha = 0.12f))
+                                .border(1.dp, custom.accent.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .clickable { onShowBrowser() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "🌐",
+                                fontSize = 13.sp,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Open browser",
+                                color = custom.accent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                text = "▶",
+                                color = custom.accent,
+                                fontSize = 12.sp,
+                            )
                         }
                     }
 
