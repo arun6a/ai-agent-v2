@@ -82,6 +82,9 @@ object BrowserController {
      * v2.4.0: Open a URL — sets pending URL + navigates to BrowserScreen.
      * BrowserScreen reads pendingUrl and loads it.
      * NO Activity switch → a11y stays alive on MIUI/HyperOS.
+     *
+     * v2.4.1: MUST post navigation callback to the main thread because this is called
+     * from ToolExecutor (background thread) but NavController requires the main thread.
      */
     fun openUrl(context: Context, url: String) {
         Log.i(TAG, "Opening URL (visible, BrowserScreen): $url")
@@ -91,7 +94,8 @@ object BrowserController {
         val currentUrl = browserScreenWebView?.url
         if (currentUrl != null && currentUrl.contains(finalUrl.removePrefix("https://").removePrefix("http://").take(30))) {
             Log.i(TAG, "Same URL already loaded — just navigating to BrowserScreen, no reload")
-            navigationCallback?.invoke()
+            // v2.4.1: Post to main thread (called from background IO thread)
+            handler.post { navigationCallback?.invoke() }
             return
         }
 
@@ -101,8 +105,9 @@ object BrowserController {
         // Reset page load deferred — BrowserScreen's onPageFinished will complete it.
         pageLoadDeferred = CompletableDeferred()
 
-        // Navigate to BrowserScreen (triggers nav.navigate(Routes.BROWSER))
-        navigationCallback?.invoke()
+        // v2.4.1: Navigate to BrowserScreen on the MAIN thread (NavController requires it).
+        // ToolExecutor.browserOpen calls this from Dispatchers.IO → must post to main looper.
+        handler.post { navigationCallback?.invoke() }
     }
 
     // v2.4.0: Removed ensureBackgroundWebView() — BrowserScreen handles WebView creation now.
