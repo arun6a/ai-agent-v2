@@ -31,13 +31,20 @@ class RuleTriggerReceiver : BroadcastReceiver() {
                 db.logAction("Rule fired: ${rule.name} — ${rule.action}" +
                     if (triggerContext.isNotEmpty()) " | Context: $triggerContext" else "")
 
+                Log.i(TAG, "=== ENQUEUING RULE WORKER ===")
+                Log.i(TAG, "Rule: ${rule.name}")
+                Log.i(TAG, "Action: ${rule.action}")
+                Log.i(TAG, "Trigger: ${rule.triggerType}")
+                Log.i(TAG, "Context: $triggerContext")
+
                 val workRequest = OneTimeWorkRequestBuilder<RuleWorker>()
                     .setInputData(
                         workDataOf(
                             RuleWorker.KEY_RULE_ID to rule.id,
                             RuleWorker.KEY_RULE_NAME to rule.name,
                             RuleWorker.KEY_RULE_ACTION to rule.action,
-                            RuleWorker.KEY_RULE_TRIGGER to rule.triggerType
+                            RuleWorker.KEY_RULE_TRIGGER to rule.triggerType,
+                            RuleWorker.KEY_RULE_CONTEXT to triggerContext
                         )
                     )
                     .build()
@@ -47,7 +54,7 @@ class RuleTriggerReceiver : BroadcastReceiver() {
                     androidx.work.ExistingWorkPolicy.REPLACE,
                     workRequest
                 )
-                Log.i(TAG, "Enqueued RuleWorker for ${rule.name} (trigger=${rule.triggerType})")
+                Log.i(TAG, "RuleWorker enqueued for ${rule.name}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to trigger rule ${rule.name}", e)
             }

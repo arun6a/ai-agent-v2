@@ -1,26 +1,25 @@
 package com.ai.agent.rules
 
-import android.app.Notification
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.os.Build
 import android.util.Log
-import androidx.work.ForegroundInfo
 import androidx.work.Worker
 import androidx.work.WorkerParameters
-import com.ai.agent.service.AgentService
+import com.ai.agent.llm.LLMClient
+import com.ai.agent.tools.ToolExecutor
+import com.ai.agent.storage.AgentDatabase
 
 /**
- * WorkManager Worker for executing rules reliably in the background.
+ * v2.5.4: RuleWorker — executes rules DIRECTLY in the worker thread.
  *
- * v2.5.3: This is the ONLY reliable way to execute rules on Android 14+.
- * - BroadcastReceiver.startService() → BLOCKED
- * - BroadcastReceiver.startForegroundService() → BLOCKED (dataSync type)
- * - WorkManager → ALLOWED (system-managed)
+ * Why not start AgentService from the worker?
+ * - Android 14 blocks startForegroundService() from background for dataSync type
+ * - Even WorkManager.setForegroundAsync() can't bypass the dataSync restriction
+ * - The ONLY reliable approach: execute the rule HERE in the worker
  *
- * WorkManager can promote itself to foreground via setForegroundAsync() which
- * properly handles the Android 14 foreground service restrictions.
+ * The worker runs on a background thread → safe for network calls + tool execution.
+ * No foreground service needed for direct rules (setBrightness, sendSMS, etc.).
+ * For smart rules (LLM needed), we call the LLM directly here.
  */
 class RuleWorker(
     context: Context,
@@ -33,15 +32,20 @@ class RuleWorker(
         const val KEY_RULE_NAME = "rule_name"
         const val KEY_RULE_ACTION = "rule_action"
         const val KEY_RULE_TRIGGER = "rule_trigger"
-        const val NOTIFICATION_ID = 7777
+        const val KEY_RULE_CONTEXT = "rule_context"
     }
 
     override fun doWork(): Result {
         val ruleName = inputData.getString(KEY_RULE_NAME) ?: "Unknown rule"
         val ruleAction = inputData.getString(KEY_RULE_ACTION) ?: ""
         val ruleTrigger = inputData.getString(KEY_RULE_TRIGGER) ?: "time"
+        val ruleContext = inputData.getString(KEY_RULE_CONTEXT) ?: ""
 
-        Log.i(TAG, "Worker executing rule: $ruleName (action: $ruleAction)")
+        Log.i(TAG, "=== RULE WORKER START ===")
+        Log.i(TAG, "Rule: $ruleName")
+        Log.i(TAG, "Action: $ruleAction")
+        Log.i(TAG, "Trigger: $ruleTrigger")
+        Log.i(TAG, "Context: $ruleContext")
 
         if (ruleAction.isEmpty()) {
             Log.w(TAG, "Empty rule action — skipping")
@@ -49,49 +53,44 @@ class RuleWorker(
         }
 
         return try {
-            // v2.5.3: Try to promote to foreground (allowed for expedited work on Android 14)
-            // This lets us start AgentService (which is a foreground dataSync service)
-            try {
-                val notification = createRuleNotification(ruleName)
-                val foregroundInfo = ForegroundInfo(NOTIFICATION_ID, notification)
-                setForegroundAsync(foregroundInfo)
-                Log.i(TAG, "Promoted to foreground — can start AgentService")
-            } catch (e: Exception) {
-                Log.w(TAG, "Couldn't promote to foreground (may be in background): ${e.message}")
-                // Continue anyway — AgentService might already be running as foreground
+            // Log to database
+            val db = AgentDatabase(applicationContext)
+            db.logAction("RuleWorker executing: $ruleName — action: $ruleAction")
+
+            // Check if this is a DIRECT rule (tool call syntax) or SMART rule (natural language)
+            val isDirectRule = ruleAction.matches(Regex("^[a-zA-Z_][a-zA-Z0-9_]*\\(.*\\)$")) ||
+                               ruleAction.startsWith("direct:") ||
+                               ruleAction.startsWith("tool:")
+
+            val cleanAction = when {
+                ruleAction.startsWith("direct:") -> ruleAction.removePrefix("direct:").trim()
+                ruleAction.startsWith("tool:") -> ruleAction.removePrefix("tool:").trim()
+                else -> ruleAction
             }
 
-            // Start AgentService to execute the rule
-            val intent = Intent(applicationContext, AgentService::class.java).apply {
-                action = AgentService.ACTION_PROCESS_RULE
-                putExtra(AgentService.EXTRA_RULE_NAME, ruleName)
-                putExtra(AgentService.EXTRA_RULE_ACTION, ruleAction)
-                putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, ruleTrigger)
-            }
-            // v2.5.3: Try startForegroundService first (works if promoted to foreground above)
-            // then fall back to startService (works if AgentService already running as foreground)
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    applicationContext.startForegroundService(intent)
-                } else {
-                    applicationContext.startService(intent)
+            if (isDirectRule) {
+                // DIRECT RULE: execute tools directly (no AI needed, works offline)
+                Log.i(TAG, "Direct rule — executing tools: $cleanAction")
+                kotlinx.coroutines.runBlocking { executeDirectRule(cleanAction) }
+            } else {
+                // SMART RULE: needs AI (LLM call)
+                Log.i(TAG, "Smart rule — calling LLM")
+
+                // Check if online
+                if (!NetworkHelper.isOnline(applicationContext)) {
+                    Log.w(TAG, "Phone is offline — cannot call LLM for smart rule")
+                    db.logAction("Smart rule '$ruleName' skipped — phone offline")
+                    return Result.success()
                 }
-                Log.i(TAG, "Rule $ruleName dispatched to AgentService")
-            } catch (e: Exception) {
-                Log.w(TAG, "startForegroundService failed, trying startService: ${e.message}")
-                try {
-                    applicationContext.startService(intent)
-                    Log.i(TAG, "Rule $ruleName dispatched to AgentService via startService")
-                } catch (e2: Exception) {
-                    Log.e(TAG, "Both startForegroundService + startService failed for $ruleName", e2)
-                    // Last resort: execute the rule directly in the worker (no service)
-                    executeRuleDirectly(ruleName, ruleAction, ruleTrigger)
-                }
+
+                // Execute smart rule with LLM
+                kotlinx.coroutines.runBlocking { executeSmartRule(ruleName, cleanAction, ruleTrigger, ruleContext) }
             }
 
+            Log.i(TAG, "=== RULE WORKER DONE ===")
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to execute rule $ruleName", e)
+            Log.e(TAG, "Rule execution failed: $ruleName", e)
             if (runAttemptCount < 2) {
                 Result.retry()
             } else {
@@ -101,48 +100,98 @@ class RuleWorker(
     }
 
     /**
-     * v2.5.3: Create a notification for the foreground service promotion.
+     * Execute a DIRECT rule — parse tool calls + execute them via ToolExecutor.
+     * No AI call needed. Works offline.
      */
-    private fun createRuleNotification(ruleName: String): Notification {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = android.app.NotificationChannel(
-                "rule_worker",
-                "Rule Execution",
-                android.app.NotificationManager.IMPORTANCE_LOW
-            )
-            val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            nm.createNotificationChannel(channel)
+    private suspend fun executeDirectRule(actionStr: String) {
+        val tools = actionStr.split(";").map { it.trim() }.filter { it.isNotEmpty() }
+        val toolExecutor = ToolExecutor(applicationContext)
+
+        for (toolCall in tools) {
+            try {
+                val match = Regex("^(\\w+)\\((.*)\\)$").find(toolCall)
+                if (match == null) {
+                    Log.w(TAG, "Couldn't parse: $toolCall")
+                    continue
+                }
+                val toolName = match.groupValues[1]
+                val argsStr = match.groupValues[2]
+                val args = mutableMapOf<String, Any>()
+
+                if (argsStr.isNotEmpty()) {
+                    val parts = argsStr.split(",").map { it.trim() }
+                    parts.forEachIndexed { i, part ->
+                        if (part.contains("=")) {
+                            val (k, v) = part.split("=", limit = 2)
+                            val cleanV = v.trim().trim('"').trim('\'')
+                            args[k.trim()] = cleanV.toIntOrNull() ?: cleanV
+                        } else {
+                            val cleanV = part.trim().trim('"').trim('\'')
+                            args[i.toString()] = cleanV.toIntOrNull() ?: cleanV
+                        }
+                    }
+                }
+
+                Log.i(TAG, "Executing: $toolName($args)")
+                val results = toolExecutor.executeTools(
+                    listOf(com.ai.agent.llm.LLMClient.ToolCall(toolName, args))
+                )
+                val result = results.firstOrNull()
+                Log.i(TAG, "Result: ${if (result?.success == true) "✓" else "✗"} ${result?.output?.take(200) ?: "no result"}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Tool call failed: $toolCall", e)
+            }
         }
-        return androidx.core.app.NotificationCompat.Builder(applicationContext, "rule_worker")
-            .setContentTitle("Aira Rule")
-            .setContentText("Executing: $ruleName")
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
-            .build()
     }
 
     /**
-     * v2.5.3: Last resort — execute the rule directly in the worker (no AgentService).
-     * This handles both direct rules (setBrightness(50)) + smart rules (natural language).
+     * Execute a SMART rule — call LLM with the rule action + context.
      */
-    private fun executeRuleDirectly(ruleName: String, ruleAction: String, ruleTrigger: String) {
+    private suspend fun executeSmartRule(ruleName: String, ruleAction: String, triggerType: String, triggerContext: String) {
         try {
-            Log.i(TAG, "Executing rule directly in worker: $ruleName")
-            val serviceIntent = Intent(applicationContext, AgentService::class.java).apply {
-                action = AgentService.ACTION_PROCESS_RULE
-                putExtra(AgentService.EXTRA_RULE_NAME, ruleName)
-                putExtra(AgentService.EXTRA_RULE_ACTION, ruleAction)
-                putExtra(AgentService.EXTRA_RULE_TRIGGER_TYPE, ruleTrigger)
+            val context = applicationContext
+            val llmClient = LLMClient(context)
+
+            // Build system prompt for rule execution
+            val basePrompt = try {
+                context.assets.open("system_prompt.txt").bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                "You are an AI agent controlling an Android phone."
             }
-            // Try one more time with startForegroundService (we're now foreground via setForegroundAsync)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                applicationContext.startForegroundService(serviceIntent)
-            } else {
-                applicationContext.startService(serviceIntent)
+
+            val contextBlock = buildString {
+                append("\n\n## Rule Execution\n")
+                append("- Rule name: $ruleName\n")
+                append("- Trigger: $triggerType\n")
+                if (triggerContext.isNotEmpty()) {
+                    append("- Context: $triggerContext\n")
+                }
+                append("\nThe user is not actively chatting — this rule fired automatically. ")
+                append("Execute the action efficiently. Be brief.\n\n")
+                append("Rule action: $ruleAction\n")
             }
-            Log.i(TAG, "Rule dispatched to AgentService after foreground promotion")
+
+            val systemPrompt = basePrompt + contextBlock
+
+            Log.i(TAG, "Calling LLM for smart rule: $ruleName")
+            val response = llmClient.chat(ruleAction, systemPrompt)
+
+            Log.i(TAG, "LLM response: reply=${response.reply.take(100)}, tools=${response.toolCalls.size}")
+
+            // Execute any tool calls the LLM made
+            if (response.toolCalls.isNotEmpty()) {
+                val toolExecutor = ToolExecutor(context)
+                val results = toolExecutor.executeTools(response.toolCalls)
+                results.forEachIndexed { i, result ->
+                    Log.i(TAG, "Tool ${response.toolCalls[i].name}: ${if (result.success) "✓" else "✗"} ${result.output.take(100)}")
+                }
+            }
+
+            // Log completion
+            val db = AgentDatabase(context)
+            db.logAction("Smart rule '$ruleName' completed: ${response.reply.take(100)}")
         } catch (e: Exception) {
-            Log.e(TAG, "Direct execution also failed for $ruleName", e)
+            Log.e(TAG, "Smart rule execution failed", e)
         }
     }
 }
