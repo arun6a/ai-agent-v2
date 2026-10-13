@@ -45,7 +45,7 @@ class AppOpenReceiver : BroadcastReceiver() {
                 val matchValue = rule.triggerValue
                 if (matchValue == "*" || matchValue.equals(packageName, ignoreCase = true)) {
                     val appInfo = "App: $packageName\nEvent: $triggerType"
-                    RuleTriggerReceiver.triggerRuleAction(context, rule, appInfo)
+                    RuleEngine.execute(context, rule, appInfo)
                     db.logAction("App open/close rule fired: ${rule.name} ($packageName)")
                 }
             }

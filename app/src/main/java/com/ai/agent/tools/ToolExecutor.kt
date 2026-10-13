@@ -52,6 +52,8 @@ class ToolExecutor(private val context: Context) {
             "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
             "getDeviceInfo", "pingHost", "getVolume", "setVolume", "setBrightness",
             "toggleFlashlight", "toggleWifi",
+            // v3.0.0: speak tool for rules
+            "speak",
             // Memory
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
@@ -119,6 +121,8 @@ class ToolExecutor(private val context: Context) {
             "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
             "getDeviceInfo", "pingHost", "getVolume", "setVolume", "setBrightness",
             "toggleFlashlight", "toggleWifi",
+            // v3.0.0: speak tool for rules
+            "speak",
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
             "getClipboard", "setClipboard",
             "getCurrentLocation", "openMaps", "getWeather",
@@ -385,21 +389,25 @@ class ToolExecutor(private val context: Context) {
                 val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss EEEE", java.util.Locale.getDefault())
                 ToolResult(true, "Current time: ${sdf.format(java.util.Date())}")
             }
-            // v2.5.6: speak tool — for rules to use TTS (Text-to-Speech)
+            // v3.0.0: speak tool — for rules to use TTS (Text-to-Speech)
             "speak" -> {
                 val text = call.args["text"] as? String ?: call.args["message"] as? String
                     ?: return ToolResult(false, "missing text to speak")
                 try {
-                    val tts = android.speech.tts.TextToSpeech(context) { status ->
-                        if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                            val ttsInstance = android.speech.tts.TextToSpeech(context, null)
-                            ttsInstance.language = java.util.Locale("en", "IN")
-                            ttsInstance.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "rule_speak_${System.currentTimeMillis()}")
-                        }
+                    val ttsReady = kotlinx.coroutines.CompletableDeferred<Boolean>()
+                    val ttsInstance = android.speech.tts.TextToSpeech(context) { status ->
+                        ttsReady.complete(status == android.speech.tts.TextToSpeech.SUCCESS)
                     }
-                    // Give TTS a moment to initialize + speak
-                    delay(500)
-                    ToolResult(true, "Spoken: $text")
+                    // Wait for TTS to initialize (max 2 seconds)
+                    val ready = kotlinx.coroutines.withTimeoutOrNull(2000) { ttsReady.await() }
+                    if (ready == true) {
+                        ttsInstance.language = java.util.Locale("en", "IN")
+                        ttsInstance.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "rule_speak_${System.currentTimeMillis()}")
+                        delay(500)  // Give TTS a moment to start speaking
+                        ToolResult(true, "Spoken: $text")
+                    } else {
+                        ToolResult(false, "TTS failed to initialize")
+                    }
                 } catch (e: Exception) {
                     ToolResult(false, "TTS error: ${e.message}")
                 }

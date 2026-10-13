@@ -30,7 +30,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val db = AgentDatabase(context)
             val rules = db.getRules(enabledOnly = true).filter { it.triggerType == "alarm_dismissed" }
             for (rule in rules) {
-                RuleTriggerReceiver.triggerRuleAction(context, rule, "Alarm dismissed")
+                RuleEngine.execute(context, rule, "Alarm dismissed")
                 db.logAction("Alarm dismissed rule fired: ${rule.name}")
             }
         } catch (e: Exception) {

@@ -62,7 +62,7 @@ class ConnectivityReceiver : BroadcastReceiver() {
                     enabled = true,
                     days = null,
                 )
-                RuleTriggerReceiver.triggerRuleAction(
+                RuleEngine.execute(
                     context, fakeRule,
                     "from_offline_queue: ${pendingRule.notifTitle} — ${pendingRule.notifText}"
                 )

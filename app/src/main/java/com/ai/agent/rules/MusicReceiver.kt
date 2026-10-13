@@ -42,7 +42,7 @@ class MusicReceiver : BroadcastReceiver() {
             val db = AgentDatabase(context)
             val rules = db.getRules(enabledOnly = true).filter { it.triggerType == triggerType }
             for (rule in rules) {
-                RuleTriggerReceiver.triggerRuleAction(context, rule)
+                RuleEngine.execute(context, rule)
                 db.logAction("Music rule fired: ${rule.name} ($triggerType)")
             }
         } catch (e: Exception) {

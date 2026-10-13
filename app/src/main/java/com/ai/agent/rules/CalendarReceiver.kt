@@ -75,7 +75,7 @@ class CalendarReceiver : BroadcastReceiver() {
             for (rule in rules) {
                 // Pass event details as the rule context
                 val eventInfo = "Event: $eventTitle\nLocation: $location\nStarts in 5 minutes"
-                RuleTriggerReceiver.triggerRuleAction(context, rule, eventInfo)
+                RuleEngine.execute(context, rule, eventInfo)
                 db.logAction("Calendar rule fired: ${rule.name} (event: $eventTitle)")
             }
         } catch (e: Exception) {

@@ -55,7 +55,7 @@ class BluetoothReceiver : BroadcastReceiver() {
             for (rule in rules) {
                 val matchValue = rule.triggerValue
                 if (matchValue == "*" || matchValue.equals(deviceName, ignoreCase = true)) {
-                    RuleTriggerReceiver.triggerRuleAction(context, rule)
+                    RuleEngine.execute(context, rule)
                     db.logAction("Bluetooth rule fired: ${rule.name} ($deviceName)")
                 }
             }

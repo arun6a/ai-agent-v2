@@ -32,7 +32,7 @@ class DayChangeReceiver : BroadcastReceiver() {
             val db = AgentDatabase(context)
             val rules = db.getRules(enabledOnly = true).filter { it.triggerType == "day_changed" }
             for (rule in rules) {
-                RuleTriggerReceiver.triggerRuleAction(context, rule)
+                RuleEngine.execute(context, rule)
                 db.logAction("Day change rule fired: ${rule.name}")
             }
         } catch (e: Exception) {

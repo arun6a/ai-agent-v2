@@ -68,11 +68,11 @@ class LocationReceiver : BroadcastReceiver() {
 
                     if (rule.triggerType == "location_entered" && isInside) {
                         val locInfo = "Entered location (lat=$lat, lng=$lng, distance=${"%.0f".format(distance)}m)"
-                        RuleTriggerReceiver.triggerRuleAction(context, rule, locInfo)
+                        RuleEngine.execute(context, rule, locInfo)
                         db.logAction("Location entered: ${rule.name}")
                     } else if (rule.triggerType == "location_exited" && !isInside) {
                         val locInfo = "Exited location (lat=$lat, lng=$lng, distance=${"%.0f".format(distance)}m)"
-                        RuleTriggerReceiver.triggerRuleAction(context, rule, locInfo)
+                        RuleEngine.execute(context, rule, locInfo)
                         db.logAction("Location exited: ${rule.name}")
                     }
                 }

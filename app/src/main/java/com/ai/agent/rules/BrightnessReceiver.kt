@@ -36,13 +36,13 @@ class BrightnessReceiver : BroadcastReceiver() {
             if (percent > 80) {
                 val rules = db.getRules(enabledOnly = true).filter { it.triggerType == "brightness_high" }
                 for (rule in rules) {
-                    RuleTriggerReceiver.triggerRuleAction(context, rule, "Brightness: $percent%")
+                    RuleEngine.execute(context, rule, "Brightness: $percent%")
                     db.logAction("Brightness high rule fired: ${rule.name}")
                 }
             } else if (percent < 20) {
                 val rules = db.getRules(enabledOnly = true).filter { it.triggerType == "brightness_low" }
                 for (rule in rules) {
-                    RuleTriggerReceiver.triggerRuleAction(context, rule, "Brightness: $percent%")
+                    RuleEngine.execute(context, rule, "Brightness: $percent%")
                     db.logAction("Brightness low rule fired: ${rule.name}")
                 }
             }

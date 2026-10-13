@@ -27,7 +27,7 @@ class StorageReceiver : BroadcastReceiver() {
             val db = AgentDatabase(context)
             val rules = db.getRules(enabledOnly = true).filter { it.triggerType == "storage_low" }
             for (rule in rules) {
-                RuleTriggerReceiver.triggerRuleAction(context, rule, "Storage is low")
+                RuleEngine.execute(context, rule, "Storage is low")
                 db.logAction("Storage low rule fired: ${rule.name}")
             }
         } catch (e: Exception) {

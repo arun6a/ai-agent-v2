@@ -51,7 +51,7 @@ class ScreenReceiver : BroadcastReceiver() {
 
     private fun fireRule(context: Context, rule: AgentDatabase.Rule, status: String) {
         Log.i(TAG, "Firing rule: " + rule.name + " — " + status)
-        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(context, rule, status)
+        RuleEngine.execute(context, rule, status)
     }
 }
 

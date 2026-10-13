@@ -81,7 +81,7 @@ class BatteryRuleReceiver : BroadcastReceiver() {
     private fun fireRule(context: Context, rule: AgentDatabase.Rule, triggerType: String, status: String) {
         Log.i(TAG, "Firing rule: ${rule.name} (trigger=$triggerType, status=$status)")
         // v2.5.3: WorkManager is the ONLY reliable way to start services from background on Android 14.
-        com.ai.agent.rules.RuleTriggerReceiver.triggerRuleAction(
+        RuleEngine.execute(
             context, rule, "$triggerType: $status"
         )
     }

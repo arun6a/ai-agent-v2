@@ -31,7 +31,7 @@ class UsbReceiver : BroadcastReceiver() {
             val db = AgentDatabase(context)
             val rules = db.getRules(enabledOnly = true).filter { it.triggerType == triggerType }
             for (rule in rules) {
-                RuleTriggerReceiver.triggerRuleAction(context, rule)
+                RuleEngine.execute(context, rule)
                 db.logAction("USB rule fired: ${rule.name}")
             }
         } catch (e: Exception) {

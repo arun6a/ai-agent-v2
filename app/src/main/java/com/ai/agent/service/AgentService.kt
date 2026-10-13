@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -70,7 +71,8 @@ class AgentService : Service() {
     private var llmClient: LLMClient? = null
     private var toolExecutor: ToolExecutor? = null
     private var tts: TextToSpeech? = null
-    private var ruleEngine: com.ai.agent.rules.RuleEngine? = null
+    // v3.0.0: RuleEngine is now an object (no instance needed) — RuleTriggerManager handles triggers
+    // Old RuleEngine(this) class is replaced by RuleEngine.execute(context, rule)
 
     // Programmatic receivers (can't be in manifest for these actions)
     private var incomingCallReceiver: com.ai.agent.rules.IncomingCallReceiver? = null
@@ -83,8 +85,11 @@ class AgentService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.i(TAG, "AgentService created")
+        Log.i(TAG, "AgentService created (v3.0.0)")
         createNotificationChannel()
+
+        // v3.0.0: Request battery optimization exemption (critical for MIUI)
+        requestBatteryOptimizationExemption()
 
         // Initialize TTS for voice commands
         tts = TextToSpeech(this) { status ->
@@ -96,17 +101,42 @@ class AgentService : Service() {
         llmClient = LLMClient(this)
         toolExecutor = ToolExecutor(this)
 
-        // Start rule engine (legacy handler-based for foreground time rules — kept for back-compat)
-        ruleEngine = com.ai.agent.rules.RuleEngine(this)
-        ruleEngine?.onRuleTriggered = { rule ->
-            Log.i(TAG, "Rule triggered: ${rule.name}")
-            speak("Rule triggered: ${rule.name}")
-            processVoiceCommand(rule.action)  // execute the rule's action
-        }
-        ruleEngine?.start()
+        // v3.0.0: Register ALL triggers via RuleTriggerManager (clean — no wrapping)
+        com.ai.agent.rules.RuleTriggerManager.registerAll(this)
 
-        // Register programmatic receivers (cannot be in AndroidManifest.xml for these actions)
-        registerProgrammaticReceivers()
+        // v3.0.0: Schedule all time rules (in case app was killed + restarted)
+        try {
+            com.ai.agent.rules.RuleScheduler(this).scheduleAllTimeRules()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule time rules", e)
+        }
+    }
+
+    /**
+     * v3.0.0: Request battery optimization exemption.
+     * On MIUI/HyperOS, if the app is NOT exempt, the system kills AgentService
+     * after a few minutes → ALL runtime receivers die → rules don't fire.
+     *
+     * This opens the system dialog asking the user to allow.
+     */
+    private fun requestBatteryOptimizationExemption() {
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                Log.w(TAG, "⚠️ Battery optimization is ON — requesting exemption")
+                val intent = Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                ).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(intent)
+            } else {
+                Log.i(TAG, "✅ Battery optimization already exempt")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to request battery optimization exemption", e)
+        }
     }
 
     /**
@@ -574,7 +604,7 @@ class AgentService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        ruleEngine?.stop()
+        // v3.0.0: RuleEngine no longer needs stop() (it's an object, not a class)
         overlayManager?.destroy()
         overlayManager = null
         tts?.stop()
@@ -593,14 +623,8 @@ class AgentService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to unregister screen receiver", e)
         }
-        // v2.5.5: Unregister runtime receivers
-        for (rcv in listOf(batteryReceiver, headsetReceiver, wifiReceiver, connectivityReceiver)) {
-            try { rcv?.let { unregisterReceiver(it) } } catch (_: Exception) {}
-        }
-        batteryReceiver = null
-        headsetReceiver = null
-        wifiReceiver = null
-        connectivityReceiver = null
+        // v3.0.0: Unregister all triggers via RuleTriggerManager
+        com.ai.agent.rules.RuleTriggerManager.unregisterAll(this)
 
         Log.i(TAG, "AgentService destroyed")
     }
