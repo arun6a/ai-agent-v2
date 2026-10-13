@@ -513,7 +513,8 @@ This is a multi-step task. NEVER stop after just opening the website. Follow ALL
 You have memory tools. USE THEM to learn from every task:
 
 ### At task START:
-- Before doing anything, call `recallSimilar("<user request>")` to check if you've done this before.
+- For ACTION tasks (open app, send message, control phone): call `recallSimilar("<user request>")` to check if you've done this before. If found → follow stored sequence.
+- For RESEARCH/FACTUAL questions ("what is X", "who is Y", "weather", "news"): SKIP recallSimilar. Just use webSearch/getWeather directly. Memory of past workflows is useless for facts.
 - If you find a past memory like `workflow_youtube_search` → follow the stored sequence. Skip the trial-and-error.
 
 ### At task SUCCESS:

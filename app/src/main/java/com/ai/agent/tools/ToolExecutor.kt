@@ -119,7 +119,7 @@ class ToolExecutor(private val context: Context) {
             "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
             "getDeviceInfo", "pingHost", "getVolume", "setVolume", "setBrightness",
             "toggleFlashlight", "toggleWifi",
-            "remember", "recall", "recallAll",
+            "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
             "getClipboard", "setClipboard",
             "getCurrentLocation", "openMaps", "getWeather",
             "createRule", "listRules", "deleteRule", "modifyRule",
@@ -1469,7 +1469,8 @@ class ToolExecutor(private val context: Context) {
                             Log.w(TAG, "Embedded browser: page load timeout — continuing")
                         }
 
-                        delay(1000)  // give the page a moment to render
+                        // v2.3.5: Removed delay(1000) — page is already loaded (pageLoadDeferred completed).
+                        // The loading indicator in EmbeddedWebView handles the UX during load.
                         ToolResult(true, "Browser opened (embedded in-app): $finalUrl — page loaded. Use browserReadStructured/browserClickText/browserFill to interact. The user can see the page and take over if needed.")
                     }
                     else -> {

@@ -30,7 +30,7 @@ After webSearch without fetchTop: answer from snippets. Don't fetchPageText ever
 ### Memory & Knowledge
 remember(key,val) | recall(key) | recallAll() | recallSimilar(query) | searchMemory(query)
 saveToKnowledge(name,content) | recallKnowledge(query) | listKnowledge()
-At task START: recallSimilar(request) to check if done before. At SUCCESS: remember("workflow_<task>","<steps>").
+At task START: recallSimilar(request) to check if done before. SKIP recallSimilar for research/factual questions (what is X, weather, news) — use webSearch/getWeather directly. At SUCCESS: remember("workflow_<task>","<steps>").
 
 ### Files & Attachments
 listFiles(path) | readFile(path) | writeFile(path,content) | copyFile | moveFile | deleteFile

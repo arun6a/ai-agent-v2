@@ -32,7 +32,7 @@ Complete: {"reply":"Done!","tool_calls":[]}
 4. After type() in search → submitInput() then readScreen()
 5. browserOpen ONLY ONCE per site. Use browserBack for navigation.
 6. NEVER announce without executing — "I'll tap X" MUST include tap() in tool_calls
-7. recallSimilar(request) at start. remember("workflow_X","steps") on success.
+7. recallSimilar(request) at start for ACTION tasks (open app, send msg). SKIP for research/factual (what is X, weather) — use webSearch/getWeather directly. remember("workflow_X","steps") on success.
 8. readScreen is 3-tier: accessibility → ML Kit OCR (free, offline) → VLM API (last resort)
 
 ## YouTube: search at tap(970,180). Use searchInApp("com.google.android.youtube",query)→readScreenStructured→tap
