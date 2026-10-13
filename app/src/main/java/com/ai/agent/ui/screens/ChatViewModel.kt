@@ -101,6 +101,8 @@ data class ChatUiState(
     val webViewVisible: Boolean = false,
     val webViewUrl: String = "",
     val webViewUserMode: Boolean = false,
+    /** v2.3.9: WebView alive but hidden — user can return to it without losing page state. */
+    val webViewAlive: Boolean = false,
 )
 
 class ChatViewModel(
@@ -454,21 +456,48 @@ class ChatViewModel(
     }
 
     // ---- v2.3.0: Embedded WebView (in-app browser without Activity switch) ----
+    // v2.3.9: Three states now:
+    //   - showEmbeddedWebView(url): creates new browser session (or navigates if already alive)
+    //   - hideEmbeddedWebView(): MINIMIZE — keeps WebView alive, returns to chat. User can come back.
+    //   - closeEmbeddedWebView(): DESTROY — actually kills WebView, frees RAM. Page state lost.
 
     /** Show the embedded WebView with a URL (called by ToolExecutor.browserOpen). */
     fun showEmbeddedWebView(url: String) {
         _state.update {
             it.copy(
                 webViewVisible = true,
+                webViewAlive = true,
                 webViewUrl = url,
                 webViewUserMode = false,
             )
         }
     }
 
-    /** Hide the embedded WebView (return to chat). */
+    /** v2.3.9: Bring back the hidden WebView (page state preserved). */
+    fun resumeEmbeddedWebView() {
+        if (!_state.value.webViewAlive) {
+            Log.w(TAG, "resumeEmbeddedWebView: no alive WebView to resume")
+            return
+        }
+        _state.update { it.copy(webViewVisible = true) }
+    }
+
+    /** v2.3.9: MINIMIZE the WebView — keeps it alive, returns to chat. User can return via browser button. */
     fun hideEmbeddedWebView() {
         _state.update { it.copy(webViewVisible = false) }
+        // NOTE: Do NOT call clearEmbeddedWebView() — that would destroy the page state.
+        // The WebView stays in memory, page is preserved.
+    }
+
+    /** v2.3.9: DESTROY the WebView completely — frees RAM, page state lost. */
+    fun closeEmbeddedWebView() {
+        _state.update {
+            it.copy(
+                webViewVisible = false,
+                webViewAlive = false,
+                webViewUserMode = false,
+            )
+        }
         com.ai.agent.browser.BrowserController.clearEmbeddedWebView()
     }
 

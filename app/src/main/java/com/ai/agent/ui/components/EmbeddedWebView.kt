@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ai.agent.browser.BrowserController
 import com.ai.agent.ui.theme.MonoFontFamily
@@ -67,11 +69,14 @@ fun EmbeddedWebView(
     url: String,
     visible: Boolean,
     onHide: () -> Unit,
+    onClose: () -> Unit,
     onWebViewReady: (WebView) -> Unit,
     onUserTakeover: () -> Unit,
 ) {
-    // v2.3.6: Only render when visible — no AnimatedVisibility (was causing overlay to disappear)
-    if (!visible) return
+    // v2.3.9: Don't early-return when !visible — that would remove from composition tree
+    // and destroy the WebView. Instead, control visibility with Modifier (keeps WebView alive).
+    // We DO early-return if there's no URL (first render before any browserOpen call).
+    if (url.isEmpty()) return
 
     var isUserMode by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
@@ -106,9 +111,16 @@ fun EmbeddedWebView(
         }
     }
 
+    // v2.3.9: Control visibility via Modifier — keeps WebView alive when hidden (page state preserved).
+    // When not visible, render with zero size + alpha 0 so it's not on screen but stays in composition.
+    val visibilityModifier = if (visible) {
+        Modifier.fillMaxSize()
+    } else {
+        Modifier.size(0.dp).alpha(0f)
+    }
+
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = visibilityModifier
             .background(Color(0xFF1A1A1F)),
     ) {
         Column(
@@ -146,6 +158,7 @@ fun EmbeddedWebView(
                     fontSize = 13.sp,
                     modifier = Modifier.weight(1f),
                 )
+                // v2.3.9: "← Chat" = minimize (keep WebView alive, page state preserved)
                 Button(
                     onClick = onHide,
                     colors = ButtonDefaults.buttonColors(
@@ -153,6 +166,16 @@ fun EmbeddedWebView(
                     ),
                 ) {
                     Text("← Chat", color = Color.White, fontSize = 12.sp)
+                }
+                Spacer(Modifier.size(6.dp))
+                // v2.3.9: "✕" = close (destroy WebView, free RAM, page state lost)
+                Button(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF4444),
+                    ),
+                ) {
+                    Text("✕", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 

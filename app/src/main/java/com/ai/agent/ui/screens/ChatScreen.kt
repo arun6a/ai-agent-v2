@@ -365,6 +365,11 @@ fun ChatScreen(
                                     isLastAi = isLastAi,
                                     thinking = state.isThinking,
                                     modifier = Modifier.animateItem(),
+                                    // v2.3.9: Show "Open browser" button if this message has browser tool calls
+                                    // AND the WebView is alive (hidden, page preserved).
+                                    onShowBrowser = if (state.webViewAlive) {
+                                        { viewModel.resumeEmbeddedWebView() }
+                                    } else null,
                                 )
                             }
                             i++
@@ -400,10 +405,12 @@ fun ChatScreen(
 
             // v2.3.1: Embedded WebView overlay — rendered LAST so it appears ON TOP of chat.
             // No Activity switch → accessibility service stays alive!
+            // v2.3.9: Pass both onHide (minimize, keep alive) + onClose (destroy, free RAM).
             com.ai.agent.ui.components.EmbeddedWebView(
                 url = state.webViewUrl,
                 visible = state.webViewVisible,
                 onHide = { viewModel.hideEmbeddedWebView() },
+                onClose = { viewModel.closeEmbeddedWebView() },
                 onWebViewReady = { wv ->
                     com.ai.agent.browser.BrowserController.setEmbeddedWebView(wv)
                 },
