@@ -13,130 +13,101 @@ import android.webkit.WebViewClient
 import android.net.Uri
 import kotlinx.coroutines.CompletableDeferred
 import java.io.ByteArrayOutputStream
-import com.ai.agent.ui.BrowserActivity
 
 /**
- * Hybrid browser controller — supports visible in-app WebView + Chrome fallback.
+ * v2.4.0: BrowserController — manages the BrowserScreen's WebView.
  *
- * Visible WebView mode (default — v4.1.0+):
- *   - Uses BrowserActivity's visible WebView (user can see what AI does)
- *   - Full DOM access via JavaScript
- *   - Structured page reading (buttons, links, forms, inputs)
- *   - Smart form filling
- *   - Screenshots for VLM
- *   - Cookie persistence (user logs in once → AI has the session)
- *   - User can intervene when AI is stuck (mode toggle)
+ * Architecture:
+ *   - BrowserScreen is a Compose destination (Routes.BROWSER) in MainActivity.
+ *   - NO Activity switch → MIUI never unbinds accessibility → a11y stays alive.
+ *   - BrowserScreen registers its WebView via setBrowserScreenWebView() when it composes.
+ *   - AI tools (browserClickText, browserReadStructured, etc.) access the WebView via getWebView().
+ *   - When AI calls browserOpen(url), we set the pending URL + trigger navigation callback.
+ *   - AppNavigation.kt sets the navigationCallback to nav.navigate(Routes.BROWSER).
  *
  * Chrome fallback (for sites that need Chrome):
  *   - Uses openInChrome() to launch Chrome via Intent
  *   - Then uses accessibility tools (readScreen, clickByText, type) to control it
  *   - Requires accessibility service enabled
- *
- * Browser mode is controlled by AIProvider settings:
- *   - "in_app" → always use visible WebView
- *   - "chrome" → always use Chrome
- *   - "auto" → try in-app, fall back to Chrome for logged-in sites
  */
 object BrowserController {
 
     private const val TAG = "BrowserController"
-    private var webView: WebView? = null  // background fallback (if BrowserActivity not open)
     private var handler = Handler(Looper.getMainLooper())
     // v2.3.0: Changed to internal so ToolExecutor can set it for embedded browser
     internal var pageLoadDeferred: CompletableDeferred<Boolean>? = null
 
-    // v2.3.0: Embedded WebView — lives inside ChatScreen, no Activity switch.
-    // When AI calls browserOpen, we use this instead of BrowserActivity.
+    // v2.4.0: BrowserScreen's WebView — registered when BrowserScreen composes.
     @Volatile
-    private var embeddedWebView: WebView? = null
+    private var browserScreenWebView: WebView? = null
 
-    /** v2.3.0: Set the embedded WebView reference (called by EmbeddedWebView composable). */
-    fun setEmbeddedWebView(wv: WebView) {
-        embeddedWebView = wv
-        android.util.Log.i(TAG, "Embedded WebView registered")
+    // v2.4.0: Pending URL — when AI calls browserOpen, we store URL here.
+    // BrowserScreen reads this when it composes (or when notified of change).
+    @Volatile
+    var pendingUrl: String? = null
+        private set
+
+    // v2.4.0: Navigation callback — set by AppNavigation.kt.
+    // When AI calls browserOpen, we trigger this to navigate to BrowserScreen.
+    @Volatile
+    private var navigationCallback: (() -> Unit)? = null
+
+    /** v2.4.0: Set the navigation callback (called by AppNavigation.kt on startup). */
+    fun setNavigationCallback(callback: () -> Unit) {
+        navigationCallback = callback
+        Log.i(TAG, "Navigation callback registered")
     }
 
-    /** v2.3.0: Clear the embedded WebView reference (called when overlay hides). */
-    fun clearEmbeddedWebView() {
-        embeddedWebView?.let {
-            it.stopLoading()
-            it.removeAllViews()
-            it.destroy()
-        }
-        embeddedWebView = null
-        android.util.Log.i(TAG, "Embedded WebView cleared + destroyed (saves RAM)")
+    /** v2.4.0: BrowserScreen registers its WebView here (called when it composes). */
+    fun setBrowserScreenWebView(wv: WebView) {
+        browserScreenWebView = wv
+        Log.i(TAG, "BrowserScreen WebView registered")
+    }
+
+    /** v2.4.0: BrowserScreen clears its WebView here (called when it disposes). */
+    fun clearBrowserScreenWebView() {
+        browserScreenWebView = null
+        Log.i(TAG, "BrowserScreen WebView cleared (page state lost — screen disposed)")
     }
 
     /**
      * Get the active WebView.
-     * v2.3.0: Check embedded WebView FIRST (AI-initiated, no Activity switch → a11y alive).
-     * Fall back to BrowserActivity's WebView (user-initiated manual browser).
+     * v2.4.0: Returns the BrowserScreen's WebView if it's composed.
      */
     private fun getWebView(context: Context): WebView? {
-        // v2.3.0: Prefer embedded WebView (no Activity switch, a11y stays alive)
-        embeddedWebView?.let { return it }
-        // Fall back to BrowserActivity (manual user-initiated browser)
-        return BrowserActivity.activeWebView
+        return browserScreenWebView
     }
 
     /**
-     * Open a URL — brings BrowserActivity to foreground with the URL.
-     * v5.0.9: If the same URL is already loaded, don't reload — just bring to foreground.
-     * This prevents the AI from opening the same website multiple times.
-     * Uses SINGLE_TOP + REORDER_TO_FRONT so existing instance is reused.
+     * v2.4.0: Open a URL — sets pending URL + navigates to BrowserScreen.
+     * BrowserScreen reads pendingUrl and loads it.
+     * NO Activity switch → a11y stays alive on MIUI/HyperOS.
      */
     fun openUrl(context: Context, url: String) {
-        Log.i(TAG, "Opening URL (visible): $url")
+        Log.i(TAG, "Opening URL (visible, BrowserScreen): $url")
         val finalUrl = if (!url.startsWith("http")) "https://$url" else url
 
-        // v5.0.9: If browser is already open with the same URL, just bring to foreground
-        val currentUrl = BrowserActivity.activeWebView?.url
+        // v5.0.9: If browser is already open with the same URL, don't reload
+        val currentUrl = browserScreenWebView?.url
         if (currentUrl != null && currentUrl.contains(finalUrl.removePrefix("https://").removePrefix("http://").take(30))) {
-            Log.i(TAG, "Same URL already loaded — just bringing browser to foreground, no reload")
-            BrowserActivity.launch(context, finalUrl)
+            Log.i(TAG, "Same URL already loaded — just navigating to BrowserScreen, no reload")
+            navigationCallback?.invoke()
             return
         }
 
+        // Store the pending URL — BrowserScreen will load it when it composes.
+        pendingUrl = finalUrl
+
+        // Reset page load deferred — BrowserScreen's onPageFinished will complete it.
         pageLoadDeferred = CompletableDeferred()
-        // Launch BrowserActivity (reuses existing instance via SINGLE_TOP)
-        BrowserActivity.launch(context, finalUrl)
 
-        // v2.2.7: REMOVED runBlocking — was blocking the main thread for up to 15s → ANR!
-        // The page will load asynchronously. BrowserActivity.onPageFinished() completes
-        // pageLoadDeferred. The AI should call wait(3000) + readScreen() after browserOpen
-        // to verify the page loaded (as the system prompt now instructs).
-        // No blocking wait here — return immediately.
+        // Navigate to BrowserScreen (triggers nav.navigate(Routes.BROWSER))
+        navigationCallback?.invoke()
     }
 
-    /**
-     * Create a background WebView (fallback when BrowserActivity isn't open).
-     * This is used only when the user hasn't opened the browser screen yet.
-     */
-    private fun ensureBackgroundWebView(context: Context): WebView {
-        if (webView != null) return webView!!
-        handler.post {
-            webView = WebView(context.applicationContext).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.javaScriptCanOpenWindowsAutomatically = true
-                settings.loadWithOverviewMode = true
-                settings.useWideViewPort = true
-                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
-                webViewClient = object : WebViewClient() {
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        Log.i(TAG, "Page loaded: $url")
-                        pageLoadDeferred?.complete(true)
-                    }
-                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                        Log.i(TAG, "Page loading: $url")
-                    }
-                }
-            }
-        }
-        // v2.2.7: Removed Thread.sleep(500) — was blocking the calling thread.
-        // WebView is ready immediately after creation.
-        return webView!!
-    }
+    // v2.4.0: Removed ensureBackgroundWebView() — BrowserScreen handles WebView creation now.
+    // If BrowserScreen isn't composed, getWebView() returns null and tools gracefully report
+    // "Browser not open. Call browserOpen first."
 
     // ==================== BASIC NAVIGATION ====================
 
@@ -760,9 +731,7 @@ object BrowserController {
     }
 
     fun destroy() {
-        handler.post {
-            webView?.destroy()
-            webView = null
-        }
+        // v2.4.0: BrowserScreen owns the WebView now — its DisposableEffect handles destruction.
+        // This is a no-op kept for backwards compatibility (in case old code calls it).
     }
 }

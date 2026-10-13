@@ -1445,38 +1445,28 @@ class ToolExecutor(private val context: Context) {
                             ToolResult(false, "Chrome not available")
                         }
                     }
-                    // v2.3.0: "auto" + "in_app" + "embedded" all use the embedded WebView overlay
-                    // (no Activity switch → a11y stays alive). Chrome is only used when
-                    // browserMode == "chrome".
+                    // v2.4.0: "auto" + "in_app" + "embedded" all use BrowserScreen (Compose destination).
+                    // NO Activity switch → MIUI never unbinds accessibility → a11y stays alive.
+                    // BrowserController.openUrl() sets pendingUrl + triggers nav.navigate(Routes.BROWSER).
                     "auto", "in_app", "embedded" -> {
-                        // v2.3.0: Use embedded WebView (inside ChatScreen, no Activity switch).
-                        // This is the KEY fix: no Activity launch → no foreground change →
-                        // MIUI never unbinds accessibility → a11y stays alive.
-                        BrowserController.pageLoadDeferred = CompletableDeferred()
+                        // This navigates to BrowserScreen + sets pendingUrl. BrowserScreen loads the URL.
+                        BrowserController.openUrl(context, finalUrl)
 
-                        // Show the embedded WebView overlay (must be on main thread)
-                        // ChatViewModel.showEmbeddedWebView updates the Compose state.
-                        // We need to call it via the ViewModel reference.
-                        // But ToolExecutor doesn't have the ViewModel — use a static bridge.
-                        EmbeddedBrowserBridge.show(finalUrl)
-
-                        // Wait for page to load (non-blocking, 10s timeout)
+                        // Wait for page to load (non-blocking, 10s timeout).
+                        // BrowserScreen's onPageFinished completes pageLoadDeferred.
                         try {
                             kotlinx.coroutines.withTimeoutOrNull(10000) {
                                 BrowserController.pageLoadDeferred?.await()
                             }
                         } catch (e: Exception) {
-                            Log.w(TAG, "Embedded browser: page load timeout — continuing")
+                            Log.w(TAG, "BrowserScreen: page load timeout — continuing")
                         }
 
-                        // v2.3.5: Removed delay(1000) — page is already loaded (pageLoadDeferred completed).
-                        // The loading indicator in EmbeddedWebView handles the UX during load.
-                        ToolResult(true, "Browser opened (embedded in-app): $finalUrl — page loaded. Use browserReadStructured/browserClickText/browserFill to interact. The user can see the page and take over if needed.")
+                        ToolResult(true, "Browser opened: $finalUrl — page loaded. Use browserReadStructured/browserClickText/browserFill to interact. The user can see the page and take over if needed (tap '⏸ Pause AI' in browser top bar).")
                     }
                     else -> {
-                        // Default: embedded WebView
-                        BrowserController.pageLoadDeferred = CompletableDeferred()
-                        EmbeddedBrowserBridge.show(finalUrl)
+                        // Default: BrowserScreen
+                        BrowserController.openUrl(context, finalUrl)
                         delay(2000)
                         ToolResult(true, "Browser opened: $finalUrl — use browser tools to interact.")
                     }
@@ -1542,9 +1532,8 @@ class ToolExecutor(private val context: Context) {
                         ToolResult(false, "Chrome not available")
                     }
                 } else {
-                    // Embedded WebView — show overlay + load URL
-                    BrowserController.pageLoadDeferred = CompletableDeferred()
-                    EmbeddedBrowserBridge.show(url)
+                    // v2.4.0: BrowserScreen — navigate + load URL
+                    BrowserController.openUrl(context, url)
                     try {
                         kotlinx.coroutines.withTimeoutOrNull(10000) {
                             BrowserController.pageLoadDeferred?.await()

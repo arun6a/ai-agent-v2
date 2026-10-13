@@ -67,16 +67,24 @@ import com.ai.agent.ui.theme.MonoFontFamily
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun BrowserScreen() {
+fun BrowserScreen(
+    onBackToChat: () -> Unit = {},
+) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
-    var urlField by remember { mutableStateOf("https://www.google.com") }
-    var currentUrl by remember { mutableStateOf("https://www.google.com") }
+    // v2.4.0: Check for pending URL from BrowserController (set by AI's browserOpen).
+    val pendingUrl = remember { com.ai.agent.browser.BrowserController.pendingUrl }
+    val initialUrl = pendingUrl ?: "https://www.google.com"
+
+    var urlField by remember { mutableStateOf(initialUrl) }
+    var currentUrl by remember { mutableStateOf(initialUrl) }
     var pageTitle by remember { mutableStateOf("") }
     var progress by remember { mutableFloatStateOf(0f) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
+    // v2.4.0: User mode — when true, AI pauses browser tools (user takes over)
+    var isUserMode by remember { mutableStateOf(false) }
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
@@ -85,6 +93,47 @@ fun BrowserScreen() {
             .fillMaxSize()
             .background(custom.canvas),
     ) {
+        // v2.4.0: Top bar — "← Chat" + AI/User mode indicator + pause/resume button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (isUserMode) Color(0xFF2A1A0A) else Color(0xFF0F1A14))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (isUserMode) "👤 User Mode — AI paused" else "🌐 AI Mode — browsing",
+                color = if (isUserMode) Color(0xFFF59E0B) else Color(0xFF10B981),
+                fontSize = 11.sp,
+                fontFamily = MonoFontFamily,
+                modifier = Modifier.weight(1f),
+            )
+            // Pause/Resume AI button
+            androidx.compose.material3.TextButton(
+                onClick = { isUserMode = !isUserMode },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    text = if (isUserMode) "▶ Resume AI" else "⏸ Pause AI",
+                    color = if (isUserMode) Color(0xFF10B981) else Color(0xFFF59E0B),
+                    fontSize = 11.sp,
+                    fontFamily = MonoFontFamily,
+                )
+            }
+            // Back to Chat button
+            androidx.compose.material3.TextButton(
+                onClick = onBackToChat,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) {
+                Text(
+                    text = "← Chat",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontFamily = MonoFontFamily,
+                )
+            }
+        }
+
         // ---- URL bar ----
         Row(
             modifier = Modifier
@@ -285,6 +334,17 @@ fun BrowserScreen() {
                                 if (url != null) {
                                     urlField = url
                                 }
+                                // v2.4.0: Complete pageLoadDeferred so AI tools know page is ready
+                                try {
+                                    val field = com.ai.agent.browser.BrowserController::class.java
+                                        .getDeclaredField("pageLoadDeferred")
+                                    field.isAccessible = true
+                                    val deferred = field.get(com.ai.agent.browser.BrowserController)
+                                    if (deferred is kotlinx.coroutines.CompletableDeferred<*>) {
+                                        @Suppress("UNCHECKED_CAST")
+                                        (deferred as kotlinx.coroutines.CompletableDeferred<Boolean>).complete(true)
+                                    }
+                                } catch (_: Throwable) {}
                             }
 
                             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -303,6 +363,8 @@ fun BrowserScreen() {
                         }
                         loadUrl(currentUrl)
                         webViewRef = this
+                        // v2.4.0: Register with BrowserController so AI tools can access this WebView
+                        com.ai.agent.browser.BrowserController.setBrowserScreenWebView(this)
                     }
                 },
                 update = { webView ->
@@ -312,6 +374,13 @@ fun BrowserScreen() {
                 },
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+    }
+
+    // v2.4.0: Cleanup — when BrowserScreen disposes, clear the WebView reference
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            com.ai.agent.browser.BrowserController.clearBrowserScreenWebView()
         }
     }
 }

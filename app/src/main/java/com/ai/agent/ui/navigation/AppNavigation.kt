@@ -58,6 +58,18 @@ fun AppNavigation() {
     val custom = LocalCustomColors.current
     val nav: NavHostController = rememberNavController()
 
+    // v2.4.0: Register navigation callback so BrowserController can trigger nav.navigate(Routes.BROWSER)
+    // when AI calls browserOpen(). Must be done once after nav is created.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        com.ai.agent.browser.BrowserController.setNavigationCallback {
+            nav.navigate(Routes.BROWSER) {
+                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
     val backstack by nav.currentBackStackEntryAsState()
     val currentRoute = backstack?.destination?.route
 
@@ -193,7 +205,15 @@ fun AppNavigation() {
                     popEnterTransition = { fadeIn(tween(300)) + slideInVertically(tween(300)) { -it / 4 } },
                     popExitTransition = { fadeOut(tween(200)) },
                 ) {
-                    BrowserScreen()
+                    BrowserScreen(
+                        onBackToChat = {
+                            nav.navigate(Routes.CHAT) {
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                    )
                 }
 
                 // ---- Hub ----

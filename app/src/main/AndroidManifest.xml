@@ -71,14 +71,9 @@
             </intent-filter>
         </activity>
 
-        <!-- ===== Browser activity (visible WebView host for BrowserController) ===== -->
-        <activity
-            android:name=".ui.BrowserActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.AIAgentV2"
-            android:windowSoftInputMode="adjustResize" />
+        <!-- v2.4.0: Removed BrowserActivity — replaced by BrowserScreen (Compose destination).
+             BrowserScreen is a nav destination in MainActivity, no separate Activity needed.
+             NO Activity switch → MIUI never unbinds accessibility → a11y stays alive. -->
 
         <!-- ===== Accessibility service (carried over from v1) ===== -->
         <service
