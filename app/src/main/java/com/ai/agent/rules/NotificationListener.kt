@@ -65,8 +65,67 @@ class NotificationListener : NotificationListenerService() {
 
             if (shouldTrigger) {
                 Log.i(TAG, "Notification rule fired: ${rule.name} (from $packageName)")
-                triggerRule(rule, title, bigText)
+
+                // v2.5.5: If rule action is a DIRECT reply (replyToNotification tool call),
+                // reply IMMEDIATELY here — don't go through WorkManager (too slow, notification may be gone).
+                val action = rule.action
+                val isDirectReply = action.startsWith("replyToNotification(") ||
+                                    action.startsWith("direct:replyToNotification(") ||
+                                    action.startsWith("tool:replyToNotification(")
+
+                if (isDirectReply) {
+                    // Parse: replyToNotification("com.whatsapp", "reply text")
+                    // OR: replyToNotification(package="com.whatsapp", message="reply text")
+                    val replyText = parseReplyText(action, packageName)
+                    Log.i(TAG, "Direct reply rule — replying IMMEDIATELY: $replyText")
+                    val replied = replyToNotification(packageName, replyText)
+                    db.logAction("Direct reply ${if (replied) "✓" else "✗"}: ${rule.name} → $replyText")
+                    if (!replied) {
+                        // Fallback: queue via WorkManager (smart rule path)
+                        Log.w(TAG, "Direct reply failed — falling back to WorkManager")
+                        triggerRule(rule, title, bigText)
+                    }
+                } else {
+                    // Smart rule — go through WorkManager (LLM call needed)
+                    triggerRule(rule, title, bigText)
+                }
             }
+        }
+    }
+
+    /**
+     * v2.5.5: Parse reply text from a direct rule action.
+     * Formats supported:
+     *   replyToNotification("com.whatsapp", "I'll call you back")
+     *   replyToNotification(package="com.whatsapp", message="I'll call you back")
+     *   direct:replyToNotification(com.whatsapp, "reply text")
+     */
+    private fun parseReplyText(action: String, defaultPackage: String): String {
+        try {
+            // Strip prefix if present
+            val cleanAction = action.removePrefix("direct:").removePrefix("tool:").trim()
+            // Find the content between the outer parentheses
+            val openParen = cleanAction.indexOf('(')
+            val closeParen = cleanAction.lastIndexOf(')')
+            if (openParen == -1 || closeParen == -1 || closeParen <= openParen) return ""
+            val argsStr = cleanAction.substring(openParen + 1, closeParen)
+
+            // If "message=" is present, extract that value
+            val messageMatch = Regex("""message\s*=\s*["']([^"']*)["']""").find(argsStr)
+            if (messageMatch != null) return messageMatch.groupValues[1]
+
+            // Otherwise, extract the LAST quoted string (first arg is usually package)
+            val quotedStrings = Regex("""["']([^"']*)["']""").findAll(argsStr).toList()
+            // If 2+ quoted strings, the reply text is the 2nd one (1st is package name)
+            // If 1 quoted string, it's the reply text (package was unquoted)
+            return when {
+                quotedStrings.size >= 2 -> quotedStrings[1].groupValues[1]
+                quotedStrings.size == 1 -> quotedStrings[0].groupValues[1]
+                else -> ""  // No quoted string found
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse reply text from: $action", e)
+            return ""
         }
     }
 

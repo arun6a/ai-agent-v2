@@ -75,6 +75,11 @@ class AgentService : Service() {
     // Programmatic receivers (can't be in manifest for these actions)
     private var incomingCallReceiver: com.ai.agent.rules.IncomingCallReceiver? = null
     private var screenReceiver: android.content.BroadcastReceiver? = null
+    // v2.5.5: Runtime-registered receivers for system broadcasts blocked by Android 14
+    private var batteryReceiver: com.ai.agent.rules.BatteryRuleReceiver? = null
+    private var headsetReceiver: com.ai.agent.rules.HeadsetReceiver? = null
+    private var wifiReceiver: com.ai.agent.rules.WiFiReceiver? = null
+    private var connectivityReceiver: com.ai.agent.rules.ConnectivityReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -105,17 +110,27 @@ class AgentService : Service() {
     }
 
     /**
-     * Register receivers that must be registered at runtime (can't be in manifest):
-     * - IncomingCallReceiver (uses TelephonyManager.listen, not a broadcast)
-     * - ScreenReceiver (ACTION_SCREEN_ON/OFF/USER_PRESENT can't be in manifest)
+     * v2.5.5: Register receivers that must be registered at runtime.
+     *
+     * Android 8+ (API 26+) blocks most implicit system broadcasts from manifest-registered receivers.
+     * They MUST be registered at runtime via registerReceiver().
+     *
+     * This affects:
+     * - POWER_CONNECTED / POWER_DISCONNECTED / BATTERY_CHANGED → charging/discharging/battery_low rules
+     * - HEADSET_PLUG → headset_connected/disconnected rules
+     * - CONNECTIVITY_CHANGE / WIFI_STATE_CHANGE → wifi_connected/disconnected rules
+     * - SCREEN_ON / SCREEN_OFF / USER_PRESENT → screen rules
+     *
+     * Broadcasts that DO work in manifest (don't need runtime registration):
+     * - BOOT_COMPLETED, PACKAGE_ADDED/REMOVED, SMS_RECEIVED, USB_DEVICE_ATTACHED
      */
     private fun registerProgrammaticReceivers() {
         try {
-            // Incoming call listener (uses PhoneStateListener, not BroadcastReceiver)
+            // === Incoming call listener (uses PhoneStateListener, not BroadcastReceiver) ===
             incomingCallReceiver = com.ai.agent.rules.IncomingCallReceiver(this)
             incomingCallReceiver?.start()
 
-            // Screen on/off + user present
+            // === Screen on/off + user present ===
             screenReceiver = object : android.content.BroadcastReceiver() {
                 override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
                     if (context != null && intent != null) {
@@ -124,18 +139,75 @@ class AgentService : Service() {
                     }
                 }
             }
-            val filter = android.content.IntentFilter().apply {
+            val screenFilter = android.content.IntentFilter().apply {
                 addAction(android.content.Intent.ACTION_SCREEN_ON)
                 addAction(android.content.Intent.ACTION_SCREEN_OFF)
                 addAction(android.content.Intent.ACTION_USER_PRESENT)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(screenReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+                registerReceiver(screenReceiver, screenFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
             } else {
                 @Suppress("DEPRECATION")
-                registerReceiver(screenReceiver, filter)
+                registerReceiver(screenReceiver, screenFilter)
             }
-            Log.i(TAG, "Registered programmatic receivers (call + screen)")
+            Log.i(TAG, "Registered: Screen receiver")
+
+            // === v2.5.5: Battery / Power receivers (charging/discharging/battery_low rules) ===
+            // Android 14 blocks ACTION_POWER_CONNECTED in manifest — must register at runtime
+            batteryReceiver = com.ai.agent.rules.BatteryRuleReceiver()
+            val batteryFilter = android.content.IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_POWER_CONNECTED)
+                addAction(android.content.Intent.ACTION_POWER_DISCONNECTED)
+                addAction(android.content.Intent.ACTION_BATTERY_CHANGED)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(batteryReceiver, batteryFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(batteryReceiver, batteryFilter)
+            }
+            Log.i(TAG, "Registered: Battery/Power receiver (charging rules)")
+
+            // === v2.5.5: Headset receiver ===
+            headsetReceiver = com.ai.agent.rules.HeadsetReceiver()
+            val headsetFilter = android.content.IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_HEADSET_PLUG)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(headsetReceiver, headsetFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(headsetReceiver, headsetFilter)
+            }
+            Log.i(TAG, "Registered: Headset receiver")
+
+            // === v2.5.5: WiFi + Connectivity receiver ===
+            wifiReceiver = com.ai.agent.rules.WiFiReceiver()
+            val wifiFilter = android.content.IntentFilter().apply {
+                addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(wifiReceiver, wifiFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(wifiReceiver, wifiFilter)
+            }
+            Log.i(TAG, "Registered: WiFi receiver")
+
+            // === v2.5.5: Connectivity receiver (for offline rule queue processing) ===
+            connectivityReceiver = com.ai.agent.rules.ConnectivityReceiver()
+            val connFilter = android.content.IntentFilter().apply {
+                addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(connectivityReceiver, connFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(connectivityReceiver, connFilter)
+            }
+            Log.i(TAG, "Registered: Connectivity receiver")
+
+            Log.i(TAG, "=== ALL PROGRAMMATIC RECEIVERS REGISTERED ===")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to register programmatic receivers", e)
         }
@@ -521,6 +593,14 @@ class AgentService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to unregister screen receiver", e)
         }
+        // v2.5.5: Unregister runtime receivers
+        for (rcv in listOf(batteryReceiver, headsetReceiver, wifiReceiver, connectivityReceiver)) {
+            try { rcv?.let { unregisterReceiver(it) } } catch (_: Exception) {}
+        }
+        batteryReceiver = null
+        headsetReceiver = null
+        wifiReceiver = null
+        connectivityReceiver = null
 
         Log.i(TAG, "AgentService destroyed")
     }
