@@ -400,23 +400,25 @@ class AgentService : Service() {
                     val toolName = match.groupValues[1]
                     val argsStr = match.groupValues[2]
                     val args = mutableMapOf<String, Any>()
+
                     if (argsStr.isNotEmpty()) {
-                        // Split args by comma (simple — no escaping for now)
-                        // First arg is positional → "value" (no key)
-                        // If "key=value" present → use as named arg
                         val parts = argsStr.split(",").map { it.trim() }
                         parts.forEachIndexed { i, part ->
                             if (part.contains("=")) {
+                                // Named arg: key=value
                                 val (k, v) = part.split("=", limit = 2)
-                                args[k.trim()] = v.trim().trim('"').trim('\'')
+                                val cleanV = v.trim().trim('"').trim('\'')
+                                args[k.trim()] = cleanV.toIntOrNull() ?: cleanV
                             } else {
-                                // Positional arg — assign generic key based on order
-                                args["arg$i"] = part.trim().trim('"').trim('\'')
+                                // v2.5.1: Positional arg — use NUMERIC key ("0", "1", "2")
+                                // so ToolExecutor.normalizePositionalArgs() maps it to the correct
+                                // tool param name (e.g., "level" for setBrightness).
+                                val cleanV = part.trim().trim('"').trim('\'')
+                                args[i.toString()] = cleanV.toIntOrNull() ?: cleanV
                             }
                         }
                     }
                     android.util.Log.i(TAG, "Direct rule executing: $toolName($args)")
-                    // Call executeTools (plural, public, suspend) with a single-element list
                     val toolResults = toolExecutor.executeTools(
                         listOf(com.ai.agent.llm.LLMClient.ToolCall(toolName, args))
                     )

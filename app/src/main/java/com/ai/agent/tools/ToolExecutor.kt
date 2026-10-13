@@ -400,14 +400,31 @@ class ToolExecutor(private val context: Context) {
                 ToolResult(true, "Volume: $vol/$max")
             }
             "setBrightness" -> {
-                val level = (call.args["level"] as? Number)?.toInt() ?: return ToolResult(false, "missing level (0-255)")
+                // v2.5.1: Accept level as Number OR String (direct rules pass strings).
+                // Accept 0-100 (percent) OR 0-255 (raw). Auto-detect: if value > 100, treat as raw.
+                val rawLevel = call.args["level"] ?: call.args["value"] ?: call.args["brightness"]
+                val level: Int = when (rawLevel) {
+                    is Number -> rawLevel.toInt()
+                    is String -> rawLevel.toIntOrNull() ?: return ToolResult(false, "invalid level: $rawLevel (must be number)")
+                    else -> return ToolResult(false, "missing level (0-100 percent or 0-255 raw)")
+                }
+                // v2.5.1: If user passes 0-100, treat as percentage → convert to 0-255.
+                val finalLevel = if (level <= 100) (level * 255 / 100) else level
                 try {
+                    // v2.5.1: Set brightness mode to MANUAL first (otherwise setting value is ignored)
+                    android.provider.Settings.System.putInt(
+                        context.contentResolver,
+                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                    )
                     android.provider.Settings.System.putInt(
                         context.contentResolver,
                         android.provider.Settings.System.SCREEN_BRIGHTNESS,
-                        level
+                        finalLevel
                     )
-                    ToolResult(true, "Brightness set to $level")
+                    ToolResult(true, "Brightness set to $finalLevel (user requested $level${if (level <= 100) "%" else ""})")
+                } catch (e: SecurityException) {
+                    ToolResult(false, "Cannot change brightness — need WRITE_SETTINGS permission. Grant in Settings → Apps → Aira → Modify system settings.")
                 } catch (e: Exception) {
                     ToolResult(false, "Cannot change brightness: ${e.message}")
                 }
