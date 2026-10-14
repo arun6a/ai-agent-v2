@@ -158,8 +158,11 @@ class NotificationListener : NotificationListenerService() {
 
     /**
      * Parse reply text from a direct rule action.
-     * Formats: replyToNotification("com.whatsapp", "I'll call you back")
-     *          replyToNotification(package="com.whatsapp", message="reply text")
+     * Handles ALL formats the AI might generate:
+     *   replyToNotification("com.whatsapp", "I'll call you back")
+     *   replyToNotification(com.whatsapp, Got it)
+     *   replyToNotification(package="com.whatsapp", message="reply text")
+     *   replyToNotification(package="com.whatsapp", message=reply text)
      */
     private fun parseReplyText(action: String): String {
         try {
@@ -169,11 +172,46 @@ class NotificationListener : NotificationListenerService() {
             if (openParen == -1 || closeParen == -1 || closeParen <= openParen) return ""
             val argsStr = cleanAction.substring(openParen + 1, closeParen)
 
-            // If "message=" is present, extract that value
-            val messageMatch = Regex("""message\s*=\s*["']([^"']*)["']""").find(argsStr)
-            if (messageMatch != null) return messageMatch.groupValues[1]
+            // Strategy 1: If "message=" is present, extract everything after it
+            val messageIdx = argsStr.indexOf("message=", ignoreCase = true)
+            if (messageIdx >= 0) {
+                // Find the value after "message="
+                val valueStart = messageIdx + "message=".length
+                var value = argsStr.substring(valueStart).trim()
+                // Strip surrounding quotes if present
+                if (value.startsWith('"') || value.startsWith('\'')) {
+                    val quote = value[0]
+                    // Find closing quote
+                    val endQuote = value.indexOf(quote, 1)
+                    if (endQuote > 0) {
+                        value = value.substring(1, endQuote)
+                    }
+                } else {
+                    // No quotes — take everything up to comma or end
+                    val comma = value.indexOf(',')
+                    if (comma > 0) value = value.substring(0, comma)
+                    value = value.trim()
+                }
+                if (value.isNotEmpty()) return value
+            }
 
-            // Otherwise, extract the LAST quoted string (first arg is usually package)
+            // Strategy 2: Split by comma, take the LAST argument (first is package name)
+            val parts = argsStr.split(",").map { it.trim() }
+            if (parts.size >= 2) {
+                // The reply text is the last argument
+                var replyValue = parts.last().trim()
+                // Strip surrounding quotes if present
+                if (replyValue.startsWith('"') || replyValue.startsWith('\'')) {
+                    val quote = replyValue[0]
+                    val endQuote = replyValue.lastIndexOf(quote)
+                    if (endQuote > 0) {
+                        replyValue = replyValue.substring(1, endQuote)
+                    }
+                }
+                if (replyValue.isNotEmpty()) return replyValue
+            }
+
+            // Strategy 3: Extract the last quoted string
             val quotedStrings = Regex("""["']([^"']*)["']""").findAll(argsStr).toList()
             return when {
                 quotedStrings.size >= 2 -> quotedStrings[1].groupValues[1]
