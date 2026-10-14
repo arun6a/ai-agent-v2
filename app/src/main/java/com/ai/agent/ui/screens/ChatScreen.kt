@@ -218,10 +218,14 @@ fun ChatScreen(
         modifier = Modifier.fillMaxSize(),
         containerColor = custom.canvas,
         topBar = {
+            // v3.2.7: pass isConfigured so the top bar shows "not configured"
+            // instead of "ready" when no provider is set up.
+            val isConfigured = remember { com.ai.agent.llm.AIProvider.isConfigured(context) }
             ChatTopBar(
                 providerName = state.providerName,
                 modelName = state.modelName,
                 isThinking = state.isThinking,
+                isConfigured = isConfigured,
                 ttsEnabled = state.ttsEnabled,
                 onToggleTts = { viewModel.setTtsEnabled(!state.ttsEnabled) },
                 onOpenBrowser = onOpenBrowser,
@@ -529,6 +533,7 @@ private fun ChatTopBar(
     providerName: String,
     modelName: String,
     isThinking: Boolean,
+    isConfigured: Boolean,
     ttsEnabled: Boolean,
     onToggleTts: () -> Unit,
     onOpenBrowser: () -> Unit,
@@ -562,16 +567,20 @@ private fun ChatTopBar(
 
                 Spacer(Modifier.width(6.dp))
 
-                // v3.1.0: Compact status — just "● ready" or "● thinking" (no provider/model name)
-                PulsingDot(active = isThinking, color = custom.accent)
+                // v3.2.7: Compact status — "● thinking" / "● ready" / "○ not configured"
+                PulsingDot(active = isThinking, color = if (isConfigured) custom.accent else custom.fg3)
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = if (isThinking) "thinking" else "ready",
+                    text = when {
+                        isThinking -> "thinking"
+                        !isConfigured -> "not configured"
+                        else -> "ready"
+                    },
                     style = TextStyle(
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,
                     ),
-                    color = custom.fg3,
+                    color = if (isConfigured) custom.fg3 else custom.fg3,
                 )
             }
         },

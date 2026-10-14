@@ -18,6 +18,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
@@ -39,6 +40,8 @@ import com.ai.agent.ui.theme.MonoFontFamily
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * v3.2.2: ModelSettingsScreen — section-based navigation (no LazyColumn nesting).
@@ -151,6 +154,7 @@ private fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Strin
     val context = LocalContext.current
     val custom = LocalCustomColors.current
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingKey by remember { mutableStateOf<ApiKeyStore.ApiKey?>(null) }
     var keys by remember { mutableStateOf(ApiKeyStore.getAllKeys()) }
 
     LazyColumn(
@@ -183,7 +187,13 @@ private fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Strin
                         onToast("Key deleted: ${key.providerName}")
                     },
                     onTest = {
-                        onToast("Testing ${key.providerName}... (not implemented yet)")
+                        scope.launch {
+                            val result = testApiKeyConnection(key)
+                            onToast(result)
+                        }
+                    },
+                    onEdit = {
+                        editingKey = key
                     },
                 )
             }
@@ -201,10 +211,23 @@ private fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Strin
             },
         )
     }
+
+    editingKey?.let { key ->
+        EditApiKeyDialog(
+            original = key,
+            onDismiss = { editingKey = null },
+            onSave = { updated ->
+                ApiKeyStore.updateKey(context, updated)
+                keys = ApiKeyStore.getAllKeys()
+                editingKey = null
+                onToast("Key updated: ${updated.providerName}")
+            },
+        )
+    }
 }
 
 @Composable
-private fun ApiKeyCard(key: ApiKeyStore.ApiKey, onDelete: () -> Unit, onTest: () -> Unit) {
+private fun ApiKeyCard(key: ApiKeyStore.ApiKey, onDelete: () -> Unit, onTest: () -> Unit, onEdit: () -> Unit) {
     val custom = LocalCustomColors.current
     Row(
         modifier = Modifier.fillMaxWidth()
@@ -223,6 +246,7 @@ private fun ApiKeyCard(key: ApiKeyStore.ApiKey, onDelete: () -> Unit, onTest: ()
             }
         }
         TextButton(onClick = onTest) { Text("Test", fontSize = 11.sp) }
+        IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = custom.fg3, modifier = Modifier.size(16.dp)) }
         IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = custom.fg3, modifier = Modifier.size(16.dp)) }
     }
 }
@@ -506,14 +530,239 @@ private suspend fun testApiKey(baseUrl: String, apiKey: String, modelsEndpoint: 
     }
 }
 
+/**
+ * v3.2.7: Test a SAVED API key (from ApiKeyStore) — actually sends a real
+ * chat completion request to the key's baseUrl + apiKey and reports
+ * success/failure with the response. Works for the sandbox prefill key too.
+ */
+private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            // Sandbox prefill key has a full proxy URL as baseUrl.
+            // Other custom keys might just have a base URL — append /v1/models.
+            val url = if (key.baseUrl.contains("/api/llm/proxy")) {
+                key.baseUrl
+            } else {
+                "${key.baseUrl.trimEnd('/')}/v1/models"
+            }
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .apply {
+                    if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                        header("Authorization", "Bearer ${key.apiKey}")
+                    }
+                }
+                .build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: ""
+                // Try to count models if it's a /v1/models response.
+                val count = try {
+                    val json = org.json.JSONObject(body)
+                    json.optJSONArray("data")?.length() ?: -1
+                } catch (_: Exception) { -1 }
+                if (count >= 0) "✅ Connected! $count models available"
+                else "✅ Connected (HTTP ${response.code})"
+            } else {
+                "❌ HTTP ${response.code}: ${response.message}"
+            }
+        } catch (e: Exception) {
+            "❌ ${e.javaClass.simpleName}: ${e.message ?: "unknown"}"
+        }
+    }
+}
+
+/**
+ * v3.2.7: Test a SAVED model — resolves the endpoint + api_key using the same
+ * resolution order as applyModelToProvider, then sends a tiny "ping" chat
+ * completion. Reports success with the model's reply.
+ */
+private suspend fun testSavedModel(
+    context: android.content.Context,
+    model: SavedModelsStore.SavedModel,
+): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            // Resolve the saved key the same way applyModelToProvider does.
+            ApiKeyStore.load(context)
+            val allKeys = ApiKeyStore.getAllKeys()
+            val resolvedKey: ApiKeyStore.ApiKey? = when {
+                !model.apiKeyId.isNullOrEmpty() ->
+                    allKeys.find { it.id == model.apiKeyId }
+                else -> allKeys.find { it.providerId == model.providerId }
+            } ?: allKeys.find { it.providerId == "custom" }
+
+            val endpoint = when {
+                !resolvedKey?.baseUrl.isNullOrEmpty() -> resolvedKey!!.baseUrl
+                model.apiUrl.isNotEmpty() -> model.apiUrl
+                else -> AIProvider.PROVIDERS.find { it.id == model.providerId }?.defaultEndpoint ?: ""
+            }
+            val apiKey = resolvedKey?.apiKey ?: ""
+
+            if (endpoint.isEmpty()) {
+                return@withContext "❌ No endpoint resolved — add an API key first"
+            }
+
+            // Send a tiny chat completion request.
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val body = org.json.JSONObject().apply {
+                put("model", model.modelId)
+                put("stream", false)
+                put("messages", org.json.JSONArray().apply {
+                    put(org.json.JSONObject().apply {
+                        put("role", "user")
+                        put("content", "ping")
+                    })
+                })
+            }
+            val request = okhttp3.Request.Builder()
+                .url(endpoint)
+                .header("Content-Type", "application/json")
+                .apply {
+                    if (apiKey.isNotEmpty() && apiKey != "sandbox") {
+                        header("Authorization", "Bearer $apiKey")
+                    }
+                }
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            val response = client.newCall(request).execute()
+            val respBody = response.body?.string() ?: ""
+            if (response.isSuccessful) {
+                val json = org.json.JSONObject(respBody)
+                val reply = json.optJSONArray("choices")?.optJSONObject(0)
+                    ?.optJSONObject("message")?.optString("content", "") ?: ""
+                val preview = if (reply.length > 40) reply.take(40) + "..." else reply
+                "✅ ${model.modelName} replied: $preview"
+            } else {
+                "❌ HTTP ${response.code}: ${respBody.take(80)}"
+            }
+        } catch (e: Exception) {
+            "❌ ${e.javaClass.simpleName}: ${e.message ?: "unknown"}"
+        }
+    }
+}
+
+/**
+ * v3.2.7: EditApiKeyDialog — same fields as AddApiKeyDialog but pre-filled
+ * with the existing key's values. Calls updateKey() on save.
+ */
+@Composable
+private fun EditApiKeyDialog(
+    original: ApiKeyStore.ApiKey,
+    onDismiss: () -> Unit,
+    onSave: (ApiKeyStore.ApiKey) -> Unit,
+) {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+    val scope = rememberCoroutineScope()
+
+    var providerName by remember { mutableStateOf(original.providerName) }
+    var apiKey by remember { mutableStateOf(original.apiKey) }
+    var alias by remember { mutableStateOf(original.alias) }
+    var baseUrl by remember { mutableStateOf(original.baseUrl) }
+    var showKey by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = custom.canvas,
+        title = { Text("Edit API Key", color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = providerName, onValueChange = { providerName = it },
+                    label = { Text("Provider Name", fontSize = 11.sp) },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                )
+                OutlinedTextField(
+                    value = alias, onValueChange = { alias = it },
+                    label = { Text("Alias (optional)", fontSize = 11.sp) },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it; testResult = null },
+                    label = { Text("API Key", fontSize = 11.sp) },
+                    singleLine = true,
+                    visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showKey = !showKey }) {
+                            Text(if (showKey) "Hide" else "Show", fontSize = 10.sp)
+                        }
+                    },
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                )
+                OutlinedTextField(
+                    value = baseUrl, onValueChange = { baseUrl = it; testResult = null },
+                    label = { Text("Base URL / Endpoint", fontSize = 11.sp) },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                )
+                if (testResult != null) {
+                    Text(testResult!!, color = if (testResult!!.startsWith("✅")) custom.accent else custom.fg3, fontSize = 11.sp)
+                }
+                if (testing) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
+            }
+        },
+        confirmButton = {
+            Row {
+                TextButton(
+                    onClick = {
+                        testing = true
+                        testResult = null
+                        scope.launch {
+                            // Test using the same logic as the saved-key test.
+                            val tempKey = original.copy(
+                                apiKey = apiKey, baseUrl = baseUrl,
+                                providerName = providerName, alias = alias,
+                            )
+                            testResult = testApiKeyConnection(tempKey)
+                            testing = false
+                        }
+                    },
+                    enabled = apiKey.isNotEmpty() && baseUrl.isNotEmpty() && !testing,
+                ) { Text("Test", fontSize = 11.sp) }
+                TextButton(
+                    onClick = {
+                        if (providerName.isNotEmpty()) {
+                            onSave(original.copy(
+                                providerName = providerName,
+                                apiKey = apiKey,
+                                alias = alias,
+                                baseUrl = baseUrl,
+                            ))
+                        }
+                    },
+                    enabled = providerName.isNotEmpty(),
+                ) { Text("Save", fontSize = 11.sp) }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 // === TAB 2: SAVED MODELS ===
 
 @Composable
 private fun SavedModelsTab(onToast: (String) -> Unit) {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
+    val scope = rememberCoroutineScope()
     var models by remember { mutableStateOf(SavedModelsStore.getAllModels()) }
     val defaultModel = remember { SavedModelsStore.getDefaultModel(context) }
+    var testingId by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -530,6 +779,7 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
                 SavedModelCard(
                     model = model,
                     isDefault = model.id == defaultModel?.id,
+                    isTesting = testingId == model.id,
                     onSetDefault = {
                         SavedModelsStore.setDefaultModel(context, model.id)
                         models = SavedModelsStore.getAllModels()
@@ -539,6 +789,14 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
                         SavedModelsStore.removeModel(context, model.id)
                         models = SavedModelsStore.getAllModels()
                         onToast("Removed: ${model.modelName}")
+                    },
+                    onTest = {
+                        testingId = model.id
+                        scope.launch {
+                            val result = testSavedModel(context, model)
+                            onToast(result)
+                            testingId = null
+                        }
                     },
                 )
             }
@@ -550,8 +808,10 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
 private fun SavedModelCard(
     model: SavedModelsStore.SavedModel,
     isDefault: Boolean,
+    isTesting: Boolean = false,
     onSetDefault: () -> Unit,
     onDelete: () -> Unit,
+    onTest: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
     Column(
@@ -585,8 +845,11 @@ private fun SavedModelCard(
         }
         Spacer(Modifier.height(4.dp))
         Text("${model.contextStr} · ${model.priceStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onSetDefault) { Text(if (isDefault) "Default ✓" else "Set Default", fontSize = 11.sp) }
+            TextButton(onClick = onTest, enabled = !isTesting) {
+                Text(if (isTesting) "Testing..." else "Test", fontSize = 11.sp)
+            }
             TextButton(onClick = onDelete) { Text("Remove", fontSize = 11.sp, color = custom.fg3) }
         }
     }
@@ -780,6 +1043,8 @@ private fun ModelSelectorRow(
     models: List<SavedModelsStore.SavedModel>,
     selectedId: String?,
     onSelect: (String) -> Unit,
+    onTest: ((SavedModelsStore.SavedModel) -> Unit)? = null,
+    testingId: String? = null,
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -806,6 +1071,14 @@ private fun ModelSelectorRow(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(model.modelName, color = m3.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                         Text("${model.providerName} · ${model.tagStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
+                    }
+                    if (onTest != null) {
+                        TextButton(
+                            onClick = { onTest(model) },
+                            enabled = testingId != model.id,
+                        ) {
+                            Text(if (testingId == model.id) "..." else "Test", fontSize = 10.sp)
+                        }
                     }
                     Text("${model.contextStr} · ${model.priceStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 8.sp)
                 }
@@ -838,15 +1111,18 @@ private fun ToggleRow(label: String, desc: String, checked: Boolean, onCheck: (B
 private fun LlmConfigPage() {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
+    val scope = rememberCoroutineScope()
     val llmModels = SavedModelsStore.getModelsByCapabilities(ModelCapability.LLM_TAGS)
     val defaultModel = SavedModelsStore.getDefaultModel(context)
     var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
     var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
     // v3.2.6: read once at composition so the user can see whether their pick
     // has actually propagated to the active AIProvider config LLMClient reads.
-    val activeProvider = remember { AIProvider.getProviderId(context) }
-    val activeModel = remember { AIProvider.getModel(context) }
-    val isConfigured = remember { AIProvider.isConfigured(context) }
+    var activeProvider by remember { mutableStateOf(AIProvider.getProviderId(context)) }
+    var activeModel by remember { mutableStateOf(AIProvider.getModel(context)) }
+    var isConfigured by remember { mutableStateOf(AIProvider.isConfigured(context)) }
+    var testingId by remember { mutableStateOf<String?>(null) }
+    var lastTestResult by remember { mutableStateOf<String?>(null) }
 
     ConfigSectionHeader("LLM Configuration", "Default agent model + prompt settings")
 
@@ -874,6 +1150,13 @@ private fun LlmConfigPage() {
             )
         }
     }
+    // Last test result (if any).
+    if (lastTestResult != null) {
+        Text(lastTestResult!!,
+            color = if (lastTestResult!!.startsWith("✅")) custom.accent else custom.fg3,
+            fontSize = 10.sp, fontFamily = MonoFontFamily,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
+    }
     Spacer(Modifier.height(6.dp))
 
     ModelSelectorRow(
@@ -882,7 +1165,21 @@ private fun LlmConfigPage() {
         selectedId = defaultModel?.id,
         onSelect = { id ->
             SavedModelsStore.setDefaultModel(context, id)
+            // Refresh the status banner — applyModelToProvider just ran.
+            activeProvider = AIProvider.getProviderId(context)
+            activeModel = AIProvider.getModel(context)
+            isConfigured = AIProvider.isConfigured(context)
         },
+        onTest = { model ->
+            testingId = model.id
+            lastTestResult = null
+            scope.launch {
+                val result = testSavedModel(context, model)
+                lastTestResult = result
+                testingId = null
+            }
+        },
+        testingId = testingId,
     )
     Spacer(Modifier.height(4.dp))
     ToggleRow(

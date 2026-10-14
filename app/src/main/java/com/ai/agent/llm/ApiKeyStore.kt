@@ -57,9 +57,21 @@ object ApiKeyStore {
                     ))
                 }
             }
-            // v3.2.6: No more magic prefill. Users add their own API key
-            // via AI Settings → API Keys → Add Key. App stays unusable
-            // until they do — explicit onboarding.
+            // v3.2.7: Pre-fill the sandbox as a SAVED KEY ONLY (not auto-configured).
+            // The user still has to manually pick a model in LLM Configuration
+            // before chat works. They can edit/delete this key freely.
+            // Only injected on first load — if the user deletes it, it stays deleted.
+            if (keys.none { it.id == "sandbox_prefill" }) {
+                keys.add(ApiKey(
+                    id = "sandbox_prefill",
+                    providerId = "custom",
+                    providerName = "Sandbox (Z.ai Proxy)",
+                    apiKey = "sandbox",
+                    alias = "Sandbox AI",
+                    baseUrl = "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai/api/llm/proxy?XTransformPort=3030",
+                ))
+                save(context)
+            }
             loaded = true
             Log.i(TAG, "Loaded ${keys.size} API keys")
         } catch (e: Exception) {

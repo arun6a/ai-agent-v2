@@ -173,36 +173,67 @@ object SavedModelsStore {
     }
 
     /**
-     * v3.2.6: Push a saved model's settings into AIProvider (the active config
-     * LLMClient reads on every chat call). Falls back gracefully if the model
-     * or its API key are missing.
+     * v3.2.7: Push a saved model's settings into AIProvider (the active config
+     * LLMClient reads on every chat call).
+     *
+     * Resolution order for endpoint + api_key:
+     *   1. If the saved model has an apiKeyId → use that ApiKeyStore entry's
+     *      baseUrl + apiKey (highest priority — explicit link).
+     *   2. Else look for ANY saved key whose providerId matches the model's
+     *      providerId (e.g. user saved a "zai" model + a "zai" key → link them).
+     *   3. Else fall back to the first "custom" saved key (the sandbox prefill
+     *      or any user-added custom endpoint).
+     *   4. Else fall back to the model's own apiUrl (catalog default) + empty key.
+     *
+     * This makes "save a model from the catalog → tap it in LLM Configuration
+     * → chat works" actually true, even when the user hasn't manually linked
+     * a key to the model.
      */
     private fun applyModelToProvider(context: Context, id: String) {
         val model = models.find { it.id == id } ?: return
         // Make sure ApiKeyStore is loaded before we try to read keys from it.
         ApiKeyStore.load(context)
-        AIProvider.setProvider(context, model.providerId)
+        val allKeys = ApiKeyStore.getAllKeys()
+
+        // Resolve which saved key (if any) to use with this model.
+        val resolvedKey: ApiKeyStore.ApiKey? = when {
+            // 1. Explicit link via apiKeyId.
+            !model.apiKeyId.isNullOrEmpty() ->
+                allKeys.find { it.id == model.apiKeyId }
+            // 2. Match by providerId (e.g. "zai" model + "zai" key).
+            else -> allKeys.find { it.providerId == model.providerId }
+        } ?: allKeys.find { it.providerId == "custom" }  // 3. Sandbox prefill / any custom key.
+
+        // Provider: prefer the resolved key's providerId (so a "custom" sandbox
+        // key overrides the model's catalog "zai" providerId — this is what
+        // makes the sandbox flow work).
+        val effectiveProviderId = resolvedKey?.providerId ?: model.providerId
+        AIProvider.setProvider(context, effectiveProviderId)
         AIProvider.setModel(context, model.modelId)
-        if (model.apiUrl.isNotEmpty()) {
-            AIProvider.setEndpoint(context, model.apiUrl)
-        } else {
-            // Fall back to the provider's default endpoint if the saved model
-            // didn't carry its own URL.
-            val providerInfo = AIProvider.PROVIDERS.find { it.id == model.providerId }
-            if (providerInfo != null) {
-                AIProvider.setEndpoint(context, providerInfo.defaultEndpoint)
-            }
+
+        // Endpoint priority:
+        //   - If the resolved saved key has a baseUrl → use it as-is. For the
+        //     sandbox prefill this is the FULL proxy URL (incl. /api/llm/proxy?...).
+        //     For other custom keys it's whatever the user typed.
+        //   - Else if the model has an apiUrl → use it (catalog default).
+        //   - Else fall back to the provider's defaultEndpoint from PROVIDERS.
+        val endpoint = when {
+            !resolvedKey?.baseUrl.isNullOrEmpty() -> resolvedKey!!.baseUrl
+            model.apiUrl.isNotEmpty() -> model.apiUrl
+            else -> AIProvider.PROVIDERS.find { it.id == effectiveProviderId }?.defaultEndpoint ?: ""
         }
-        // Look up the actual API key string from ApiKeyStore via apiKeyId.
-        val apiKey = model.apiKeyId?.let { keyId ->
-            ApiKeyStore.getAllKeys().find { it.id == keyId }?.apiKey
-        } ?: ""
-        if (apiKey.isNotEmpty()) {
-            AIProvider.setApiKey(context, apiKey)
+        if (endpoint.isNotEmpty()) {
+            AIProvider.setEndpoint(context, endpoint)
         }
+
+        // API key string: from the resolved saved key, or empty.
+        val apiKey = resolvedKey?.apiKey ?: ""
+        AIProvider.setApiKey(context, apiKey)
+
         android.util.Log.i("SavedModelsStore",
-            "Applied saved model '${model.modelName}' to AIProvider: " +
-                    "provider=${model.providerId}, endpoint=${model.apiUrl}, modelId=${model.modelId}")
+            "Applied saved model '${model.modelName}': " +
+                    "provider=$effectiveProviderId, model=${model.modelId}, " +
+                    "endpoint=${endpoint.take(70)}, key=${if (apiKey.isNotEmpty()) "set" else "EMPTY"}")
     }
 
     @Synchronized

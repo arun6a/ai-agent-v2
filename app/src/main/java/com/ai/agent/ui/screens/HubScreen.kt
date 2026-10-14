@@ -4246,6 +4246,8 @@ private fun UsageSection() {
     val sessionStats = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getSessionStats() }
     val taskStats = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getTaskStats() }
     val fullReport = remember(refreshKey) { com.ai.agent.llm.ApiUsageTracker.getFullReport(context) }
+    // v3.2.7: Check if a provider is actually configured before showing it.
+    val isConfigured = remember { com.ai.agent.llm.AIProvider.isConfigured(context) }
     val currentProvider = remember { com.ai.agent.llm.AIProvider.getCurrentProvider(context) }
     val currentModel = remember { com.ai.agent.llm.AIProvider.getModel(context) }
 
@@ -4267,8 +4269,8 @@ private fun UsageSection() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(custom.accent.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                    .border(1.dp, custom.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .background(if (isConfigured) custom.accent.copy(alpha = 0.06f) else custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, if (isConfigured) custom.accent.copy(alpha = 0.3f) else custom.inkBorder, RoundedCornerShape(8.dp))
                     .padding(12.dp),
             ) {
                 Text(
@@ -4279,26 +4281,46 @@ private fun UsageSection() {
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = currentProvider.name,
-                    color = m3.onSurface,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "model: $currentModel",
-                    color = custom.fg2,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 11.sp,
-                )
-                Text(
-                    text = "endpoint: ${currentProvider.defaultEndpoint.take(60)}...",
-                    color = custom.fg3,
-                    fontFamily = MonoFontFamily,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (isConfigured) {
+                    Text(
+                        text = currentProvider.name,
+                        color = m3.onSurface,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "model: $currentModel",
+                        color = custom.fg2,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 11.sp,
+                    )
+                    Text(
+                        text = "endpoint: ${currentProvider.defaultEndpoint.take(60)}...",
+                        color = custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    // v3.2.7: No provider configured — show actionable guidance
+                    // instead of the default "Z.AI Direct API" name (which is just
+                    // a fallback and misleading when nothing is actually set up).
+                    Text(
+                        text = "Not configured",
+                        color = m3.onSurface,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "Open AI Settings → API Keys to add your API key, " +
+                                "then pick a model in Model Catalog, then set it as " +
+                                "Default in LLM Configuration.",
+                        color = custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                    )
+                }
             }
         }
 
