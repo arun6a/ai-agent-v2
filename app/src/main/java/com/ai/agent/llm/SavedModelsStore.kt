@@ -166,6 +166,43 @@ object SavedModelsStore {
     fun setDefaultModel(context: Context, id: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putString(KEY_DEFAULT, id).apply()
+        // v3.2.6: propagate selection to AIProvider prefs so LLMClient.chat()
+        // actually picks it up. Without this, picking a model here did nothing
+        // for the live chat — LLMClient kept using the legacy AIProvider model.
+        applyModelToProvider(context, id)
+    }
+
+    /**
+     * v3.2.6: Push a saved model's settings into AIProvider (the active config
+     * LLMClient reads on every chat call). Falls back gracefully if the model
+     * or its API key are missing.
+     */
+    private fun applyModelToProvider(context: Context, id: String) {
+        val model = models.find { it.id == id } ?: return
+        // Make sure ApiKeyStore is loaded before we try to read keys from it.
+        ApiKeyStore.load(context)
+        AIProvider.setProvider(context, model.providerId)
+        AIProvider.setModel(context, model.modelId)
+        if (model.apiUrl.isNotEmpty()) {
+            AIProvider.setEndpoint(context, model.apiUrl)
+        } else {
+            // Fall back to the provider's default endpoint if the saved model
+            // didn't carry its own URL.
+            val providerInfo = AIProvider.PROVIDERS.find { it.id == model.providerId }
+            if (providerInfo != null) {
+                AIProvider.setEndpoint(context, providerInfo.defaultEndpoint)
+            }
+        }
+        // Look up the actual API key string from ApiKeyStore via apiKeyId.
+        val apiKey = model.apiKeyId?.let { keyId ->
+            ApiKeyStore.getAllKeys().find { it.id == keyId }?.apiKey
+        } ?: ""
+        if (apiKey.isNotEmpty()) {
+            AIProvider.setApiKey(context, apiKey)
+        }
+        android.util.Log.i("SavedModelsStore",
+            "Applied saved model '${model.modelName}' to AIProvider: " +
+                    "provider=${model.providerId}, endpoint=${model.apiUrl}, modelId=${model.modelId}")
     }
 
     @Synchronized

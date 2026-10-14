@@ -170,8 +170,9 @@ fun OnboardingScreen(
                             testing = false
                         },
                         onSkip = {
-                            // Use Z.ai Proxy (sandbox) — no key needed
-                            AIProvider.setProvider(context, "zai")
+                            // v3.2.6: Skip leaves the provider unconfigured.
+                            // The chat will show a "Set up AI Settings first"
+                            // error until the user adds an API key + model.
                             onFinished()
                         },
                         onFinish = {

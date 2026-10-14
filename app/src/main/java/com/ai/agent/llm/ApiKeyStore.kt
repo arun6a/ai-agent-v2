@@ -56,19 +56,10 @@ object ApiKeyStore {
                         isVerified = o.optBoolean("isVerified"),
                     ))
                 }
-            } else {
-                // v3.2.4: Pre-fill sandbox URL as a Custom API key on first launch
-                // User can long-press → delete it if they don't want it
-                keys.add(ApiKey(
-                    id = "sandbox_prefill",
-                    providerId = "custom",
-                    providerName = "Sandbox (Z.ai Proxy)",
-                    apiKey = "sandbox",
-                    alias = "Sandbox AI",
-                    baseUrl = "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai",
-                ))
-                save(context)
             }
+            // v3.2.6: No more magic prefill. Users add their own API key
+            // via AI Settings → API Keys → Add Key. App stays unusable
+            // until they do — explicit onboarding.
             loaded = true
             Log.i(TAG, "Loaded ${keys.size} API keys")
         } catch (e: Exception) {

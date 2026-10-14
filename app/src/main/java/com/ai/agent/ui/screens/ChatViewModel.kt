@@ -295,6 +295,23 @@ class ChatViewModel(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return
 
+        // v3.2.6: Gate chat on AI configuration. If the user hasn't set up a
+        // provider yet (or skipped onboarding), do NOT send anything to the
+        // network. Show an actionable error instead.
+        if (!AIProvider.isConfigured(context)) {
+            _state.update {
+                it.copy(
+                    error = "⚠️ No AI provider configured yet.\n\n" +
+                            "Open AI Settings → API Keys to add your API key, " +
+                            "then pick a model in Model Catalog → save it, " +
+                            "then open LLM Configuration → set it as Default Agent Model.",
+                    isThinking = false,
+                    isExecuting = false,
+                )
+            }
+            return
+        }
+
         // Cancel any in-flight loop (re-entrant send = stop previous task).
         loopJob?.cancel()
 

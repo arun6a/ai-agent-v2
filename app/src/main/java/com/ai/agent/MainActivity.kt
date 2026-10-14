@@ -16,7 +16,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.ai.agent.service.AgentService
-import com.ai.agent.llm.AIProvider
 import com.ai.agent.ui.navigation.AppNavigation
 import com.ai.agent.ui.theme.AIAgentTheme
 import com.ai.agent.ui.theme.ThemeManager
@@ -54,11 +53,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         super.onCreate(savedInstanceState)
-
-        // v3.2.5: On a fresh install, auto-configure the app to use the
-        // pre-filled Sandbox key so the app works out of the box. Users can
-        // later switch to their own provider in AI Settings.
-        AIProvider.ensureFirstLaunchConfig(this)
 
         // ===== v2.0.5: Start all v1-equivalent services =====
         // Order matters: folders first so any service that writes to disk has

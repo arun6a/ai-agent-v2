@@ -2,7 +2,6 @@ package com.ai.agent.llm
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 
 /**
  * AI Provider configuration — lets the user pick which AI service to use.
@@ -17,7 +16,6 @@ import android.util.Log
  */
 object AIProvider {
 
-    private const val TAG = "AIProvider"
     private const val PREFS = "ai_agent_provider"
     private const val KEY_PROVIDER = "provider"          // "openrouter" | "gemini" | "zai" | "custom"
     private const val KEY_API_KEY = "api_key"
@@ -280,36 +278,6 @@ object AIProvider {
 
     fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    }
-
-    // v3.2.5: First-launch auto-config.
-    // On a fresh install, automatically select the pre-filled Sandbox key so the app
-    // works out of the box (just like v3.2.3 did with the hardcoded "zai" provider).
-    // The user can later switch to zai_direct or delete the sandbox key — nothing is forced.
-    private const val KEY_FIRST_LAUNCH_DONE = "first_launch_configured_v325"
-    private const val SANDBOX_BASE_URL =
-        "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai"
-    private const val SANDBOX_ENDPOINT =
-        "$SANDBOX_BASE_URL/api/llm/proxy?XTransformPort=3030"
-
-    fun ensureFirstLaunchConfig(context: Context) {
-        val prefs = getPrefs(context)
-        if (prefs.getBoolean(KEY_FIRST_LAUNCH_DONE, false)) return
-        // Only auto-configure if nothing has been set yet (truly fresh install).
-        val providerSet = prefs.contains(KEY_PROVIDER)
-        if (!providerSet) {
-            prefs.edit()
-                .putString(KEY_PROVIDER, "custom")
-                .putString(KEY_API_KEY, "sandbox")
-                .putString(KEY_ENDPOINT, SANDBOX_ENDPOINT)
-                .putString(KEY_MODEL, "glm-4.6")
-                .putString(KEY_PROXY_BASE_URL, SANDBOX_BASE_URL)
-                .putBoolean(KEY_FIRST_LAUNCH_DONE, true)
-                .apply()
-            Log.i(TAG, "First-launch: configured Sandbox (custom) provider for out-of-the-box use")
-        } else {
-            prefs.edit().putBoolean(KEY_FIRST_LAUNCH_DONE, true).apply()
-        }
     }
 
     fun getProviderId(context: Context): String {

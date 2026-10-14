@@ -842,8 +842,40 @@ private fun LlmConfigPage() {
     val defaultModel = SavedModelsStore.getDefaultModel(context)
     var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
     var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
+    // v3.2.6: read once at composition so the user can see whether their pick
+    // has actually propagated to the active AIProvider config LLMClient reads.
+    val activeProvider = remember { AIProvider.getProviderId(context) }
+    val activeModel = remember { AIProvider.getModel(context) }
+    val isConfigured = remember { AIProvider.isConfigured(context) }
 
     ConfigSectionHeader("LLM Configuration", "Default agent model + prompt settings")
+
+    // Status banner — tells the user whether the chat will work right now.
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(if (isConfigured) custom.accent.copy(alpha = 0.06f) else custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, if (isConfigured) custom.accent.copy(alpha = 0.3f) else custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (isConfigured) "●" else "○",
+            color = if (isConfigured) custom.accent else custom.fg3, fontSize = 12.sp)
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                if (isConfigured) "Ready to chat" else "Not configured",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold, fontSize = 12.sp,
+            )
+            Text(
+                if (isConfigured) "Active: $activeProvider · $activeModel"
+                else "Add an API key + select a model below to start chatting.",
+                color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp,
+            )
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+
     ModelSelectorRow(
         label = "Default Agent Model",
         models = llmModels,
