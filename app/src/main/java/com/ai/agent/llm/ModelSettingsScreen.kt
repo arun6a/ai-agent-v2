@@ -1156,6 +1156,12 @@ private fun LlmConfigPage() {
     var testingId by remember { mutableStateOf<String?>(null) }
     var lastTestResult by remember { mutableStateOf<String?>(null) }
 
+    // v3.2.10: Capability check — does the selected default model support TOOLS?
+    // If not, the agent loop won't be able to execute phone actions reliably.
+    val supportsTools = defaultModel?.capabilities?.contains(ModelCapability.TOOLS) ?: true
+    // Also check if it's at least tagged TEXT (the bare minimum for chat).
+    val supportsText = defaultModel?.capabilities?.contains(ModelCapability.TEXT) ?: true
+
     ConfigSectionHeader("LLM Configuration", "Default agent model + prompt settings")
 
     // Status banner — tells the user whether the chat will work right now.
@@ -1182,6 +1188,58 @@ private fun LlmConfigPage() {
             )
         }
     }
+
+    // v3.2.10: Capability warning — shown when the selected model lacks TOOLS or TEXT.
+    if (defaultModel != null) {
+        if (!supportsText) {
+            // Critical: model can't even do basic chat in this agent format.
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.fg3, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("⚠️", fontSize = 14.sp)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Model may not work for chat",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                    Text("'${defaultModel.modelName}' isn't tagged as a text/chat model. " +
+                            "It may produce unexpected output or refuse to follow the agent format. " +
+                            "Consider picking a different model.",
+                        color = custom.fg3, fontSize = 9.sp)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        } else if (!supportsTools) {
+            // Warning: model can chat but can't reliably do tool calling.
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .background(custom.ink2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.fg3, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("ℹ️", fontSize = 14.sp)
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("No native tool-calling support",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                    Text("'${defaultModel.modelName}' isn't tagged as supporting function calling. " +
+                            "It can still chat, but phone-control tasks (tap, launchApp, webSearch...) " +
+                            "may not execute reliably. For full agent features, pick a model with the TOOLS tag.",
+                        color = custom.fg3, fontSize = 9.sp)
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+    }
+
     // Last test result (if any).
     if (lastTestResult != null) {
         Text(lastTestResult!!,

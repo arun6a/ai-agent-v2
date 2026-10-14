@@ -388,6 +388,12 @@ class LLMClient(private val context: Context) {
             return LLMResponse("No response from AI", emptyList())
         }
 
+        // v3.2.10: Extract content as a string, handling BOTH:
+        //   - Plain string content (OpenAI/Groq/Z.ai: message.content = "...")
+        //   - Array of content blocks (Anthropic Claude via OpenRouter:
+        //     message.content = [{type:"text", text:"..."}, {type:"text", text:"..."}])
+        val contentStr = extractMessageContent(message)
+
         // Path 1: Native function calling — tool_calls is a JSON array in the message
         val nativeToolCalls = message.optJSONArray("tool_calls")
         if (nativeToolCalls != null && nativeToolCalls.length() > 0) {
@@ -412,17 +418,57 @@ class LLMClient(private val context: Context) {
                     toolCalls.add(ToolCall(name, args))
                 }
             }
-            val content = message.optString("content", "")
             Log.i("LLMClient", "Native function calling: ${toolCalls.size} tool call(s): ${toolCalls.map { it.name }}")
-            return LLMResponse(content.ifEmpty { "Executing..." }, toolCalls)
+            return LLMResponse(contentStr.ifEmpty { "Executing..." }, toolCalls)
         }
 
-        // Path 2: Manual JSON in content (Z.ai, older models)
-        val content = message.optString("content")
-        if (content.isBlank()) {
+        // Path 2: Manual JSON in content (Z.ai, older models, Claude without tools)
+        if (contentStr.isBlank()) {
             return LLMResponse("(empty response)", emptyList())
         }
-        return parseResponse(content)
+        return parseResponse(contentStr)
+    }
+
+    /**
+     * v3.2.10: Extract the message content as a single string, handling both
+     * OpenAI-style plain-string content AND Anthropic Claude's array-of-blocks
+     * content (which OpenRouter passes through).
+     *
+     * OpenAI/Groq/Z.ai:
+     *   message.content = "Hello"
+     *
+     * Anthropic Claude (via OpenRouter):
+     *   message.content = [
+     *     {"type": "text", "text": "Hello "},
+     *     {"type": "text", "text": "world"}
+     *   ]
+     *
+     * Some providers also return reasoning blocks (type="thinking" for Claude,
+     * type="reasoning" for DeepSeek R1) — we skip those to keep the visible
+     * reply clean.
+     */
+    private fun extractMessageContent(message: JSONObject): String {
+        // Fast path: content is a plain string (most providers).
+        val contentStr = message.optString("content", "")
+        if (contentStr.isNotEmpty() && !contentStr.startsWith("[")) {
+            return contentStr
+        }
+        // Slow path: content might be an array of blocks.
+        val contentArr = message.optJSONArray("content") ?: return contentStr
+        val sb = StringBuilder()
+        for (i in 0 until contentArr.length()) {
+            val block = contentArr.optJSONObject(i) ?: continue
+            val type = block.optString("type", "text")
+            // Skip reasoning/thinking blocks — we only want the visible reply text.
+            if (type == "thinking" || type == "reasoning") continue
+            // Text block: {"type":"text", "text":"..."}
+            val text = block.optString("text", "")
+            if (text.isNotEmpty()) {
+                if (sb.isNotEmpty()) sb.append("\n")
+                sb.append(text)
+            }
+        }
+        return sb.toString()
     }
 
     /**
