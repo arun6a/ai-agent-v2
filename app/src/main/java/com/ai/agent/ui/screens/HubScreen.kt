@@ -738,6 +738,7 @@ private fun RulesSection() {
     var rules by remember { mutableStateOf<List<AgentDatabase.Rule>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var lastToast by remember { mutableStateOf<String?>(null) }
+    val actions = remember { AgentDatabase(context).getRecentActions(30) }
 
     LaunchedEffect(Unit) {
         rules = try {
@@ -831,6 +832,55 @@ private fun RulesSection() {
                         }
                     },
                 )
+            }
+        }
+
+        // v3.0.5: Recent Activity (Rules History)
+        item {
+            Spacer(Modifier.size(16.dp))
+            SectionHeader(
+                title = "Recent Activity",
+                subtitle = "Last rule fires + results",
+            )
+        }
+        if (actions.isEmpty()) {
+            item {
+                Text(
+                    text = "No rule activity yet",
+                    color = custom.fg3,
+                    fontSize = 12.sp,
+                    fontFamily = MonoFontFamily,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        } else {
+            items(actions, key = { it.id }) { entry ->
+                val sdf = java.text.SimpleDateFormat("MMM dd HH:mm", java.util.Locale.getDefault())
+                val timeStr = sdf.format(java.util.Date(entry.timestamp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.ink2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = timeStr,
+                        color = custom.fg3,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 10.sp,
+                        modifier = Modifier.width(80.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = entry.text,
+                        color = custom.fg2,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }

@@ -102,10 +102,6 @@ class NotificationListener : NotificationListenerService() {
 
             if (shouldTrigger) {
                 // v3.0.3: Anti-loop cooldown check
-                // When we reply to a WhatsApp notification, WhatsApp shows a "reply sent" confirmation
-                // notification. This triggers onNotificationPosted AGAIN → matches the rule → replies
-                // again → another confirmation → infinite loop (user got 34 replies!).
-                // FIX: Don't reply to the same package within REPLY_COOLDOWN_MS (10 seconds).
                 val now = System.currentTimeMillis()
                 val lastReply = lastReplyTime[packageName] ?: 0L
                 if (now - lastReply < REPLY_COOLDOWN_MS) {
@@ -114,6 +110,10 @@ class NotificationListener : NotificationListenerService() {
                 }
 
                 Log.i(TAG, "🔔 Notification rule matched: ${rule.name} (from $packageName: $title)")
+
+                // v3.0.5: Save incoming message to conversation memory
+                val convKey = if (trigger.contains(":")) trigger else packageName
+                ConversationMemory.addIncoming(this, convKey, "$title: $text")
 
                 val action = rule.action
                 val isDirectReply = RuleEngine.isDirectRule(action) &&
@@ -129,6 +129,10 @@ class NotificationListener : NotificationListenerService() {
                         try {
                             val replied = replyToNotification(packageName, replyText)
                             db.logAction("Reply ${if (replied) "✓" else "✗"}: ${rule.name} → $replyText")
+                            // v3.0.5: Save outgoing reply to conversation memory
+                            if (replied) {
+                                ConversationMemory.addOutgoing(this, convKey, replyText)
+                            }
                             if (!replied) {
                                 Log.w(TAG, "Direct reply failed — falling back to RuleEngine")
                                 RuleEngine.execute(this, rule, "notification: $title — $text")
@@ -140,8 +144,14 @@ class NotificationListener : NotificationListenerService() {
                 } else {
                     // SMART RULE: Set cooldown + let RuleEngine handle it (LLM call)
                     lastReplyTime[packageName] = System.currentTimeMillis()
-                    Log.i(TAG, "Smart rule — executing via RuleEngine")
-                    RuleEngine.execute(this, rule, "notification from $packageName: $title — $text")
+                    Log.i(TAG, "Smart rule — executing via RuleEngine (with conversation memory)")
+                    // v3.0.5: Pass conversation history so AI remembers previous messages
+                    val history = ConversationMemory.getHistoryForPrompt(this, convKey)
+                    RuleEngine.execute(this, rule,
+                        "notification from $packageName: $title — $text\n\n" +
+                        "CONVERSATION HISTORY:\n$history\n\n" +
+                        "Reply to the latest message. Use replyToNotification(package, message) to send your reply."
+                    )
                 }
             }
         }

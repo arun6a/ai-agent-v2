@@ -577,6 +577,34 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         writableDatabase.insert(TABLE_LOG, null, values)
     }
 
+    // v3.0.5: Get recent action log entries (for Rules History page)
+    data class ActionLogEntry(
+        val id: Long,
+        val text: String,
+        val timestamp: Long,
+    )
+
+    fun getRecentActions(limit: Int = 50): List<ActionLogEntry> {
+        val cursor = readableDatabase.query(
+            TABLE_LOG,
+            arrayOf(COL_ID, COL_ACTION_TEXT, COL_TIMESTAMP),
+            null, null, null, null,
+            "$COL_TIMESTAMP DESC",
+            limit.toString()
+        )
+        val entries = mutableListOf<ActionLogEntry>()
+        cursor.use {
+            while (it.moveToNext()) {
+                entries.add(ActionLogEntry(
+                    id = it.getLong(0),
+                    text = it.getString(1),
+                    timestamp = it.getLong(2),
+                ))
+            }
+        }
+        return entries
+    }
+
     data class Rule(
         val id: Long,
         val name: String,

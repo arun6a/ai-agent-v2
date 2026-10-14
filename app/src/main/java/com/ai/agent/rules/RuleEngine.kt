@@ -234,6 +234,25 @@ If a tool fails, try a different approach. Maximum 10 rounds."""
                 // Log results
                 results.forEachIndexed { i, result ->
                     Log.i(TAG, "Tool ${response.toolCalls[i].name}: ${if (result.success) "✓" else "✗"} ${result.output.take(200)}")
+
+                    // v3.0.5: If replyToNotification succeeded, save reply to conversation memory
+                    if (response.toolCalls[i].name == "replyToNotification" && result.success) {
+                        try {
+                            val pkg = response.toolCalls[i].args["package"] as? String
+                                ?: response.toolCalls[i].args["arg0"] as? String ?: ""
+                            val msg = response.toolCalls[i].args["message"] as? String
+                                ?: response.toolCalls[i].args["arg1"] as? String ?: ""
+                            if (pkg.isNotEmpty() && msg.isNotEmpty()) {
+                                val convKey = if (triggerContext.contains("notification from")) {
+                                    // Extract package from trigger context
+                                    val match = Regex("notification from ([^:]+)").find(triggerContext)
+                                    match?.groupValues?.get(1) ?: pkg
+                                } else pkg
+                                ConversationMemory.addOutgoing(context, convKey, msg)
+                                Log.i(TAG, "✓ Saved AI reply to conversation memory: $convKey → $msg")
+                            }
+                        } catch (_: Exception) {}
+                    }
                 }
 
                 // Add results to conversation for next iteration
