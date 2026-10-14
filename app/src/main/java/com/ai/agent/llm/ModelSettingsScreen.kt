@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
@@ -40,14 +41,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * v3.2.0: ModelSettingsScreen — the new AI Settings page.
- *
- * 3 tabs:
- * 1. API Keys — add/edit/test/delete API keys per provider
- * 2. Saved Models — list of saved models with capability tags
- * 3. Model Catalog — browse 12,542 models from models.dev
- *
- * Below tabs: filtered config sections (LLM/Vision/Audio)
+ * v3.2.2: ModelSettingsScreen — section-based navigation (no LazyColumn nesting).
+ * Shows a list of sections. Click to open each section's content page.
  */
 @Composable
 fun ModelSettingsScreen(
@@ -56,44 +51,38 @@ fun ModelSettingsScreen(
     val context = LocalContext.current
     val custom = LocalCustomColors.current
     val scope = rememberCoroutineScope()
-    var selectedTab by remember { mutableStateOf(0) }  // 0=keys, 1=saved, 2=catalog
+    var selectedSection by remember { mutableStateOf(-1) }
     var toast by remember { mutableStateOf<String?>(null) }
 
-    // Load data on first composition
     LaunchedEffect(Unit) {
         ApiKeyStore.load(context)
         SavedModelsStore.load(context)
         ModelsDevRepository.load(context)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // v3.2.1: Top section — 3 tabs (API Keys, Saved Models, Model Catalog)
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 },
-                text = { Text("API Keys (${ApiKeyStore.getAllKeys().size})") })
-            Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 },
-                text = { Text("Saved (${SavedModelsStore.getAllModels().size})") })
-            Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 },
-                text = { Text("Catalog") })
-        }
-
-        // Tab content + config sections in a scrollable column
-        LazyColumn(modifier = Modifier.fillMaxSize().weight(1f)) {
-            // Tab content
-            item {
-                when (selectedTab) {
-                    0 -> ApiKeysTab(scope = scope, onToast = { toast = it })
-                    1 -> SavedModelsTab(onToast = { toast = it })
-                    2 -> ModelCatalogTab(scope = scope, onToast = { toast = it })
+    if (selectedSection == -1) {
+        AiSettingsSectionList(onSectionClick = { selectedSection = it })
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { selectedSection = -1 }) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = custom.accent)
                 }
+                Text(getSectionTitle(selectedSection), color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
-
-            // v3.2.1: Configuration sections (always visible below tabs)
-            item { LlmConfigSection() }
-            item { VisionConfigSection() }
-            item { AudioConfigSection() }
-            item { FutureSectionsSection() }
-            item { AdvancedConfigSection() }
+            when (selectedSection) {
+                0 -> ApiKeysTab(scope = scope, onToast = { toast = it })
+                1 -> SavedModelsTab(onToast = { toast = it })
+                2 -> ModelCatalogTab(scope = scope, onToast = { toast = it })
+                3 -> LlmConfigPage()
+                4 -> VisionConfigPage()
+                5 -> AudioConfigPage()
+                6 -> FutureSectionsPage()
+                7 -> AdvancedConfigPage()
+            }
         }
     }
 
@@ -102,6 +91,56 @@ fun ModelSettingsScreen(
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             toast = null
         }
+    }
+}
+
+private fun getSectionTitle(section: Int): String = when (section) {
+    0 -> "API Keys"; 1 -> "Saved Models"; 2 -> "Model Catalog"
+    3 -> "LLM Configuration"; 4 -> "Vision"; 5 -> "Audio"
+    6 -> "Coming Soon"; 7 -> "Advanced"; else -> "AI Settings"
+}
+
+@Composable
+private fun AiSettingsSectionList(onSectionClick: (Int) -> Unit) {
+    val custom = LocalCustomColors.current
+    val keyCount = ApiKeyStore.getAllKeys().size
+    val modelCount = SavedModelsStore.getAllModels().size
+    val catalogLoaded = ModelsDevRepository.isLoaded()
+
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Text("AI Settings", color = custom.fg2, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item { Text("Manage models, API keys, and capabilities", color = custom.fg3, fontSize = 11.sp) }
+        item { Spacer(Modifier.height(8.dp)) }
+        item { SectionCard("🔑", "API Keys", "$keyCount key${if (keyCount != 1) "s" else ""} saved") { onSectionClick(0) } }
+        item { SectionCard("🤖", "Saved Models", "$modelCount model${if (modelCount != 1) "s" else ""} saved") { onSectionClick(1) } }
+        item { SectionCard("📦", "Model Catalog", if (catalogLoaded) "${ModelsDevRepository.allModels().size} models" else "Tap to load") { onSectionClick(2) } }
+        item { Spacer(Modifier.height(8.dp)) }
+        item { SectionCard("⚙️", "LLM Configuration", "Default agent model + prompts") { onSectionClick(3) } }
+        item { SectionCard("👁️", "Vision", "Screen reading model + mode") { onSectionClick(4) } }
+        item { SectionCard("🔊", "Audio", "TTS + voice input") { onSectionClick(5) } }
+        item { SectionCard("🚀", "Coming Soon", "Image gen, video, coding") { onSectionClick(6) } }
+        item { SectionCard("🔧", "Advanced", "Provider endpoint + prompt mode") { onSectionClick(7) } }
+    }
+}
+
+@Composable
+private fun SectionCard(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
+    val custom = LocalCustomColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(icon, fontSize = 18.sp)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(subtitle, color = custom.fg3, fontSize = 10.sp)
+        }
+        Text("▶", color = custom.fg3, fontSize = 12.sp)
     }
 }
 
@@ -607,7 +646,7 @@ private fun ToggleRow(label: String, desc: String, checked: Boolean, onCheck: (B
 
 // === SECTION 2: LLM CONFIGURATION ===
 @Composable
-private fun LlmConfigSection() {
+private fun LlmConfigPage() {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
     val llmModels = SavedModelsStore.getModelsByCapabilities(ModelCapability.LLM_TAGS)
@@ -638,7 +677,7 @@ private fun LlmConfigSection() {
 
 // === SECTION 3: VISION CONFIGURATION ===
 @Composable
-private fun VisionConfigSection() {
+private fun VisionConfigPage() {
     val context = LocalContext.current
     val visionModels = SavedModelsStore.getModelsByCapability(ModelCapability.VISION)
     val visionModel = SavedModelsStore.getVisionModel(context)
@@ -674,7 +713,7 @@ private fun VisionConfigSection() {
 
 // === SECTION 4: AUDIO CONFIGURATION ===
 @Composable
-private fun AudioConfigSection() {
+private fun AudioConfigPage() {
     val context = LocalContext.current
     val audioModels = SavedModelsStore.getModelsByCapabilities(ModelCapability.AUDIO_TAGS)
     val audioModel = remember { SavedModelsStore.getAllModels().find { it.id == context.getSharedPreferences("ai_agent_saved_models", android.content.Context.MODE_PRIVATE).getString("audio_model_id", "") } }
@@ -704,7 +743,7 @@ private fun AudioConfigSection() {
 
 // === SECTION 5-7: FUTURE SECTIONS (Image/Video/Coding) ===
 @Composable
-private fun FutureSectionsSection() {
+private fun FutureSectionsPage() {
     val custom = LocalCustomColors.current
     ConfigSectionHeader("Coming Soon", "Future AI capabilities")
     
@@ -730,7 +769,7 @@ private fun FutureSectionsSection() {
 
 // === SECTION 8: ADVANCED ===
 @Composable
-private fun AdvancedConfigSection() {
+private fun AdvancedConfigPage() {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
     val provider = AIProvider.getCurrentProvider(context)
