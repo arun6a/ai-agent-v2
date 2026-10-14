@@ -67,20 +67,33 @@ fun ModelSettingsScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Tab bar
+        // v3.2.1: Top section — 3 tabs (API Keys, Saved Models, Model Catalog)
         TabRow(selectedTabIndex = selectedTab) {
             Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 },
                 text = { Text("API Keys (${ApiKeyStore.getAllKeys().size})") })
             Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 },
-                text = { Text("Saved Models (${SavedModelsStore.getAllModels().size})") })
+                text = { Text("Saved (${SavedModelsStore.getAllModels().size})") })
             Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 },
-                text = { Text("Model Catalog") })
+                text = { Text("Catalog") })
         }
 
-        when (selectedTab) {
-            0 -> ApiKeysTab(scope = scope, onToast = { toast = it })
-            1 -> SavedModelsTab(onToast = { toast = it })
-            2 -> ModelCatalogTab(scope = scope, onToast = { toast = it })
+        // Tab content + config sections in a scrollable column
+        LazyColumn(modifier = Modifier.fillMaxSize().weight(1f)) {
+            // Tab content
+            item {
+                when (selectedTab) {
+                    0 -> ApiKeysTab(scope = scope, onToast = { toast = it })
+                    1 -> SavedModelsTab(onToast = { toast = it })
+                    2 -> ModelCatalogTab(scope = scope, onToast = { toast = it })
+                }
+            }
+
+            // v3.2.1: Configuration sections (always visible below tabs)
+            item { LlmConfigSection() }
+            item { VisionConfigSection() }
+            item { AudioConfigSection() }
+            item { FutureSectionsSection() }
+            item { AdvancedConfigSection() }
         }
     }
 
@@ -516,4 +529,249 @@ private fun CatalogModelCard(
             }
         }
     }
+}
+
+// ============================================================================
+// v3.2.1: CONFIGURATION SECTIONS — show ONLY models matching capability tags
+// ============================================================================
+
+@Composable
+private fun ConfigSectionHeader(title: String, subtitle: String) {
+    val custom = LocalCustomColors.current
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp)) {
+        Text(title, color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, color = custom.fg3, fontSize = 10.sp)
+        Spacer(Modifier.height(4.dp))
+        Divider(color = custom.inkBorder, thickness = 1.dp)
+    }
+}
+
+@Composable
+private fun ModelSelectorRow(
+    label: String,
+    models: List<SavedModelsStore.SavedModel>,
+    selectedId: String?,
+    onSelect: (String) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        if (models.isEmpty()) {
+            Text("No models available. Add models with this capability from the catalog.",
+                color = custom.fg3, fontSize = 11.sp, modifier = Modifier.padding(8.dp))
+        } else {
+            models.forEach { model ->
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(if (model.id == selectedId) custom.accent.copy(alpha = 0.08f) else custom.ink2, RoundedCornerShape(8.dp))
+                        .border(1.dp, if (model.id == selectedId) custom.accent.copy(alpha = 0.4f) else custom.inkBorder, RoundedCornerShape(8.dp))
+                        .clickable { onSelect(model.id) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (model.id == selectedId) "●" else "○",
+                        color = if (model.id == selectedId) custom.accent else custom.fg3,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(model.modelName, color = m3.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("${model.providerName} · ${model.tagStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
+                    }
+                    Text("${model.contextStr} · ${model.priceStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 8.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToggleRow(label: String, desc: String, checked: Boolean, onCheck: (Boolean) -> Unit) {
+    val custom = LocalCustomColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Text(desc, color = custom.fg3, fontSize = 10.sp)
+        }
+        Switch(checked = checked, onCheckedChange = onCheck,
+            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = custom.accent))
+    }
+}
+
+// === SECTION 2: LLM CONFIGURATION ===
+@Composable
+private fun LlmConfigSection() {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+    val llmModels = SavedModelsStore.getModelsByCapabilities(ModelCapability.LLM_TAGS)
+    val defaultModel = SavedModelsStore.getDefaultModel(context)
+    var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
+    var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
+
+    ConfigSectionHeader("LLM Configuration", "Default agent model + prompt settings")
+    ModelSelectorRow(
+        label = "Default Agent Model",
+        models = llmModels,
+        selectedId = defaultModel?.id,
+        onSelect = { id ->
+            SavedModelsStore.setDefaultModel(context, id)
+        },
+    )
+    Spacer(Modifier.height(4.dp))
+    ToggleRow(
+        label = "Contextual Prompts",
+        desc = "Select relevant tool groups per task (85% token savings)",
+        checked = contextualPrompts,
+        onCheck = {
+            contextualPrompts = it
+            AIProvider.setContextualPromptsEnabled(context, it)
+        },
+    )
+}
+
+// === SECTION 3: VISION CONFIGURATION ===
+@Composable
+private fun VisionConfigSection() {
+    val context = LocalContext.current
+    val visionModels = SavedModelsStore.getModelsByCapability(ModelCapability.VISION)
+    val visionModel = SavedModelsStore.getVisionModel(context)
+    var visionMode by remember { mutableStateOf(AIProvider.getVisionMode(context)) }
+
+    ConfigSectionHeader("Vision Configuration", "VLM model for screen reading fallback")
+    ModelSelectorRow(
+        label = "Vision Model",
+        models = visionModels,
+        selectedId = visionModel?.id,
+        onSelect = { id ->
+            SavedModelsStore.setVisionModel(context, id)
+        },
+    )
+    Spacer(Modifier.height(4.dp))
+    // Vision mode selector
+    val modes = listOf("auto" to "Auto (a11y→ML Kit→VLM)", "mlkit" to "ML Kit OCR only", "vlm" to "VLM only")
+    modes.forEach { (mode, desc) ->
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(if (visionMode == mode) LocalCustomColors.current.accent.copy(alpha = 0.08f) else LocalCustomColors.current.ink2, RoundedCornerShape(8.dp))
+                .border(1.dp, if (visionMode == mode) LocalCustomColors.current.accent.copy(alpha = 0.4f) else LocalCustomColors.current.inkBorder, RoundedCornerShape(8.dp))
+                .clickable { visionMode = mode; AIProvider.setVisionMode(context, mode) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(if (visionMode == mode) "●" else "○", color = if (visionMode == mode) LocalCustomColors.current.accent else LocalCustomColors.current.fg3, fontSize = 12.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(desc, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+        }
+    }
+}
+
+// === SECTION 4: AUDIO CONFIGURATION ===
+@Composable
+private fun AudioConfigSection() {
+    val context = LocalContext.current
+    val audioModels = SavedModelsStore.getModelsByCapabilities(ModelCapability.AUDIO_TAGS)
+    val audioModel = remember { SavedModelsStore.getAllModels().find { it.id == context.getSharedPreferences("ai_agent_saved_models", android.content.Context.MODE_PRIVATE).getString("audio_model_id", "") } }
+    var ttsEnabled by remember { mutableStateOf(context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE).getBoolean("tts_enabled", false)) }
+
+    ConfigSectionHeader("Audio Configuration", "TTS + voice input settings")
+    ModelSelectorRow(
+        label = "Audio Model",
+        models = audioModels,
+        selectedId = audioModel?.id,
+        onSelect = { id ->
+            SavedModelsStore.setAudioModel(context, id)
+        },
+    )
+    Spacer(Modifier.height(4.dp))
+    ToggleRow(
+        label = "Text-to-Speech (TTS)",
+        desc = "AI speaks responses aloud",
+        checked = ttsEnabled,
+        onCheck = {
+            ttsEnabled = it
+            context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE)
+                .edit().putBoolean("tts_enabled", it).apply()
+        },
+    )
+}
+
+// === SECTION 5-7: FUTURE SECTIONS (Image/Video/Coding) ===
+@Composable
+private fun FutureSectionsSection() {
+    val custom = LocalCustomColors.current
+    ConfigSectionHeader("Coming Soon", "Future AI capabilities")
+    
+    val futures = listOf(
+        "🖼️ Image Generation" to "Generate images from text descriptions",
+        "🎬 Video Generation" to "Create video content from prompts",
+        "💻 Coding Assistant" to "Write, review, and debug code",
+    )
+    futures.forEach { (title, desc) ->
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(custom.ink2, RoundedCornerShape(8.dp))
+                .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("Soon", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
+        }
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+// === SECTION 8: ADVANCED ===
+@Composable
+private fun AdvancedConfigSection() {
+    val context = LocalContext.current
+    val custom = LocalCustomColors.current
+    val provider = AIProvider.getCurrentProvider(context)
+    val model = AIProvider.getModel(context)
+    val endpoint = AIProvider.getEndpoint(context)
+
+    ConfigSectionHeader("Advanced", "Endpoint + provider configuration")
+    
+    // Current provider info
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(8.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Active Provider: ${provider.name}", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text("Model: $model", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 10.sp)
+            Text("Endpoint: ${endpoint.take(50)}...", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp, maxLines = 1)
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    
+    // Legacy prompt mode selector
+    Text("Prompt Mode (when Contextual is OFF)", color = custom.fg3, fontSize = 10.sp)
+    val modes = listOf("smart" to "Smart (full, 11K)", "balanced" to "Balanced (1.5K)", "fast" to "Fast (750B)", "custom" to "Custom")
+    var currentMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
+    modes.forEach { (mode, desc) ->
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .background(if (currentMode == mode) custom.accent.copy(alpha = 0.08f) else custom.ink2, RoundedCornerShape(8.dp))
+                .border(1.dp, if (currentMode == mode) custom.accent.copy(alpha = 0.4f) else custom.inkBorder, RoundedCornerShape(8.dp))
+                .clickable { currentMode = mode; AIProvider.setPromptMode(context, mode) }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(if (currentMode == mode) "●" else "○", color = if (currentMode == mode) custom.accent else custom.fg3, fontSize = 10.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(desc, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp)
+        }
+    }
+    Spacer(Modifier.height(16.dp))
 }
