@@ -36,10 +36,14 @@ object RuleTriggerManager {
     private var wifiReceiver: BroadcastReceiver? = null
     private var screenReceiver: BroadcastReceiver? = null
     private var connectivityReceiver: BroadcastReceiver? = null
+    @Volatile
     private var registered = false
+    // v3.0.3: Store app context so we can re-register if needed
+    private var appContext: Context? = null
 
     /**
-     * Register ALL trigger receivers. Called by AgentService.onCreate().
+     * Register ALL trigger receivers. Called by NotificationListener.onListenerConnected()
+     * (primary — MIUI can't kill NotificationListener) + AgentService.onCreate() (fallback).
      * Safe to call multiple times (checks `registered` flag).
      */
     fun registerAll(context: Context) {
@@ -48,7 +52,11 @@ object RuleTriggerManager {
             return
         }
 
-        Log.i(TAG, "=== REGISTERING ALL TRIGGERS ===")
+        // v3.0.3: Use applicationContext so receivers survive even if the calling component dies
+        val ctx = context.applicationContext
+        appContext = ctx
+
+        Log.i(TAG, "=== REGISTERING ALL TRIGGERS (via ${context.javaClass.simpleName}) ===")
 
         // === Battery / Power (charging, discharging, battery_low) ===
         batteryReceiver = object : BroadcastReceiver() {
@@ -56,7 +64,7 @@ object RuleTriggerManager {
                 handleBatteryEvent(ctx, intent)
             }
         }
-        registerReceiver(context, batteryReceiver!!, IntentFilter().apply {
+        registerReceiver(ctx, batteryReceiver!!, IntentFilter().apply {
             addAction(Intent.ACTION_POWER_CONNECTED)
             addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction(Intent.ACTION_BATTERY_CHANGED)
@@ -69,7 +77,7 @@ object RuleTriggerManager {
                 handleHeadsetEvent(ctx, intent)
             }
         }
-        registerReceiver(context, headsetReceiver!!, IntentFilter().apply {
+        registerReceiver(ctx, headsetReceiver!!, IntentFilter().apply {
             addAction(Intent.ACTION_HEADSET_PLUG)
         })
         Log.i(TAG, "✓ Headset trigger registered")
@@ -80,7 +88,7 @@ object RuleTriggerManager {
                 handleWifiEvent(ctx, intent)
             }
         }
-        registerReceiver(context, wifiReceiver!!, IntentFilter().apply {
+        registerReceiver(ctx, wifiReceiver!!, IntentFilter().apply {
             addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
         })
         Log.i(TAG, "✓ WiFi trigger registered")
@@ -91,7 +99,7 @@ object RuleTriggerManager {
                 handleScreenEvent(ctx, intent)
             }
         }
-        registerReceiver(context, screenReceiver!!, IntentFilter().apply {
+        registerReceiver(ctx, screenReceiver!!, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
@@ -104,7 +112,7 @@ object RuleTriggerManager {
                 handleConnectivityEvent(ctx, intent)
             }
         }
-        registerReceiver(context, connectivityReceiver!!, IntentFilter().apply {
+        registerReceiver(ctx, connectivityReceiver!!, IntentFilter().apply {
             addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
         })
         Log.i(TAG, "✓ Connectivity trigger registered")

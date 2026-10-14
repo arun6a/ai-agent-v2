@@ -30,6 +30,9 @@ class NotificationListener : NotificationListenerService() {
         @Volatile
         var instance: NotificationListener? = null
             private set
+        // v3.0.3: Anti-loop cooldown — don't reply to same package within 10 seconds
+        private const val REPLY_COOLDOWN_MS = 10_000L  // 10 seconds
+        private val lastReplyTime = mutableMapOf<String, Long>()  // packageName → timestamp
     }
 
     private val db by lazy { AgentDatabase(this) }
@@ -98,6 +101,18 @@ class NotificationListener : NotificationListenerService() {
             }
 
             if (shouldTrigger) {
+                // v3.0.3: Anti-loop cooldown check
+                // When we reply to a WhatsApp notification, WhatsApp shows a "reply sent" confirmation
+                // notification. This triggers onNotificationPosted AGAIN → matches the rule → replies
+                // again → another confirmation → infinite loop (user got 34 replies!).
+                // FIX: Don't reply to the same package within REPLY_COOLDOWN_MS (10 seconds).
+                val now = System.currentTimeMillis()
+                val lastReply = lastReplyTime[packageName] ?: 0L
+                if (now - lastReply < REPLY_COOLDOWN_MS) {
+                    Log.i(TAG, "⏭️ Skipping $packageName — cooldown active (${(now - lastReply) / 1000}s ago)")
+                    return  // Skip ALL rules for this package (avoid loop)
+                }
+
                 Log.i(TAG, "🔔 Notification rule matched: ${rule.name} (from $packageName: $title)")
 
                 val action = rule.action
@@ -108,6 +123,8 @@ class NotificationListener : NotificationListenerService() {
                     // DIRECT REPLY: Reply IMMEDIATELY (500ms delay for WhatsApp to post reply action)
                     val replyText = parseReplyText(action)
                     Log.i(TAG, "Direct reply — waiting 500ms then replying: $replyText")
+                    // Set cooldown NOW (before reply) so the "reply sent" confirmation doesn't trigger another reply
+                    lastReplyTime[packageName] = System.currentTimeMillis()
                     Handler(Looper.getMainLooper()).postDelayed({
                         try {
                             val replied = replyToNotification(packageName, replyText)
@@ -121,7 +138,8 @@ class NotificationListener : NotificationListenerService() {
                         }
                     }, 500L)
                 } else {
-                    // SMART RULE: Let RuleEngine handle it (LLM call)
+                    // SMART RULE: Set cooldown + let RuleEngine handle it (LLM call)
+                    lastReplyTime[packageName] = System.currentTimeMillis()
                     Log.i(TAG, "Smart rule — executing via RuleEngine")
                     RuleEngine.execute(this, rule, "notification from $packageName: $title — $text")
                 }

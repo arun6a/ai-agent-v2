@@ -126,15 +126,24 @@ object RuleEngine {
     }
 
     /**
-     * Execute a SMART rule — call LLM with the rule action + context.
-     * LLM decides which tools to call.
+     * Execute a SMART rule — call LLM in a LOOP until task is done.
+     * 
+     * v3.0.4: AGENT LOOP — LLM calls tools → sees results → decides next step → repeat.
+     * This enables complex multi-step rules like:
+     *   - "Research AI news, create document, email it"
+     *   - "Check weather, check calendar, give morning briefing"
+     *   - "Read WhatsApp message, understand context, reply intelligently"
+     *
+     * Flow:
+     *   Round 1: LLM → tool_calls → execute → results
+     *   Round 2: LLM + results → tool_calls → execute → results
+     *   Round 3: LLM + results → empty tool_calls → DONE
      */
     private suspend fun executeSmart(context: Context, rule: AgentDatabase.Rule, triggerContext: String) {
         try {
             // Check if online
             if (!NetworkHelper.isOnline(context)) {
                 Log.w(TAG, "Phone offline — cannot call LLM for smart rule")
-                // Queue for later
                 OfflineRuleQueue.enqueue(
                     context,
                     OfflineRuleQueue.PendingRule(
@@ -149,13 +158,17 @@ object RuleEngine {
             }
 
             val llmClient = LLMClient(context)
+            val toolExecutor = com.ai.agent.tools.ToolExecutor(context)
+            val db = AgentDatabase(context)
 
-            // Build a MINIMAL prompt — not the full 47KB system prompt
-            // This is faster, cheaper, and the LLM knows it's executing a rule
-            val systemPrompt = """You are an AI agent executing a RULE that fired automatically.
-Execute the rule action by calling the appropriate tool(s). Respond in JSON only.
+            // v3.0.4: FULL system prompt with tools + rules for autonomous execution
+            val systemPrompt = """You are an AI agent executing a RULE that fired automatically on the user's phone.
+Execute the rule action by calling the appropriate tool(s). You can call multiple tools in sequence.
 
-Available tools (most relevant for rules):
+Work in a LOOP: call tools → see results → decide next step → repeat until done.
+When the task is complete, reply with a summary and NO tool_calls.
+
+Available tools:
 - speak(text) — speak text aloud via TTS
 - sendSMS(num, msg) — send SMS
 - replyToNotification(package, message) — reply to WhatsApp/Telegram notification
@@ -170,38 +183,78 @@ Available tools (most relevant for rules):
 - getWeather() — get weather
 - remember(key, value) — save to memory
 - recall(key) — recall from memory
+- recallSimilar(query) — semantic search memory
+- webSearch(query, fetchTop=0) — search the web. fetchTop=3 gets top 3 pages' full text.
+- fetchPageText(url) — fetch a URL and return clean text
+- writeFile(path, content) — write text to a file on the phone
+- readFile(path) — read a text file
+- sendEmail(to, subject, body) — send an email
+- composeEmail(to, subject, body) — open email composer
+- getCalendarEvents() — get today's calendar events
+- getBatteryLevel() — get battery percentage
+- getCurrentLocation() — get GPS location
 
 Response format: {"reply":"short msg","tool_calls":[{"name":"...","args":{...}}]}
-Complete: {"reply":"Done!","tool_calls":[]}"""
+Complete (no more tools): {"reply":"Done!","tool_calls":[]}
 
-            val userMessage = buildString {
-                append("Rule name: ${rule.name}\n")
-                append("Trigger: ${rule.triggerType}\n")
-                if (triggerContext.isNotEmpty()) {
-                    append("Context: $triggerContext\n")
-                }
-                append("\nRule action: ${rule.action}")
+IMPORTANT: After each tool call, you'll see the results. Use them to decide the next step.
+If a tool fails, try a different approach. Maximum 10 rounds."""
+
+            // Build conversation for agent loop
+            val conversation = StringBuilder()
+            conversation.append("Rule name: ${rule.name}\n")
+            conversation.append("Trigger: ${rule.triggerType}\n")
+            if (triggerContext.isNotEmpty()) {
+                conversation.append("Context: $triggerContext\n")
             }
+            conversation.append("\nRule action: ${rule.action}")
 
             Log.i(TAG, "Calling LLM for smart rule: ${rule.name}")
-            val response = llmClient.chat(userMessage, systemPrompt)
 
-            Log.i(TAG, "LLM reply: ${response.reply.take(100)}")
-            Log.i(TAG, "LLM tool calls: ${response.toolCalls.size}")
+            // AGENT LOOP — max 10 rounds
+            val maxIterations = 10
+            for (iteration in 1..maxIterations) {
+                Log.i(TAG, "--- Smart rule iteration $iteration/${maxIterations} ---")
 
-            // Execute tool calls
-            if (response.toolCalls.isNotEmpty()) {
-                val toolExecutor = com.ai.agent.tools.ToolExecutor(context)
+                val response = llmClient.chat(conversation.toString(), systemPrompt)
+
+                Log.i(TAG, "LLM reply: ${response.reply.take(100)}")
+                Log.i(TAG, "LLM tool calls: ${response.toolCalls.size}")
+
+                // If no tool calls → task is done
+                if (response.toolCalls.isEmpty()) {
+                    Log.i(TAG, "✅ Smart rule complete: ${rule.name}")
+                    db.logAction("Smart rule '${rule.name}' completed: ${response.reply.take(200)}")
+                    break
+                }
+
+                // Execute tool calls
                 val results = toolExecutor.executeTools(response.toolCalls)
+
+                // Log results
                 results.forEachIndexed { i, result ->
-                    Log.i(TAG, "Tool ${response.toolCalls[i].name}: ${if (result.success) "✓" else "✗"} ${result.output.take(100)}")
+                    Log.i(TAG, "Tool ${response.toolCalls[i].name}: ${if (result.success) "✓" else "✗"} ${result.output.take(200)}")
+                }
+
+                // Add results to conversation for next iteration
+                conversation.append("\n\n[Round $iteration results]:")
+                results.forEachIndexed { i, result ->
+                    val call = response.toolCalls[i]
+                    conversation.append("\nTool: ${call.name}(${call.args})")
+                    conversation.append("\nResult: ${if (result.success) "✓" else "✗"} ${result.output.take(500)}")
+                }
+                conversation.append("\n\nBased on these results, decide the next step. If done, reply with no tool_calls.")
+
+                // If last iteration, force stop
+                if (iteration == maxIterations) {
+                    Log.w(TAG, "⚠️ Max iterations reached for ${rule.name}")
+                    db.logAction("Smart rule '${rule.name}' reached max iterations ($maxIterations)")
                 }
             }
 
-            // Log completion
+            // Save to memory that this rule ran
             try {
-                val db = AgentDatabase(context)
-                db.logAction("Smart rule '${rule.name}' completed: ${response.reply.take(100)}")
+                db.remember("rule_last_run_${rule.name}", java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date()))
             } catch (_: Exception) {}
         } catch (e: Exception) {
             Log.e(TAG, "Smart rule execution failed", e)
