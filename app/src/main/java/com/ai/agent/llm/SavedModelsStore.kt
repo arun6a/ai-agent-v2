@@ -162,6 +162,29 @@ object SavedModelsStore {
         save(context)
     }
 
+    /**
+     * v3.2.11: Rebind a saved model to a different API key.
+     *
+     * Pass null for apiKeyId to clear the binding (resolution will fall back
+     * to the default providerId match or first custom key).
+     *
+     * If this model is currently the default, also re-propagate the new key
+     * to AIProvider so the live chat picks up the change immediately.
+     */
+    @Synchronized
+    fun updateModelApiKey(context: Context, modelId: String, apiKeyId: String?) {
+        val idx = models.indexOfFirst { it.id == modelId }
+        if (idx < 0) return
+        models[idx] = models[idx].copy(apiKeyId = apiKeyId)
+        save(context)
+        // If this model is the default, re-apply so AIProvider gets the new key.
+        val defaultId = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_DEFAULT, null)
+        if (defaultId == modelId) {
+            applyModelToProvider(context, modelId)
+        }
+    }
+
     @Synchronized
     fun setDefaultModel(context: Context, id: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

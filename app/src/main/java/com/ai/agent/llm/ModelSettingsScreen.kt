@@ -795,6 +795,10 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
     var models by remember { mutableStateOf(SavedModelsStore.getAllModels()) }
     val defaultModel = remember { SavedModelsStore.getDefaultModel(context) }
     var testingId by remember { mutableStateOf<String?>(null) }
+    var pickingKeyFor by remember { mutableStateOf<SavedModelsStore.SavedModel?>(null) }
+    // Refresh keys once when the tab opens so the picker sees the latest list.
+    LaunchedEffect(Unit) { ApiKeyStore.load(context) }
+    val allKeys = remember { ApiKeyStore.getAllKeys() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -812,6 +816,8 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
                     model = model,
                     isDefault = model.id == defaultModel?.id,
                     isTesting = testingId == model.id,
+                    boundKey = allKeys.find { it.id == model.apiKeyId },
+                    allKeys = allKeys,
                     onSetDefault = {
                         SavedModelsStore.setDefaultModel(context, model.id)
                         models = SavedModelsStore.getAllModels()
@@ -830,9 +836,28 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
                             testingId = null
                         }
                     },
+                    onPickKey = { pickingKeyFor = model },
                 )
             }
         }
+    }
+
+    // v3.2.11: Key picker dialog — opens when user taps "Key:" on a model card.
+    pickingKeyFor?.let { model ->
+        KeyPickerDialog(
+            model = model,
+            allKeys = allKeys,
+            currentKeyId = model.apiKeyId,
+            onDismiss = { pickingKeyFor = null },
+            onPick = { keyId ->
+                SavedModelsStore.updateModelApiKey(context, model.id, keyId)
+                models = SavedModelsStore.getAllModels()
+                pickingKeyFor = null
+                val key = allKeys.find { it.id == keyId }
+                onToast(if (key != null) "Bound to: ${key.alias.ifEmpty { key.providerName }}"
+                        else "Key binding cleared — will auto-resolve")
+            },
+        )
     }
 }
 
@@ -841,9 +866,12 @@ private fun SavedModelCard(
     model: SavedModelsStore.SavedModel,
     isDefault: Boolean,
     isTesting: Boolean = false,
+    boundKey: ApiKeyStore.ApiKey? = null,
+    allKeys: List<ApiKeyStore.ApiKey> = emptyList(),
     onSetDefault: () -> Unit,
     onDelete: () -> Unit,
     onTest: () -> Unit,
+    onPickKey: () -> Unit = {},
 ) {
     val custom = LocalCustomColors.current
     Column(
@@ -877,12 +905,154 @@ private fun SavedModelCard(
         }
         Spacer(Modifier.height(4.dp))
         Text("${model.contextStr} · ${model.priceStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
+
+        // v3.2.11: Key binding row — shows which API key this model is bound to.
+        // Tap to open the KeyPickerDialog. If multiple keys exist for the same
+        // provider, this is how the user picks the right one per model.
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(top = 4.dp)
+                .clickable { onPickKey() }
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.Key, contentDescription = null, tint = custom.fg3, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Key:", color = custom.fg3, fontSize = 10.sp)
+            Spacer(Modifier.width(6.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                if (boundKey != null) {
+                    Text(boundKey.alias.ifEmpty { boundKey.providerName },
+                        color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${boundKey.providerName} · ${boundKey.apiKey.take(8)}...",
+                        color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp, maxLines = 1)
+                } else {
+                    // No explicit binding — show what will resolve at chat time.
+                    val fallback = allKeys.find { it.providerId == model.providerId }
+                        ?: allKeys.find { it.providerId == "custom" }
+                    Text("Auto-resolve",
+                        color = custom.fg3, fontSize = 11.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                    if (fallback != null) {
+                        Text("Will use: ${fallback.alias.ifEmpty { fallback.providerName }}",
+                            color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp, maxLines = 1)
+                    } else {
+                        Text("No matching key — add one in API Keys",
+                            color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
+                    }
+                }
+            }
+            Text("Change ›", color = custom.accent, fontSize = 10.sp)
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onSetDefault) { Text(if (isDefault) "Default ✓" else "Set Default", fontSize = 11.sp) }
             TextButton(onClick = onTest, enabled = !isTesting) {
                 Text(if (isTesting) "Testing..." else "Test", fontSize = 11.sp)
             }
             TextButton(onClick = onDelete) { Text("Remove", fontSize = 11.sp, color = custom.fg3) }
+        }
+    }
+}
+
+/**
+ * v3.2.11: KeyPickerDialog — lets the user bind a saved model to a specific
+ * API key from ApiKeyStore. Includes an "Auto-resolve" option to clear the
+ * binding (so applyModelToProvider's fallback chain runs at chat time).
+ */
+@Composable
+private fun KeyPickerDialog(
+    model: SavedModelsStore.SavedModel,
+    allKeys: List<ApiKeyStore.ApiKey>,
+    currentKeyId: String?,
+    onDismiss: () -> Unit,
+    onPick: (String?) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = custom.canvas,
+        title = {
+            Column {
+                Text("Bind API Key", color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Which key should \"${model.modelName}\" use?",
+                    color = custom.fg3, fontSize = 10.sp)
+            }
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                // Auto-resolve option (clears the binding).
+                item {
+                    KeyPickerRow(
+                        label = "Auto-resolve",
+                        subtitle = "Use the first key matching this model's provider, or the first custom key",
+                        isSelected = currentKeyId == null,
+                        onClick = { onPick(null) },
+                    )
+                }
+                // All saved keys — matching provider first, then others.
+                val matching = allKeys.filter { it.providerId == model.providerId || it.providerId == "custom" }
+                val others = allKeys.filter { it.providerId != model.providerId && it.providerId != "custom" }
+                if (matching.isNotEmpty()) {
+                    item {
+                        Text("Recommended (${matching.size})",
+                            color = custom.fg3, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp))
+                    }
+                }
+                items(matching, key = { it.id }) { key ->
+                    KeyPickerRow(
+                        label = key.alias.ifEmpty { key.providerName },
+                        subtitle = "${key.providerName} · ${key.apiKey.take(8)}... · ${key.baseUrl.take(40)}",
+                        isSelected = key.id == currentKeyId,
+                        onClick = { onPick(key.id) },
+                    )
+                }
+                if (others.isNotEmpty()) {
+                    item {
+                        Text("Other (${others.size})",
+                            color = custom.fg3, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
+                    }
+                }
+                items(others, key = { it.id }) { key ->
+                    KeyPickerRow(
+                        label = key.alias.ifEmpty { key.providerName },
+                        subtitle = "${key.providerName} · ${key.apiKey.take(8)}... · ${key.baseUrl.take(40)}",
+                        isSelected = key.id == currentKeyId,
+                        onClick = { onPick(key.id) },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun KeyPickerRow(
+    label: String,
+    subtitle: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(if (isSelected) custom.accent.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(6.dp))
+            .border(1.dp, if (isSelected) custom.accent.copy(alpha = 0.4f) else custom.inkBorder, RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (isSelected) "●" else "○",
+            color = if (isSelected) custom.accent else custom.fg3, fontSize = 11.sp)
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 8.sp, maxLines = 1)
         }
     }
 }
