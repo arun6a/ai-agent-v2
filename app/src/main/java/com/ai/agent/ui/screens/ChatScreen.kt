@@ -213,7 +213,9 @@ fun ChatScreen(
         }
     }
 
+    // v3.1.0: Add imePadding so keyboard doesn't cover the chat input
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         containerColor = custom.canvas,
         topBar = {
             ChatTopBar(
@@ -558,18 +560,10 @@ private fun ChatTopBar(
                     )
                 }
 
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(6.dp))
 
-                // Provider chip — "zai_direct · glm-5.3"
-                if (providerName.isNotEmpty() || modelName.isNotEmpty()) {
-                    ProviderChip(provider = providerName, model = modelName)
-                }
-
-                Spacer(Modifier.width(8.dp))
-
-                // Pulsing emerald status dot when thinking, steady when ready.
+                // v3.1.0: Compact status — just "● ready" or "● thinking" (no provider/model name)
                 PulsingDot(active = isThinking, color = custom.accent)
-
                 Spacer(Modifier.width(4.dp))
                 Text(
                     text = if (isThinking) "thinking" else "ready",

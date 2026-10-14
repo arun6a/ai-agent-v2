@@ -65,6 +65,7 @@ import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material.icons.outlined.Visibility
@@ -126,19 +127,22 @@ import java.util.Locale
 //   - Status footer: agent ready · API calls today · success rate
 // ============================================================================
 
+// v3.1.0: Reorganized Hub sections for better UX
+// - History moved to FIRST (most used)
+// - Rules renamed to "Automation Rules"
+// - Apps section REMOVED (useless — AppProfileManager does this)
+// - LLM + Vision + Audio merged into "AI Settings"
+// - Order optimized for mobile usage
 enum class HubSection(val label: String, val icon: ImageVector, val count: String? = null) {
+    HISTORY("History", Icons.Outlined.History, "487"),
+    RULES("Automation", Icons.Outlined.Rule, "36"),
     SKILLS("Skills", Icons.Outlined.Psychology, "20"),
-    RULES("Rules", Icons.Outlined.Rule, "36"),
     TOOLS("Tools", Icons.Outlined.Build, "100+"),
-    PLUGINS("Apps", Icons.Outlined.Apps, "15"),
     MEMORY("Memory", Icons.Outlined.Memory, "142"),
     KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder, "23"),
-    HISTORY("History", Icons.Outlined.History, "487"),
     FILES("Files", Icons.Outlined.Folder, "12"),
-    LLM("LLM", Icons.Outlined.Lock, "15"),
+    AI_SETTINGS("AI Settings", Icons.Outlined.SmartToy),
     USAGE("Usage", Icons.Outlined.BarChart, "live"),
-    VISION("Vision", Icons.Outlined.Visibility),
-    AUDIO("Audio", Icons.Outlined.GraphicEq),
     PERMISSIONS("Permissions", Icons.Outlined.Verified, "14"),
     SETTINGS("Settings", Icons.Outlined.Settings),
 }
@@ -242,18 +246,15 @@ fun HubScreen(
                     .fillMaxWidth(),
             ) {
                 when (selected) {
-                    HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
+                    HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
                     HubSection.RULES -> RulesSection()
+                    HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
                     HubSection.TOOLS -> ToolsSection()
-                    HubSection.PLUGINS -> AppsSection()
                     HubSection.MEMORY -> MemorySection()
                     HubSection.KNOWLEDGE -> KnowledgeSection()
-                    HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
                     HubSection.FILES -> FilesSection()
-                    HubSection.LLM -> LlmSection(onOpenProviderSettings = onOpenProviderSettings)
+                    HubSection.AI_SETTINGS -> AiSettingsSection(onOpenProviderSettings = onOpenProviderSettings)
                     HubSection.USAGE -> UsageSection()
-                    HubSection.VISION -> VisionSection()
-                    HubSection.AUDIO -> AudioSection()
                     HubSection.PERMISSIONS -> PermissionsSection()
                     HubSection.SETTINGS -> SettingsSection(onOpenSystemPromptEditor = onOpenSystemPromptEditor)
                 }
@@ -269,21 +270,18 @@ fun HubScreen(
 // open the Hub directly on the Settings section).
 // ---------------------------------------------------------------------------
 
-enum class HubSectionArg { SKILLS, RULES, TOOLS, PLUGINS, MEMORY, KNOWLEDGE, HISTORY, FILES, LLM, USAGE, VISION, AUDIO, PERMISSIONS, SETTINGS
+enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, SETTINGS
     ;
     fun toHubSection(): HubSection = when (this) {
-        HubSectionArg.SKILLS -> HubSection.SKILLS
+        HubSectionArg.HISTORY -> HubSection.HISTORY
         HubSectionArg.RULES -> HubSection.RULES
+        HubSectionArg.SKILLS -> HubSection.SKILLS
         HubSectionArg.TOOLS -> HubSection.TOOLS
-        HubSectionArg.PLUGINS -> HubSection.PLUGINS
         HubSectionArg.MEMORY -> HubSection.MEMORY
         HubSectionArg.KNOWLEDGE -> HubSection.KNOWLEDGE
-        HubSectionArg.HISTORY -> HubSection.HISTORY
         HubSectionArg.FILES -> HubSection.FILES
-        HubSectionArg.LLM -> HubSection.LLM
+        HubSectionArg.AI_SETTINGS -> HubSection.AI_SETTINGS
         HubSectionArg.USAGE -> HubSection.USAGE
-        HubSectionArg.VISION -> HubSection.VISION
-        HubSectionArg.AUDIO -> HubSection.AUDIO
         HubSectionArg.PERMISSIONS -> HubSection.PERMISSIONS
         HubSectionArg.SETTINGS -> HubSection.SETTINGS
     }
@@ -2211,6 +2209,45 @@ private fun isVisionCapable(modelId: String): Boolean {
         m.contains("pixtral") || m.contains("gpt-4-vision") || m.contains("vl-") ||
         m.contains("glm-4.5v") || m.contains("glm-4.1v") || m.contains("glm-5v") ||
         m.contains("llama-3.2") && m.contains("vision") || m.contains("gemma-4-31b")
+}
+
+// v3.1.0: AI Settings section — merges LLM + Vision + Audio into one page
+@Composable
+private fun AiSettingsSection(onOpenProviderSettings: () -> Unit = {}) {
+    val custom = LocalCustomColors.current
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        SectionHeader(title = "AI Settings", subtitle = "Provider, Vision, Audio, Contextual Prompts")
+        
+        // v3.1.0: Contextual Prompts toggle directly here for easy access
+        var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
+        ToggleRow(
+            label = "Contextual Prompts",
+            desc = "Select relevant tool groups per task (85% token savings)",
+            checked = contextualPrompts,
+            onCheck = {
+                contextualPrompts = it
+                AIProvider.setContextualPromptsEnabled(context, it)
+            },
+        )
+        
+        SectionHeader(title = "Provider", subtitle = "LLM model + endpoint")
+        LlmSection(onOpenProviderSettings = onOpenProviderSettings)
+        
+        SectionHeader(title = "Vision", subtitle = "Screen reading mode")
+        VisionSection()
+        
+        SectionHeader(title = "Audio", subtitle = "TTS + Voice input")
+        AudioSection()
+    }
 }
 
 @Composable

@@ -51,12 +51,11 @@ data class CustomColors(
     val fg2: Color = Fg2Light,
     val fg3: Color = Fg3Light,
 
-    // Dark-mode surfaces (kept accessible even when theme is light, so the
-    // dense right-panel / tool cards can keep their distinctive ink look)
-    val inkBg: Color = InkDark,
-    val ink2: Color = Ink2Dark,
-    val ink3: Color = Ink3Dark,
-    val inkBorder: Color = InkBorderDark,
+    // v3.1.0: ink2 now uses light color in light mode (was always dark → black cards in light theme)
+    val inkBg: Color = CanvasLight,  // background in light mode
+    val ink2: Color = Surface2Light,  // light grey in light mode (was Ink2Dark)
+    val ink3: Color = Surface3Light,  // lighter grey in light mode (was Ink3Dark)
+    val inkBorder: Color = BorderLight,  // light border in light mode (was InkBorderDark)
 
     // Status (same hex in both themes)
     val success: Color = StatusSuccess,
@@ -77,7 +76,7 @@ val DarkCustomColors = CustomColors(
     fg2 = Text2Dark,
     fg3 = Text3Dark,
     inkBg = InkDark,
-    ink2 = Ink2Dark,
+    ink2 = Ink2Dark,   // dark in dark mode
     ink3 = Ink3Dark,
     inkBorder = InkBorderDark,
 )
