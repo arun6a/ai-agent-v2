@@ -211,19 +211,10 @@ object AIProvider {
                 ModelInfo("glm-4.1v", "GLM-4.1V (Vision, Legacy)", "Older vision model. May be deprecated.")
             )
         ),
-        ProviderInfo(
-            id = "zai",
-            name = "Z.ai Proxy (Sandbox)",
-            description = "Uses the sandbox proxy. No API key needed, but the sandbox " +
-                    "dev server must be running. GLM-4.6 model. 300 requests/day. " +
-                    "Only works while sandbox is active.",
-            defaultEndpoint = "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai/api/llm/proxy?XTransformPort=3030",
-            needsApiKey = false,
-            models = listOf(
-                ModelInfo("glm-4.6", "GLM-4.6", "Z.ai's flagship model. Smart, supports tools."),
-                ModelInfo("glm-4-flash", "GLM-4 Flash", "Faster, less capable.")
-            )
-        ),
+        // v3.2.4: REMOVED hardcoded "zai" (sandbox proxy) provider.
+        // Sandbox URL is now pre-filled as a Custom API key in ApiKeyStore on first launch.
+        // Users can long-press → delete it if they don't want it.
+        // The "zai_direct" provider (official Z.AI API) is kept.
         ProviderInfo(
             id = "apikeys_in",
             name = "APIKeys.in (Free Gateway)",
@@ -290,7 +281,7 @@ object AIProvider {
     }
 
     fun getProviderId(context: Context): String {
-        return getPrefs(context).getString(KEY_PROVIDER, "zai") ?: "zai"
+        return getPrefs(context).getString(KEY_PROVIDER, DEFAULT_PROVIDER_ID) ?: DEFAULT_PROVIDER_ID
     }
 
     fun setProvider(context: Context, providerId: String) {
@@ -327,7 +318,7 @@ object AIProvider {
 
     fun getCurrentProvider(context: Context): ProviderInfo {
         val id = getProviderId(context)
-        return PROVIDERS.find { it.id == id } ?: PROVIDERS.first { it.id == "zai" }
+        return PROVIDERS.find { it.id == id } ?: PROVIDERS.first { it.id == DEFAULT_PROVIDER_ID }
     }
 
     /**
@@ -339,14 +330,10 @@ object AIProvider {
         return getApiKey(context).isNotEmpty()
     }
 
-    // === Sandbox proxy base URL ===
-    // Used by tools (webSearch, analyzeScreen) that need a sandbox-side proxy
-    // because OpenRouter doesn't have free vision and we need Z.ai's VLM.
-    // The URL is configurable so users can point to their own sandbox without rebuilding.
-    //
-    // Default: current Z.ai Code sandbox URL.
-    // Set via setProxyBaseUrl() (e.g., from Settings).
-    val DEFAULT_PROXY_BASE_URL = "https://preview-chat-1855dd56-e3a8-4ac4-a21c-824fbab8e552.space-z.ai"
+    // v3.2.4: Removed hardcoded sandbox URL. Proxy base URL is now empty by default.
+    // Users configure it via AI Settings → API Keys (custom provider).
+    // Vision/web-search tools will use the provider's own API if possible.
+    val DEFAULT_PROXY_BASE_URL = ""
 
     fun getProxyBaseUrl(context: Context): String {
         return getPrefs(context).getString(KEY_PROXY_BASE_URL, DEFAULT_PROXY_BASE_URL)
@@ -426,6 +413,11 @@ object AIProvider {
     // "custom" → user-edited prompt from storage
     private const val KEY_PROMPT_MODE = "prompt_mode"
     val DEFAULT_PROMPT_MODE = "smart"  // v6.3.2: dynamic disabled by default, user can enable
+
+    // v3.2.4: Default provider is now "zai_direct" (official API, no sandbox).
+    // Sandbox proxy removed — users add it via Custom API key if needed.
+    private const val KEY_DEFAULT_PROVIDER = "default_provider"
+    val DEFAULT_PROVIDER_ID = "zai_direct"
 
     // v3.0.7: Prompt Caching — REMOVED in v3.0.8 (replaced by Contextual Prompts)
     // v3.0.8: Contextual Prompts — select relevant tool groups based on user message

@@ -106,8 +106,10 @@ class LLMClient(private val context: Context) {
                             requestBuilder.header("Authorization", "Bearer $apiKey")
                         }
                     }
+                    // v3.2.4: "zai" sandbox provider removed. Only "zai_direct" + "custom" remain.
+                    // If user has a custom API key with sandbox URL, it uses "custom" provider path.
                     "zai" -> {
-                        // Z.ai proxy needs no auth from the phone (sandbox handles it)
+                        // Legacy fallback — treat as custom (no auth header)
                     }
                 }
 

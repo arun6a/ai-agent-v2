@@ -4412,51 +4412,5 @@ private fun UsageSection() {
             }
         }
 
-        // === Provider quota reference ===
-        item {
-            SectionHeader(title = "Provider Quotas", subtitle = "Free tier limits")
-        }
-        item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(custom.ink2, RoundedCornerShape(8.dp))
-                    .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                QuotaRow("Groq", "30/min · 14,400/day", custom)
-                QuotaRow("Gemini", "15/min · 1,500/day (free)", custom)
-                QuotaRow("Z.ai Direct", "300/day (no key needed)", custom)
-                QuotaRow("Z.ai Proxy", "300/day (needs sandbox)", custom)
-                QuotaRow("OpenRouter", "50/day free, then paid", custom)
-                QuotaRow("Cerebras", "Free tier available", custom)
-                QuotaRow("Mistral", "Free tier (La Plateforme)", custom)
-                QuotaRow("Cline", "Pay-as-you-go credits", custom)
-                QuotaRow("APIKeys.in", "Free gateway", custom)
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuotaRow(provider: String, quota: String, custom: com.ai.agent.ui.components.CustomColors) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(
-            text = provider,
-            color = com.ai.agent.ui.components.LocalCustomColors.current.fg2,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        Text(
-            text = quota,
-            color = com.ai.agent.ui.components.LocalCustomColors.current.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
     }
 }
