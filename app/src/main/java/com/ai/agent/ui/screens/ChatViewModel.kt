@@ -526,8 +526,16 @@ class ChatViewModel(
     private suspend fun runAgentLoop(userMessage: String) {
         val workLog = StringBuilder()
         try {
-            // === 1. Build the system prompt (dynamic) + inject memory ===
-            val basePrompt = DynamicPromptBuilder.buildPrompt(context, userMessage)
+            // v3.0.8: Contextual Prompts — select relevant tool groups based on user message
+            // 3-tier: "Hi" → ultra-tiny, keyword match → contextual, unknown → full prompt
+            val contextualEnabled = AIProvider.isContextualPromptsEnabled(context)
+            val basePrompt = if (contextualEnabled) {
+                val cp = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
+                Log.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(cp)} tokens")
+                cp
+            } else {
+                DynamicPromptBuilder.buildPrompt(context, userMessage)
+            }
             val memory = database.getAllMemory()
             val memoryStr = if (memory.isEmpty()) {
                 "No memories stored yet."
@@ -538,13 +546,16 @@ class ChatViewModel(
 
             // v2.3.3: Inject enabled app profiles into the system prompt so the AI
             // knows which apps are installed + how to interact with each (shortcut tools, tips).
-            try {
-                val appsPrompt = com.ai.agent.llm.AppProfileManager.getActiveAppsPromptSection(context)
-                if (appsPrompt.isNotBlank()) {
-                    systemPrompt += "\n\n$appsPrompt"
+            // v3.0.8: Only inject if NOT using contextual prompt (contextual already has app shortcuts)
+            if (!contextualEnabled) {
+                try {
+                    val appsPrompt = com.ai.agent.llm.AppProfileManager.getActiveAppsPromptSection(context)
+                    if (appsPrompt.isNotBlank()) {
+                        systemPrompt += "\n\n$appsPrompt"
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "App profile injection failed: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "App profile injection failed: ${e.message}")
             }
 
             // v2.2.0 Issue 112 — Inject accessibility status into the system prompt.
@@ -720,16 +731,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 //   true  → step completed normally, continue loop
                 //   false → task complete (no tools) or stuck, break loop
                 val stepResult = withTimeoutOrNull(STEP_TIMEOUT_MS) {
-                    // v3.0.7: Prompt Caching — iteration 1 sends full prompt,
-                    // iterations 2+ send tiny continuation prompt (80% token savings)
-                    val cachingEnabled = AIProvider.isPromptCachingEnabled(context)
-                    val activePrompt = if (cachingEnabled && iteration > 1) {
-                        Log.d(TAG, "Prompt caching: using continuation prompt (iteration $iteration)")
-                        AIProvider.getContinuationPrompt()
-                    } else {
-                        systemPrompt
-                    }
-                    // Call the LLM with current conversation state.
+                    // v3.0.8: Contextual prompts are used for ALL iterations (not just iteration 1)
+                    // The same contextual prompt is reused — AI always sees relevant tools
+                    val activePrompt = systemPrompt  // already contextual from above
                     val llmResponse = llmClient.chat(conversation.toString(), activePrompt)
 
                     _state.update {

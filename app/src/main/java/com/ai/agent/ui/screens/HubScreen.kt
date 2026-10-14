@@ -2683,16 +2683,16 @@ private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                         toast = "Dynamic prompt: $it"
                     },
                 )
-                // v3.0.7: Prompt Caching toggle
-                var promptCaching by remember { mutableStateOf(AIProvider.isPromptCachingEnabled(context)) }
+                // v3.0.8: Contextual Prompts toggle (replaces Prompt Caching + Dynamic Prompt)
+                var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
                 ToggleRow(
-                    label = "Prompt Caching",
-                    desc = "Only send full system prompt on first call, use tiny prompt after (80% token savings on multi-step tasks)",
-                    checked = promptCaching,
+                    label = "Contextual Prompts",
+                    desc = "Select relevant tool groups per task (85% token savings). 'Hi' → tiny prompt, research → web tools only",
+                    checked = contextualPrompts,
                     onCheck = {
-                        promptCaching = it
-                        AIProvider.setPromptCachingEnabled(context, it)
-                        toast = "Prompt caching: $it"
+                        contextualPrompts = it
+                        AIProvider.setContextualPromptsEnabled(context, it)
+                        toast = "Contextual prompts: $it"
                     },
                 )
                 ToggleRow(
