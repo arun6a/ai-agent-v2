@@ -38,6 +38,33 @@ class NotificationListener : NotificationListenerService() {
         super.onListenerConnected()
         instance = this
         Log.i(TAG, "✅ NotificationListener connected — ready to receive notifications")
+
+        // v3.0.2: Register ALL trigger receivers HERE (not in AgentService).
+        // Same lesson as BrowserActivity → BrowserScreen fix:
+        //   - AgentService (foreground service) gets KILLED by MIUI → receivers die
+        //   - NotificationListenerService is system-bound → MIUI CANNOT kill it
+        // So we register battery/headset/wifi/screen triggers here where they survive.
+        try {
+            RuleTriggerManager.registerAll(this)
+            Log.i(TAG, "✅ ALL triggers registered in NotificationListener (MIUI-safe)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register triggers", e)
+        }
+
+        // Also schedule all time rules (belt + suspenders — in case AgentService hasn't started yet)
+        try {
+            RuleScheduler(this).scheduleAllTimeRules()
+            Log.i(TAG, "✅ Time rules rescheduled")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to reschedule time rules", e)
+        }
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        instance = null
+        Log.w(TAG, "⚠️ NotificationListener disconnected")
+        // Don't unregister triggers here — they'll be re-registered when listener reconnects
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {

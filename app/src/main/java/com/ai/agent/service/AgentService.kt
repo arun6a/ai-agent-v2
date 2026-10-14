@@ -101,7 +101,10 @@ class AgentService : Service() {
         llmClient = LLMClient(this)
         toolExecutor = ToolExecutor(this)
 
-        // v3.0.0: Register ALL triggers via RuleTriggerManager (clean — no wrapping)
+        // v3.0.2: Triggers are now registered in NotificationListener.onListenerConnected()
+        // (which MIUI can't kill). We also register here as a FALLBACK in case
+        // notification access is not enabled — but NotificationListener is the primary.
+        // Same lesson as BrowserActivity → BrowserScreen: use the component MIUI can't kill.
         com.ai.agent.rules.RuleTriggerManager.registerAll(this)
 
         // v3.0.0: Schedule all time rules (in case app was killed + restarted)
