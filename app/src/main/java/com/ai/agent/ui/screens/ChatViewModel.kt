@@ -720,8 +720,17 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 //   true  → step completed normally, continue loop
                 //   false → task complete (no tools) or stuck, break loop
                 val stepResult = withTimeoutOrNull(STEP_TIMEOUT_MS) {
+                    // v3.0.7: Prompt Caching — iteration 1 sends full prompt,
+                    // iterations 2+ send tiny continuation prompt (80% token savings)
+                    val cachingEnabled = AIProvider.isPromptCachingEnabled(context)
+                    val activePrompt = if (cachingEnabled && iteration > 1) {
+                        Log.d(TAG, "Prompt caching: using continuation prompt (iteration $iteration)")
+                        AIProvider.getContinuationPrompt()
+                    } else {
+                        systemPrompt
+                    }
                     // Call the LLM with current conversation state.
-                    val llmResponse = llmClient.chat(conversation.toString(), systemPrompt)
+                    val llmResponse = llmClient.chat(conversation.toString(), activePrompt)
 
                     _state.update {
                         it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())

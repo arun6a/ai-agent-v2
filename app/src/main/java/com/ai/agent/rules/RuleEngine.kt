@@ -213,10 +213,20 @@ If a tool fails, try a different approach. Maximum 10 rounds."""
 
             // AGENT LOOP — max 10 rounds
             val maxIterations = 10
+            // v3.0.7: Prompt Caching — iteration 1 sends full prompt, iterations 2+ use tiny prompt
+            val cachingEnabled = com.ai.agent.llm.AIProvider.isPromptCachingEnabled(context)
             for (iteration in 1..maxIterations) {
                 Log.i(TAG, "--- Smart rule iteration $iteration/${maxIterations} ---")
 
-                val response = llmClient.chat(conversation.toString(), systemPrompt)
+                // v3.0.7: Use continuation prompt for iterations 2+ if caching is enabled
+                val activePrompt = if (cachingEnabled && iteration > 1) {
+                    Log.d(TAG, "Prompt caching: using continuation prompt (iteration $iteration)")
+                    com.ai.agent.llm.AIProvider.getContinuationPrompt()
+                } else {
+                    systemPrompt
+                }
+
+                val response = llmClient.chat(conversation.toString(), activePrompt)
 
                 Log.i(TAG, "LLM reply: ${response.reply.take(100)}")
                 Log.i(TAG, "LLM tool calls: ${response.toolCalls.size}")

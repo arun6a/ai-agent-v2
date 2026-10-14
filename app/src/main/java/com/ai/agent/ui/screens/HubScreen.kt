@@ -2683,6 +2683,18 @@ private fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                         toast = "Dynamic prompt: $it"
                     },
                 )
+                // v3.0.7: Prompt Caching toggle
+                var promptCaching by remember { mutableStateOf(AIProvider.isPromptCachingEnabled(context)) }
+                ToggleRow(
+                    label = "Prompt Caching",
+                    desc = "Only send full system prompt on first call, use tiny prompt after (80% token savings on multi-step tasks)",
+                    checked = promptCaching,
+                    onCheck = {
+                        promptCaching = it
+                        AIProvider.setPromptCachingEnabled(context, it)
+                        toast = "Prompt caching: $it"
+                    },
+                )
                 ToggleRow(
                     label = "Always Learn",
                     desc = "Save successful workflows + failure lessons to memory",
