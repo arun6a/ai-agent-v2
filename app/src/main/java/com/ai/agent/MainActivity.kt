@@ -233,8 +233,13 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isNotEmpty()) {
-            Log.w(TAG, "Missing permissions: $missing")
-            // Don't auto-prompt — just log. User will see them in Hub → Permissions.
+            Log.w(TAG, "Missing permissions: $missing — requesting now")
+            // v3.0.6: Actually REQUEST permissions (was just logging before — button did nothing)
+            ActivityCompat.requestPermissions(
+                this,
+                missing.toTypedArray(),
+                1001,
+            )
         }
 
         // For POST_NOTIFICATIONS on Android 13+, prompt once on first launch.
@@ -243,7 +248,6 @@ class MainActivity : ComponentActivity() {
                 this, android.Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
             if (!notifGranted) {
-                // Check if user has been asked before
                 val prefs = getSharedPreferences("ai_agent_prefs", MODE_PRIVATE)
                 if (!prefs.getBoolean("notif_perm_asked", false)) {
                     ActivityCompat.requestPermissions(
@@ -253,6 +257,25 @@ class MainActivity : ComponentActivity() {
                     )
                     prefs.edit().putBoolean("notif_perm_asked", true).apply()
                 }
+            }
+        }
+
+        // v3.0.6: Request "All files access" on Android 11+ (needed for writeFile, readFile, etc.)
+        // WRITE_EXTERNAL_STORAGE doesn't work on API 30+ — must use MANAGE_EXTERNAL_STORAGE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!android.os.Environment.isExternalStorageManager()) {
+                Log.w(TAG, "⚠️ All files access NOT granted — requesting")
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to request all files access", e)
+                }
+            } else {
+                Log.i(TAG, "✅ All files access granted")
             }
         }
     }
