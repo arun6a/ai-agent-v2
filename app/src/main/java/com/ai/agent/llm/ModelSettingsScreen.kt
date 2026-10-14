@@ -227,38 +227,120 @@ private fun ApiKeyCard(key: ApiKeyStore.ApiKey, onDelete: () -> Unit, onTest: ()
     }
 }
 
+// v3.2.3: Add API Key dialog — with provider dropdown, auto-fill base URL, advanced options
 @Composable
 private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) -> Unit) {
     val context = LocalContext.current
     val custom = LocalCustomColors.current
-    var provider by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    
+    var selectedProvider by remember { mutableStateOf<ModelsDevRepository.CatalogProvider?>(null) }
+    var isCustom by remember { mutableStateOf(false) }
     var providerName by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var alias by remember { mutableStateOf("") }
     var baseUrl by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
+    var showAdvanced by remember { mutableStateOf(false) }
+    var chatEndpoint by remember { mutableStateOf("/v1/chat/completions") }
+    var modelsEndpoint by remember { mutableStateOf("/v1/models") }
+    var apiFormat by remember { mutableStateOf("Chat Completions (/chat/completions)") }
+    var showProviderPicker by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+    
+    // Popular providers (grouped like webtoapp)
+    data class ProviderGroup(val name: String, val providers: List<ModelsDevRepository.CatalogProvider>)
+    val popularProviders = remember {
+        val all = ModelsDevRepository.allProviders()
+        val find = { id: String -> all.find { it.id == id } }
+        listOf(
+            ProviderGroup("Recommended", listOfNotNull(find("google"), find("openrouter"), find("zai"))),
+            ProviderGroup("International", listOfNotNull(find("openai"), find("anthropic"), find("xai"), find("groq"), find("mistral"), find("deepinfra"), find("togetherai"), find("perplexity"))),
+            ProviderGroup("Chinese", listOfNotNull(find("deepseek"), find("alibaba"), find("zhipuai"))),
+            ProviderGroup("Self-Hosted", listOfNotNull(find("ollama"), find("lm-studio"), find("vllm"))),
+        )
+    }
 
-    // Get providers from catalog
-    val catalogProviders = remember { ModelsDevRepository.allProviders() }
+    if (showProviderPicker) {
+        // Provider selection modal
+        AlertDialog(
+            onDismissRequest = { showProviderPicker = false },
+            title = { Text("Select Provider") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                    for (group in popularProviders) {
+                        item { Text(group.name, color = custom.fg3, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
+                        items(group.providers, key = { it.id }) { provider ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    selectedProvider = provider
+                                    isCustom = false
+                                    providerName = provider.name
+                                    baseUrl = provider.apiUrl
+                                    showProviderPicker = false
+                                }.padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(provider.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                    // Custom option
+                    item { Text("Custom", color = custom.fg3, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                isCustom = true
+                                selectedProvider = null
+                                providerName = "Custom"
+                                baseUrl = ""
+                                showProviderPicker = false
+                            }.padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Custom (any OpenAI-compatible API)", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showProviderPicker = false }) { Text("Cancel") } },
+        )
+        return
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add API Key") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Provider dropdown
-                Text("Provider", fontSize = 12.sp, color = custom.fg3)
-                OutlinedTextField(
-                    value = providerName,
-                    onValueChange = { providerName = it; provider = it.lowercase().replace(" ", "") },
-                    placeholder = { Text("e.g. Z.AI, OpenAI, Custom") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Provider selector
+                Text("Provider", fontSize = 11.sp, color = custom.fg3)
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { showProviderPicker = true }
+                        .background(custom.ink2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.inkBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(providerName.ifEmpty { "Select provider" }, color = if (providerName.isNotEmpty()) MaterialTheme.colorScheme.onSurface else custom.fg3, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text("▼", color = custom.fg3, fontSize = 10.sp)
+                }
+
+                // Get API Key link
+                if (selectedProvider != null) {
+                    val docUrl = selectedProvider!!.apiUrl
+                    if (docUrl.isNotEmpty()) {
+                        TextButton(onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(docUrl))
+                            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        }) { Text("🔗 Get API Key", fontSize = 11.sp) }
+                    }
+                }
 
                 // API Key
-                Text("API Key", fontSize = 12.sp, color = custom.fg3)
+                Text("API Key", fontSize = 11.sp, color = custom.fg3)
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it },
@@ -275,7 +357,7 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                 )
 
                 // Alias
-                Text("Alias (optional)", fontSize = 12.sp, color = custom.fg3)
+                Text("Alias (optional)", fontSize = 11.sp, color = custom.fg3)
                 OutlinedTextField(
                     value = alias,
                     onValueChange = { alias = it },
@@ -285,36 +367,143 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                 )
 
-                // Base URL (for custom providers)
-                Text("Base URL (optional, for custom providers)", fontSize = 12.sp, color = custom.fg3)
+                // Base URL (auto-filled from provider, editable for custom)
+                Text("Base URL${if (isCustom) "" else " (auto-filled)"}", fontSize = 11.sp, color = custom.fg3)
                 OutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
                     placeholder = { Text("https://api.example.com") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    enabled = isCustom || selectedProvider == null,
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                 )
+                Text("API base URL, without the /v1 path", fontSize = 9.sp, color = custom.fg3)
+
+                // Advanced options (collapsible)
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { showAdvanced = !showAdvanced }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Advanced Options", color = custom.fg2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(if (showAdvanced) "▲" else "▼", color = custom.fg3, fontSize = 10.sp)
+                }
+
+                if (showAdvanced) {
+                    // API Format
+                    Text("API Format", fontSize = 11.sp, color = custom.fg3)
+                    val formats = listOf("Chat Completions (/chat/completions)", "Anthropic Messages (/v1/messages)", "Responses (/responses)")
+                    formats.forEach { fmt ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { apiFormat = fmt }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(if (apiFormat == fmt) "●" else "○", color = if (apiFormat == fmt) custom.accent else custom.fg3, fontSize = 12.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(fmt, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp)
+                        }
+                    }
+
+                    // Chat Endpoint
+                    Text("Chat Endpoint", fontSize = 11.sp, color = custom.fg3)
+                    OutlinedTextField(
+                        value = chatEndpoint,
+                        onValueChange = { chatEndpoint = it },
+                        placeholder = { Text("/v1/chat/completions") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                    )
+                    Text("Default: /v1/chat/completions", fontSize = 9.sp, color = custom.fg3)
+
+                    // Models Endpoint
+                    Text("Models Endpoint", fontSize = 11.sp, color = custom.fg3)
+                    OutlinedTextField(
+                        value = modelsEndpoint,
+                        onValueChange = { modelsEndpoint = it },
+                        placeholder = { Text("/v1/models") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                    )
+                    Text("Default: /v1/models", fontSize = 9.sp, color = custom.fg3)
+                }
+
+                // Test result
+                if (testResult != null) {
+                    Text(testResult!!, color = if (testResult!!.startsWith("✅")) custom.accent else custom.fg3, fontSize = 11.sp)
+                }
+                if (testing) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                }
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    if (apiKey.isNotEmpty() && providerName.isNotEmpty()) {
-                        onSave(ApiKeyStore.ApiKey(
-                            providerId = provider.lowercase().replace(" ", ""),
-                            providerName = providerName,
-                            apiKey = apiKey,
-                            alias = alias,
-                            baseUrl = baseUrl,
-                        ))
-                    }
-                },
-                enabled = apiKey.isNotEmpty() && providerName.isNotEmpty(),
-            ) { Text("Save") }
+            Row {
+                // Test button
+                TextButton(
+                    onClick = {
+                        testing = true
+                        testResult = null
+                        scope.launch {
+                            val result = testApiKey(baseUrl, apiKey, modelsEndpoint)
+                            testResult = result
+                            testing = false
+                        }
+                    },
+                    enabled = apiKey.isNotEmpty() && baseUrl.isNotEmpty() && !testing,
+                ) { Text("Test", fontSize = 11.sp) }
+                
+                // Save button
+                TextButton(
+                    onClick = {
+                        if (apiKey.isNotEmpty() && providerName.isNotEmpty()) {
+                            val providerId = selectedProvider?.id ?: "custom"
+                            onSave(ApiKeyStore.ApiKey(
+                                providerId = providerId,
+                                providerName = providerName,
+                                apiKey = apiKey,
+                                alias = alias,
+                                baseUrl = baseUrl,
+                            ))
+                        }
+                    },
+                    enabled = apiKey.isNotEmpty() && providerName.isNotEmpty(),
+                ) { Text("Save", fontSize = 11.sp) }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * Test an API key by fetching models from the provider's /v1/models endpoint.
+ */
+private suspend fun testApiKey(baseUrl: String, apiKey: String, modelsEndpoint: String): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            val url = "${baseUrl.trimEnd('/')}$modelsEndpoint"
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $apiKey")
+                .build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: ""
+                val json = org.json.JSONObject(body)
+                val modelsArr = json.optJSONArray("data") ?: org.json.JSONArray()
+                "✅ Connected! ${modelsArr.length()} models available"
+            } else {
+                "❌ HTTP ${response.code}: ${response.message}"
+            }
+        } catch (e: Exception) {
+            "❌ Error: ${e.message}"
+        }
+    }
 }
 
 // === TAB 2: SAVED MODELS ===
