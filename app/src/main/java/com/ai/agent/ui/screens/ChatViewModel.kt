@@ -546,9 +546,18 @@ class ChatViewModel(
             // v3.0.8: Contextual Prompts — select relevant tool groups based on user message
             // 3-tier: "Hi" → ultra-tiny, keyword match → contextual, unknown → full prompt
             val contextualEnabled = AIProvider.isContextualPromptsEnabled(context)
+            // v3.2.9: also compute the contextual tool filter (null = send all tools)
+            // so we don't ship 95 tool definitions (~5000 tokens) for a "hi" message.
+            // Mutable — auto-expand may add more tool groups during the loop.
+            var contextualToolFilter: List<String>? = if (contextualEnabled) {
+                com.ai.agent.llm.ContextualPromptBuilder.getRelevantToolNames(userMessage)
+            } else null
+            val isTier1 = if (contextualEnabled) {
+                com.ai.agent.llm.ContextualPromptBuilder.isTier1NoTools(userMessage)
+            } else false
             val basePrompt = if (contextualEnabled) {
                 val cp = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
-                Log.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(cp)} tokens")
+                Log.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(cp)} tokens, tools=${contextualToolFilter?.size ?: "all"}")
                 cp
             } else {
                 DynamicPromptBuilder.buildPrompt(context, userMessage)
@@ -581,35 +590,40 @@ class ChatViewModel(
             // reopen because the in-memory `instance` is null until the system
             // binds the service. The system setting is the source of truth —
             // use it here so the AI knows the real state.
-            try {
-                val a11yEnabled = com.ai.agent.accessibility.AgentAccessibilityService.isEnabled(context)
-                val a11yStatus = if (a11yEnabled) {
-                    "Accessibility service is ENABLED — you can control the phone " +
-                        "(tap, type, read screen, swipe, scroll, take screenshots)."
-                } else {
-                    "Accessibility service is DISABLED — phone control tools " +
-                        "(tap, type, readScreen, etc.) will NOT work. " +
-                        "Ask the user to enable it in Hub → Permissions → Accessibility."
+            //
+            // v3.2.9: Skip these heavy guides for Tier 1 (greetings) — the user
+            // just said "hi", no need to inject 1000+ tokens of a11y/browser/
+            // vision/skills guidance. The ultra-tiny prompt is enough.
+            if (!isTier1) {
+                try {
+                    val a11yEnabled = com.ai.agent.accessibility.AgentAccessibilityService.isEnabled(context)
+                    val a11yStatus = if (a11yEnabled) {
+                        "Accessibility service is ENABLED — you can control the phone " +
+                            "(tap, type, read screen, swipe, scroll, take screenshots)."
+                    } else {
+                        "Accessibility service is DISABLED — phone control tools " +
+                            "(tap, type, readScreen, etc.) will NOT work. " +
+                            "Ask the user to enable it in Hub → Permissions → Accessibility."
+                    }
+                    systemPrompt += "\n\n## Accessibility Status\n$a11yStatus"
+                    Log.i(TAG, "Injected a11y status into system prompt: enabled=$a11yEnabled")
+                } catch (e: Exception) {
+                    Log.w(TAG, "A11y status injection failed: ${e.message}")
                 }
-                systemPrompt += "\n\n## Accessibility Status\n$a11yStatus"
-                Log.i(TAG, "Injected a11y status into system prompt: enabled=$a11yEnabled")
-            } catch (e: Exception) {
-                Log.w(TAG, "A11y status injection failed: ${e.message}")
-            }
 
-            // v2.2.2: Browser mode guidance — tell AI which browser method to use + lock it
-            val browserMode = AIProvider.getBrowserMode(context)  // "auto" | "in_app" | "chrome"
-            val browserGuidance = if (lockedBrowserMethod != null) {
-                "IMPORTANT: You already chose '$lockedBrowserMethod' browser mode for this task. " +
-                    "Do NOT switch to a different browser method. Continue using '$lockedBrowserMethod'."
-            } else {
-                when (browserMode) {
-                    "in_app" -> "Browser mode: IN-APP. Use browserOpen + browserClickText + browserFill for ALL browser operations. Do NOT use openInChrome."
-                    "chrome" -> "Browser mode: CHROME. Use openInChrome / searchInChrome for ALL browser operations. Do NOT use browserOpen."
-                    else -> "Browser mode: AUTO. For logged-in sites (Gmail, YouTube, social media), use Chrome via openInChrome. For web scraping/research, use in-app browser (browserOpen). Pick ONE method and STICK with it for the entire task. Do NOT mix."
+                // v2.2.2: Browser mode guidance — tell AI which browser method to use + lock it
+                val browserMode = AIProvider.getBrowserMode(context)  // "auto" | "in_app" | "chrome"
+                val browserGuidance = if (lockedBrowserMethod != null) {
+                    "IMPORTANT: You already chose '$lockedBrowserMethod' browser mode for this task. " +
+                        "Do NOT switch to a different browser method. Continue using '$lockedBrowserMethod'."
+                } else {
+                    when (browserMode) {
+                        "in_app" -> "Browser mode: IN-APP. Use browserOpen + browserClickText + browserFill for ALL browser operations. Do NOT use openInChrome."
+                        "chrome" -> "Browser mode: CHROME. Use openInChrome / searchInChrome for ALL browser operations. Do NOT use browserOpen."
+                        else -> "Browser mode: AUTO. For logged-in sites (Gmail, YouTube, social media), use Chrome via openInChrome. For web scraping/research, use in-app browser (browserOpen). Pick ONE method and STICK with it for the entire task. Do NOT mix."
+                    }
                 }
-            }
-            val webGuide = """
+                val webGuide = """
 ## Web Tools Guide
 - **webSearch(query)**: Get search results WITHOUT opening a browser. Returns text snippets. Fast, no visual feedback. Best for: "what is X", "latest news".
 - **browserOpen(url)**: Opens IN-APP browser (user can see what's happening). Has AI Mode + User Mode. If user touches browser, AI pauses. Best for: forms, scraping, logged-out sites.
@@ -618,11 +632,11 @@ class ChatViewModel(
 
 RULE: Pick ONE web method per task and STICK with it. Do NOT mix browserOpen with openInChrome in the same task.
 """.trimIndent()
-            systemPrompt += "\n\n$browserGuidance\n$webGuide"
+                systemPrompt += "\n\n$browserGuidance\n$webGuide"
 
-            // v2.2.3: Vision mode + screen loading guidance
-            val visionMode = AIProvider.getVisionMode(context)  // "auto" | "mlkit" | "vlm"
-            val visionGuide = """
+                // v2.2.3: Vision mode + screen loading guidance
+                val visionMode = AIProvider.getVisionMode(context)  // "auto" | "mlkit" | "vlm"
+                val visionGuide = """
 ## Screen Reading & Vision
 Vision mode: $visionMode
 
@@ -642,29 +656,33 @@ WAIT STRATEGY:
 readScreen() reads the screen using: accessibility text → ML Kit OCR → VLM (3-tier fallback, 0 API calls for 95% of screens).
 analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). Use readScreen() first, only use analyzeScreen() if you need to find visual elements (icons, images, positions).
 """.trimIndent()
-            systemPrompt += "\n\n$visionGuide"
+                systemPrompt += "\n\n$visionGuide"
+            }  // end if (!isTier1)
 
             // v2.0.9: Inject available skills (so AI can executeSkill(name))
             // AND check if the user's message matches a skill trigger — if so,
             // auto-load that skill's body into the prompt. Mirrors v1 behavior.
-            try {
-                val skillManager = com.ai.agent.skills.SkillManager(context)
-                skillManager.loadSkills()
-                val skillsPrompt = skillManager.generatePromptSection()
-                if (skillsPrompt.isNotBlank()) {
-                    systemPrompt += "\n\n$skillsPrompt"
-                }
-                // Auto-trigger: if user message matches a skill, inject the skill body
-                val matched = skillManager.matchTrigger(userMessage)
-                if (matched != null) {
-                    val body = skillManager.getSkillBody(matched.name)
-                    if (body != null) {
-                        systemPrompt += "\n\n## Skill Matched: ${matched.name}\n$body"
-                        Log.i(TAG, "Auto-triggered skill: ${matched.name}")
+            // v3.2.9: skip the skills list for Tier 1 (greetings) — usually irrelevant.
+            if (!isTier1) {
+                try {
+                    val skillManager = com.ai.agent.skills.SkillManager(context)
+                    skillManager.loadSkills()
+                    val skillsPrompt = skillManager.generatePromptSection()
+                    if (skillsPrompt.isNotBlank()) {
+                        systemPrompt += "\n\n$skillsPrompt"
                     }
+                    // Auto-trigger: if user message matches a skill, inject the skill body
+                    val matched = skillManager.matchTrigger(userMessage)
+                    if (matched != null) {
+                        val body = skillManager.getSkillBody(matched.name)
+                        if (body != null) {
+                            systemPrompt += "\n\n## Skill Matched: ${matched.name}\n$body"
+                            Log.i(TAG, "Auto-triggered skill: ${matched.name}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Skill injection failed: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Skill injection failed: ${e.message}")
             }
 
             // === 2. Build the conversation: recent history + user message ===
@@ -751,7 +769,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     // v3.0.8: Contextual prompts are used for ALL iterations (not just iteration 1)
                     // The same contextual prompt is reused — AI always sees relevant tools
                     val activePrompt = systemPrompt  // already contextual from above
-                    val llmResponse = llmClient.chat(conversation.toString(), activePrompt)
+                    // v3.2.9: pass the contextual tool filter so we don't ship all 95 tools
+                    // when the user just said "hi" or only needs a small tool group.
+                    val llmResponse = llmClient.chat(conversation.toString(), activePrompt, contextualToolFilter)
 
                     _state.update {
                         it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())
@@ -769,8 +789,8 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             val memStr = if (allMemory.isEmpty()) "No memories stored yet."
                             else allMemory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
                             systemPrompt = "$fullPrompt\n\n## What I Remember About the User\n$memStr"
-                            // Re-call with full prompt
-                            val retryResponse = llmClient.chat(conversation.toString(), systemPrompt)
+                            // Re-call with full prompt + send ALL tools (toolFilter=null)
+                            val retryResponse = llmClient.chat(conversation.toString(), systemPrompt, null)
                             val retryResults = executeTimed(retryResponse.toolCalls)
                             val retrySummary = StringBuilder("Step $iteration (fallback): ${retryResponse.reply}")
                             retryResults.forEachIndexed { i, dr ->
@@ -881,6 +901,12 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                                 if (group != null) {
                                     Log.i(TAG, "Adding group '${group.name}' for tool '${call.name}'")
                                     systemPrompt = com.ai.agent.llm.ContextualPromptBuilder.buildExpandedPrompt(userMessage, group) + "\n\n## What I Remember About the User\n$memoryStr"
+                                    // v3.2.9: also expand the tool filter so the next LLM call
+                                    // actually exposes the new tool via function-calling.
+                                    val currentFilter = contextualToolFilter
+                                    if (currentFilter != null) {
+                                        contextualToolFilter = (currentFilter + group.tools).distinct()
+                                    }
                                     // Add note for AI
                                     conversation.append("\n\n⚠️ EXPANDED: Added ${group.name} tools. You can now use ${call.name}.")
                                 }

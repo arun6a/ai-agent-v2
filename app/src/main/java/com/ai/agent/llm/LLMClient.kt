@@ -45,14 +45,23 @@ class LLMClient(private val context: Context) {
     /**
      * Sends a chat message and returns the LLM's response.
      * Uses the provider configured in Settings.
+     *
+     * v3.2.9: toolFilter — optional list of tool names to expose via OpenAI
+     * function-calling. When null, all available tools are sent (Tier 3
+     * full-prompt behavior). When empty, no tools array is sent at all
+     * (Tier 1 greeting). When non-empty, only those tools are sent.
      */
-    suspend fun chat(userMessage: String, systemPrompt: String): LLMResponse = withContext(Dispatchers.IO) {
+    suspend fun chat(
+        userMessage: String,
+        systemPrompt: String,
+        toolFilter: List<String>? = null,
+    ): LLMResponse = withContext(Dispatchers.IO) {
         val provider = AIProvider.getCurrentProvider(context)
         val apiKey = AIProvider.getApiKey(context)
         val endpoint = AIProvider.getEndpoint(context)
         val model = AIProvider.getModel(context)
 
-        Log.i("LLMClient", "Provider: ${provider.id}, Model: $model, Endpoint: $endpoint")
+        Log.i("LLMClient", "Provider: ${provider.id}, Model: $model, Endpoint: $endpoint, tools=${toolFilter?.size ?: "all"}")
 
         if (provider.needsApiKey && apiKey.isEmpty()) {
             return@withContext LLMResponse(
@@ -68,7 +77,7 @@ class LLMClient(private val context: Context) {
             try {
                 val requestBody = when (provider.id) {
                     "gemini" -> buildGeminiRequest(model, userMessage, systemPrompt)
-                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id)
+                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter)
                 }
 
                 // For Gemini, construct the full URL with model + API key
@@ -233,7 +242,13 @@ class LLMClient(private val context: Context) {
     /**
      * Build request body for OpenAI-compatible APIs (OpenRouter, Z.ai, custom).
      */
-    private fun buildOpenAIRequest(model: String, userMessage: String, systemPrompt: String, providerId: String): String {
+    private fun buildOpenAIRequest(
+        model: String,
+        userMessage: String,
+        systemPrompt: String,
+        providerId: String,
+        toolFilter: List<String>? = null,
+    ): String {
         val messages = JSONArray()
         messages.put(JSONObject().apply {
             put("role", "system")
@@ -256,8 +271,14 @@ class LLMClient(private val context: Context) {
             // The LLM returns tool_calls as a structured field, not as text.
             if (providerId in setOf("groq", "openrouter", "together", "custom", "openai",
                 "cerebras", "mistral", "deepinfra", "fireworks", "zai_direct", "apikeys_in", "cline")) {
-                put("tools", buildToolsArray())
-                put("tool_choice", "auto")
+                // v3.2.9: buildToolsArray(null)  → all tools (Tier 3 behavior, unchanged)
+                //         buildToolsArray([])    → no tools array at all (Tier 1 greeting)
+                //         buildToolsArray([...])  → only those tools (Tier 2 contextual)
+                val tools = buildToolsArray(toolFilter)
+                if (tools.length() > 0) {
+                    put("tools", tools)
+                    put("tool_choice", "auto")
+                }
                 // Some providers (Groq, OpenRouter) support response_format for stricter output
                 if (providerId == "groq") {
                     put("response_format", JSONObject().put("type", "json_object"))
@@ -274,11 +295,23 @@ class LLMClient(private val context: Context) {
      *
      * This is FAR more reliable than asking the LLM to write JSON in the reply text —
      * the model returns structured tool_calls directly, no parsing needed.
+     *
+     * v3.2.9: filter — optional list of tool names. When non-null, only tools
+     * whose name is in the filter are included. When empty, the result is an
+     * empty array (no tools at all — Tier 1 greeting case).
      */
-    private fun buildToolsArray(): JSONArray {
+    private fun buildToolsArray(filter: List<String>? = null): JSONArray {
         val tools = JSONArray()
+        // When the caller passes an empty filter, return an empty array —
+        // the LLM should just reply with text, no tool_calls.
+        if (filter != null && filter.isEmpty()) {
+            return tools
+        }
         val toolNames = com.ai.agent.tools.ToolExecutor.getAvailableToolNames()
         for (name in toolNames) {
+            // v3.2.9: apply the contextual filter when one is provided.
+            if (filter != null && name !in filter) continue
+
             val parameters = JSONObject()
                 .put("type", "object")
                 .put("properties", JSONObject())

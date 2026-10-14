@@ -304,6 +304,48 @@ object ContextualPromptBuilder {
     }
 
     /**
+     * v3.2.9: Return the set of tool names that should be sent via OpenAI
+     * function-calling for this message.
+     *
+     *   Tier 1 ("hi")         → empty list (no tools, model just replies)
+     *   Tier 2 (matched group)→ always-tools + matched group tools only
+     *   Tier 3 (full prompt)  → null = send ALL tools (unchanged behavior)
+     *
+     * Returning null means "no filtering — send everything" so we preserve
+     * the Tier 3 behavior without changing the calling code.
+     */
+    fun getRelevantToolNames(userMessage: String): List<String>? {
+        val msg = userMessage.lowercase().trim()
+        // Tier 1: greeting → no tools at all.
+        if (isNoToolMessage(msg)) {
+            return emptyList()
+        }
+        // Tier 2: matched groups → only those tool names + ALWAYS_TOOLS.
+        val groups = getRelevantGroups(msg)
+        if (groups.isNotEmpty()) {
+            val names = mutableSetOf<String>()
+            // Strip the "(...)" suffix from ALWAYS_TOOLS entries like "speak(text)".
+            for ((raw, _) in ALWAYS_TOOLS) {
+                val n = raw.substringBefore("(").trim()
+                if (n.isNotEmpty()) names.add(n)
+            }
+            for (g in groups) names.addAll(g.tools)
+            return names.toList()
+        }
+        // Tier 3: no keyword match → caller should send the full toolset.
+        return null
+    }
+
+    /**
+     * v3.2.9: Was this message classified as Tier 1 (no tools)?
+     * Used by ChatViewModel.runAgentLoop to skip appending large guide
+     * sections (vision/web/a11y) to a tiny greeting prompt.
+     */
+    fun isTier1NoTools(userMessage: String): Boolean {
+        return isNoToolMessage(userMessage.lowercase().trim())
+    }
+
+    /**
      * Check if message needs no tools.
      */
     private fun isNoToolMessage(msg: String): Boolean {
