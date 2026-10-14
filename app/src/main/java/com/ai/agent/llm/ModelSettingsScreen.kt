@@ -538,35 +538,67 @@ private suspend fun testApiKey(baseUrl: String, apiKey: String, modelsEndpoint: 
 private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
     return withContext(Dispatchers.IO) {
         try {
-            // Sandbox prefill key has a full proxy URL as baseUrl.
-            // Other custom keys might just have a base URL — append /v1/models.
-            val url = if (key.baseUrl.contains("/api/llm/proxy")) {
-                key.baseUrl
-            } else {
-                "${key.baseUrl.trimEnd('/')}/v1/models"
-            }
             val client = okhttp3.OkHttpClient.Builder()
                 .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
-            val request = okhttp3.Request.Builder()
-                .url(url)
-                .apply {
-                    if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
-                        header("Authorization", "Bearer ${key.apiKey}")
-                    }
+
+            // v3.2.8: Sandbox proxy (/api/llm/proxy) is POST-only (chat completions).
+            // For that URL, send a tiny "ping" chat request instead of GET.
+            // For other custom URLs, hit GET /v1/models (standard OpenAI discovery).
+            val isSandboxProxy = key.baseUrl.contains("/api/llm/proxy")
+            val request = if (isSandboxProxy) {
+                val body = org.json.JSONObject().apply {
+                    put("model", "glm-4.6")
+                    put("stream", false)
+                    put("messages", org.json.JSONArray().apply {
+                        put(org.json.JSONObject().apply {
+                            put("role", "user")
+                            put("content", "ping")
+                        })
+                    })
                 }
-                .build()
+                okhttp3.Request.Builder()
+                    .url(key.baseUrl)
+                    .header("Content-Type", "application/json")
+                    .apply {
+                        if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                            header("Authorization", "Bearer ${key.apiKey}")
+                        }
+                    }
+                    .post(body.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+            } else {
+                val url = "${key.baseUrl.trimEnd('/')}/v1/models"
+                okhttp3.Request.Builder()
+                    .url(url)
+                    .apply {
+                        if (key.apiKey.isNotEmpty()) {
+                            header("Authorization", "Bearer ${key.apiKey}")
+                        }
+                    }
+                    .build()
+            }
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
-                val body = response.body?.string() ?: ""
-                // Try to count models if it's a /v1/models response.
-                val count = try {
-                    val json = org.json.JSONObject(body)
-                    json.optJSONArray("data")?.length() ?: -1
-                } catch (_: Exception) { -1 }
-                if (count >= 0) "✅ Connected! $count models available"
-                else "✅ Connected (HTTP ${response.code})"
+                val respBody = response.body?.string() ?: ""
+                if (isSandboxProxy) {
+                    // It's a chat response — try to extract the reply.
+                    val reply = try {
+                        org.json.JSONObject(respBody).optJSONArray("choices")
+                            ?.optJSONObject(0)?.optJSONObject("message")
+                            ?.optString("content", "") ?: ""
+                    } catch (_: Exception) { "" }
+                    val preview = if (reply.length > 40) reply.take(40) + "..." else reply
+                    if (reply.isNotEmpty()) "✅ Connected! Reply: $preview"
+                    else "✅ Connected (HTTP ${response.code})"
+                } else {
+                    val count = try {
+                        org.json.JSONObject(respBody).optJSONArray("data")?.length() ?: -1
+                    } catch (_: Exception) { -1 }
+                    if (count >= 0) "✅ Connected! $count models available"
+                    else "✅ Connected (HTTP ${response.code})"
+                }
             } else {
                 "❌ HTTP ${response.code}: ${response.message}"
             }
