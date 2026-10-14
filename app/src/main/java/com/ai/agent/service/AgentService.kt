@@ -626,8 +626,12 @@ class AgentService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to unregister screen receiver", e)
         }
-        // v3.0.0: Unregister all triggers via RuleTriggerManager
-        com.ai.agent.rules.RuleTriggerManager.unregisterAll(this)
+        // v3.0.4: DON'T unregister triggers when AgentService dies.
+        // Since we use applicationContext for registerReceiver(), the receivers
+        // survive AgentService death. unregisterAll() was KILLING the receivers
+        // that NotificationListener registered — breaking charging rules.
+        // Only NotificationListener should unregister (and it never does, since
+        // it's system-bound and MIUI can't kill it).
 
         Log.i(TAG, "AgentService destroyed")
     }

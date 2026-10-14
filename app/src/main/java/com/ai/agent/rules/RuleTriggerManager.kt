@@ -38,84 +38,104 @@ object RuleTriggerManager {
     private var connectivityReceiver: BroadcastReceiver? = null
     @Volatile
     private var registered = false
-    // v3.0.3: Store app context so we can re-register if needed
+    // v3.0.4: Store app context so we can re-register if needed
     private var appContext: Context? = null
 
     /**
      * Register ALL trigger receivers. Called by NotificationListener.onListenerConnected()
      * (primary — MIUI can't kill NotificationListener) + AgentService.onCreate() (fallback).
-     * Safe to call multiple times (checks `registered` flag).
+     * v3.0.4: Uses per-receiver null check instead of global flag.
+     * This way, if AgentService registers first then dies, NotificationListener can RE-register
+     * the receivers (since unregisterAll sets them to null).
      */
     fun registerAll(context: Context) {
-        if (registered) {
-            Log.i(TAG, "Already registered — skipping")
-            return
-        }
-
-        // v3.0.3: Use applicationContext so receivers survive even if the calling component dies
+        // v3.0.4: Use applicationContext so receivers survive even if the calling component dies
         val ctx = context.applicationContext
         appContext = ctx
 
         Log.i(TAG, "=== REGISTERING ALL TRIGGERS (via ${context.javaClass.simpleName}) ===")
 
+        // v3.0.4: Register each receiver individually — skip if already registered (not null)
+        // This allows re-registration after AgentService death (unregisterAll sets to null)
+
         // === Battery / Power (charging, discharging, battery_low) ===
-        batteryReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                handleBatteryEvent(ctx, intent)
+        if (batteryReceiver == null) {
+            batteryReceiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    handleBatteryEvent(ctx, intent)
+                }
             }
+            registerReceiver(ctx, batteryReceiver!!, IntentFilter().apply {
+                addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_POWER_DISCONNECTED)
+                addAction(Intent.ACTION_BATTERY_CHANGED)
+            })
+            Log.i(TAG, "✓ Battery/Power trigger registered")
+        } else {
+            Log.i(TAG, "→ Battery receiver already registered — skipping")
         }
-        registerReceiver(ctx, batteryReceiver!!, IntentFilter().apply {
-            addAction(Intent.ACTION_POWER_CONNECTED)
-            addAction(Intent.ACTION_POWER_DISCONNECTED)
-            addAction(Intent.ACTION_BATTERY_CHANGED)
-        })
-        Log.i(TAG, "✓ Battery/Power trigger registered")
 
         // === Headset (headset_connected, headset_disconnected) ===
-        headsetReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                handleHeadsetEvent(ctx, intent)
+        if (headsetReceiver == null) {
+            headsetReceiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    handleHeadsetEvent(ctx, intent)
+                }
             }
+            registerReceiver(ctx, headsetReceiver!!, IntentFilter().apply {
+                addAction(Intent.ACTION_HEADSET_PLUG)
+            })
+            Log.i(TAG, "✓ Headset trigger registered")
+        } else {
+            Log.i(TAG, "→ Headset receiver already registered — skipping")
         }
-        registerReceiver(ctx, headsetReceiver!!, IntentFilter().apply {
-            addAction(Intent.ACTION_HEADSET_PLUG)
-        })
-        Log.i(TAG, "✓ Headset trigger registered")
 
         // === WiFi (wifi_connected, wifi_disconnected) ===
-        wifiReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                handleWifiEvent(ctx, intent)
+        if (wifiReceiver == null) {
+            wifiReceiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    handleWifiEvent(ctx, intent)
+                }
             }
+            registerReceiver(ctx, wifiReceiver!!, IntentFilter().apply {
+                addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            })
+            Log.i(TAG, "✓ WiFi trigger registered")
+        } else {
+            Log.i(TAG, "→ WiFi receiver already registered — skipping")
         }
-        registerReceiver(ctx, wifiReceiver!!, IntentFilter().apply {
-            addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
-        })
-        Log.i(TAG, "✓ WiFi trigger registered")
 
         // === Screen (screen_on, screen_off, user_unlocked) ===
-        screenReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                handleScreenEvent(ctx, intent)
+        if (screenReceiver == null) {
+            screenReceiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    handleScreenEvent(ctx, intent)
+                }
             }
+            registerReceiver(ctx, screenReceiver!!, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            })
+            Log.i(TAG, "✓ Screen trigger registered")
+        } else {
+            Log.i(TAG, "→ Screen receiver already registered — skipping")
         }
-        registerReceiver(ctx, screenReceiver!!, IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_USER_PRESENT)
-        })
-        Log.i(TAG, "✓ Screen trigger registered")
 
         // === Connectivity (for offline rule queue processing) ===
-        connectivityReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                handleConnectivityEvent(ctx, intent)
+        if (connectivityReceiver == null) {
+            connectivityReceiver = object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    handleConnectivityEvent(ctx, intent)
+                }
             }
+            registerReceiver(ctx, connectivityReceiver!!, IntentFilter().apply {
+                addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
+            })
+            Log.i(TAG, "✓ Connectivity trigger registered")
+        } else {
+            Log.i(TAG, "→ Connectivity receiver already registered — skipping")
         }
-        registerReceiver(ctx, connectivityReceiver!!, IntentFilter().apply {
-            addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
-        })
-        Log.i(TAG, "✓ Connectivity trigger registered")
 
         registered = true
         Log.i(TAG, "=== ALL TRIGGERS REGISTERED ===")
