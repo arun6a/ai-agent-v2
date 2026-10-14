@@ -850,7 +850,26 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
 
                     // === LLM wants to call tools — execute them (with per-call timing) ===
                     _state.update { it.copy(isThinking = false, isExecuting = true) }
-                    val results = executeTimed(llmResponse.toolCalls)
+                    var results = executeTimed(llmResponse.toolCalls)
+
+                    // v3.0.9: Auto-expand contextual prompt if AI called a tool not in groups
+                    if (contextualEnabled && userMessage.isNotEmpty()) {
+                        val missingTools = llmResponse.toolCalls.filter { call ->
+                            !com.ai.agent.llm.ContextualPromptBuilder.isToolAvailable(userMessage, call.name)
+                        }
+                        if (missingTools.isNotEmpty()) {
+                            Log.w(TAG, "Contextual auto-expand: AI needs tools not in prompt: ${missingTools.map { it.name }}")
+                            for (call in missingTools) {
+                                val group = com.ai.agent.llm.ContextualPromptBuilder.findGroupForTool(call.name)
+                                if (group != null) {
+                                    Log.i(TAG, "Adding group '${group.name}' for tool '${call.name}'")
+                                    systemPrompt = com.ai.agent.llm.ContextualPromptBuilder.buildExpandedPrompt(userMessage, group) + "\n\n## What I Remember About the User\n$memoryStr"
+                                    // Add note for AI
+                                    conversation.append("\n\n⚠️ EXPANDED: Added ${group.name} tools. You can now use ${call.name}.")
+                                }
+                            }
+                        }
+                    }
 
                     val toolSummary = StringBuilder()
                     toolSummary.append(if (iteration == 1) llmResponse.reply else "Step $iteration: ${llmResponse.reply}")

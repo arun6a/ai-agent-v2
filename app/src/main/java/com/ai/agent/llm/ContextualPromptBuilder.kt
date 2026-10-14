@@ -312,6 +312,8 @@ object ContextualPromptBuilder {
 
     /**
      * Match user message to relevant tool groups.
+     * v3.0.9: Auto-include Screen group for App + Browser + Shortcut tasks
+     * (these tasks often need readScreen/tap to verify state or click elements).
      */
     private fun getRelevantGroups(msg: String): List<ToolGroup> {
         var matched = TOOL_GROUPS.filter { group ->
@@ -319,6 +321,26 @@ object ContextualPromptBuilder {
                 msg.contains(keyword)
             }
         }
+
+        // v3.0.9: If Apps, Shortcuts, or Browser matched → also include Screen group
+        // (app control + browser tasks often need readScreen/tap to verify state)
+        val hasApps = matched.any { it.name == "Apps" }
+        val hasShortcuts = matched.any { it.name == "Shortcuts" }
+        val hasBrowser = matched.any { it.name == "Browser" }
+        val hasScreen = matched.any { it.name == "Screen" }
+        if ((hasApps || hasShortcuts || hasBrowser) && !hasScreen) {
+            matched = matched + (TOOL_GROUPS.find { it.name == "Screen" }!!)
+            Log.i(TAG, "Auto-included Screen group (app/browser/shortcut task detected)")
+        }
+
+        // v3.0.9: If Browser matched → also include Web group
+        // (browser tasks often need webSearch to find URLs first)
+        val hasWeb = matched.any { it.name == "Web" }
+        if (hasBrowser && !hasWeb) {
+            matched = matched + (TOOL_GROUPS.find { it.name == "Web" }!!)
+            Log.i(TAG, "Auto-included Web group (browser task detected)")
+        }
+
         // Always include Memory group (for recallSimilar at task start)
         val hasMemory = matched.any { it.name == "Memory" }
         if (!hasMemory) {
