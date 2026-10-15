@@ -145,6 +145,31 @@ object ProviderModelsStore {
     }
 
     /**
+     * v3.3.5: Returns the ACTUAL model ID a specific provider's API expects.
+     *
+     * Catalog model IDs are bare (e.g. "grok-4.7"), but gateway providers
+     * like Cline/OpenRouter expect prefixed IDs (e.g. "x-ai/grok-4.7").
+     * This looks up the cached /v1/models response for the given key and
+     * returns the matching model ID. Falls back to the input if no match.
+     *
+     * Used by:
+     *   - ModelCatalogTab.onAdd (store the provider-specific ID, not the bare one)
+     *   - resolveEndpointForBinding / LLMClient (send the right ID in the request)
+     */
+    fun resolveActualModelId(context: Context, apiKeyId: String, catalogModelId: String): String {
+        val cached = getCached(context, apiKeyId) ?: return catalogModelId
+        val lowerQuery = catalogModelId.lowercase()
+        // Exact match first.
+        val exact = cached.modelIds.firstOrNull { it.lowercase() == lowerQuery }
+        if (exact != null) return exact
+        // Substring match (handles "x-ai/grok-4.7" contains "grok-4.7").
+        // Prefer the SHORTEST match (closest to the catalog ID).
+        val matches = cached.modelIds.filter { it.lowercase().contains(lowerQuery) }
+            .sortedBy { it.length }
+        return matches.firstOrNull() ?: catalogModelId
+    }
+
+    /**
      * Returns the union of all model IDs available across all cached keys.
      * Used by the "My Available Models" filter chip in the catalog.
      */

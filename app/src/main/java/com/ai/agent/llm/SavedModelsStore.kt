@@ -402,7 +402,9 @@ object SavedModelsStore {
         ApiKeyStore.load(context)
         val key = ApiKeyStore.getAllKeys().find { it.id == binding.apiKeyId } ?: return
         AIProvider.setProvider(context, binding.providerId)
-        AIProvider.setModel(context, model.modelId)
+        // v3.3.5: resolve actual model ID for this binding's provider.
+        val actualModelId = resolveActualModelIdForBinding(context, model, binding)
+        AIProvider.setModel(context, actualModelId)
         val endpoint = resolveEndpointForBinding(model, binding, key)
         if (endpoint.isNotEmpty()) AIProvider.setEndpoint(context, endpoint)
         AIProvider.setApiKey(context, key.apiKey)
@@ -434,6 +436,28 @@ object SavedModelsStore {
             model.apiUrl.isNotEmpty() -> model.apiUrl
             else -> AIProvider.PROVIDERS.find { it.id == binding.providerId }?.defaultEndpoint ?: ""
         }
+    }
+
+    /**
+     * v3.3.5: Resolve the actual model ID for a specific binding.
+     *
+     * Gateway providers (Cline, OpenRouter) prefix model IDs:
+     *   catalog: "grok-4.7"  →  Cline expects: "x-ai/grok-4.7"
+     *
+     * The saved model's `modelId` field is the catalog ID (or the resolved
+     * ID from when it was saved). At call time, we look up the cached
+     * /v1/models response for the binding's key and return the matching ID.
+     * Falls back to the stored modelId if no cache match.
+     *
+     * This needs a Context (to read ProviderModelsStore cache) so it's not
+     * a pure data-class method — it lives here.
+     */
+    fun resolveActualModelIdForBinding(
+        context: Context,
+        model: SavedModel,
+        binding: ModelProviderBinding,
+    ): String {
+        return ProviderModelsStore.resolveActualModelId(context, binding.apiKeyId, model.modelId)
     }
 
     @Synchronized
@@ -535,7 +559,11 @@ object SavedModelsStore {
         val (binding, key) = resolved
         val effectiveProviderId = binding.providerId
         AIProvider.setProvider(context, effectiveProviderId)
-        AIProvider.setModel(context, model.modelId)
+        // v3.3.5: resolve the actual model ID for this binding's provider.
+        // Gateway providers (Cline, OpenRouter) prefix model IDs:
+        //   catalog: "grok-4.7"  →  Cline expects: "x-ai/grok-4.7"
+        val actualModelId = resolveActualModelIdForBinding(context, model, binding)
+        AIProvider.setModel(context, actualModelId)
 
         // v3.3.4: use the shared endpoint resolver.
         val endpoint = resolveEndpointForBinding(model, binding, key)

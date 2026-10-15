@@ -750,6 +750,8 @@ private suspend fun testSavedModel(
             if (endpoint.isEmpty()) {
                 return@withContext "❌ No endpoint resolved for ${binding.providerName}"
             }
+            // v3.3.5: resolve the actual model ID for this provider (Cline/OpenRouter prefix).
+            val actualModelId = SavedModelsStore.resolveActualModelIdForBinding(context, model, binding)
             // v3.3.4: use the provider's auth scheme (BEARER / X_API_KEY / QUERY_PARAM / NONE).
             val endpointInfo = ProviderEndpoints.byId(binding.providerId)
             val authScheme = endpointInfo?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
@@ -779,7 +781,7 @@ private suspend fun testSavedModel(
                     .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
                 val body = org.json.JSONObject().apply {
-                    put("model", model.modelId)
+                    put("model", actualModelId)  // v3.3.5: provider-specific ID
                     put("stream", false)
                     put("messages", org.json.JSONArray().apply {
                         put(org.json.JSONObject().apply {
@@ -1659,11 +1661,19 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                     // this auto-binds the model to a key that actually has access.
                     // v3.3.4: if no key has this exact model, fall back to ANY saved
                     // key (user can fix binding later via Saved Models → Manage).
-                    val apiKeyId = keysWithModel.firstOrNull()?.id
-                        ?: ApiKeyStore.getKey(model.providerId)?.id
-                        ?: ApiKeyStore.getAllKeys().firstOrNull()?.id
+                    // v3.3.5: resolve the ACTUAL model ID the provider's API expects.
+                    // Gateway providers like Cline/OpenRouter prefix model IDs
+                    // (e.g. "x-ai/grok-4.7" instead of "grok-4.7"). Sending the bare
+                    // catalog ID → HTTP 400 "invalid model format".
+                    val boundKey = keysWithModel.firstOrNull()
+                        ?: ApiKeyStore.getKey(model.providerId)
+                        ?: ApiKeyStore.getAllKeys().firstOrNull()
+                    val apiKeyId = boundKey?.id
+                    val actualModelId = if (boundKey != null) {
+                        ProviderModelsStore.resolveActualModelId(context, boundKey.id, model.id)
+                    } else model.id
                     SavedModelsStore.addModel(context, SavedModelsStore.SavedModel(
-                        modelId = model.id,
+                        modelId = actualModelId,  // v3.3.5: provider-specific ID (e.g. "x-ai/grok-4.7")
                         modelName = model.name,
                         providerId = model.providerId,
                         providerName = model.providerName,
@@ -1676,6 +1686,7 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                     ))
                     onToast("Saved: ${model.name}" +
                         if (apiKeyId == null) " (no key bound — tap Manage to bind)"
+                        else if (actualModelId != model.id) " (model ID: $actualModelId)"
                         else "")
                 },
             )
