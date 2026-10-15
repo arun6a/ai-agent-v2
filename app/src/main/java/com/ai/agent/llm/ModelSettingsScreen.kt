@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -2147,7 +2148,15 @@ private fun SmartRoutingPage(onToast: (String) -> Unit) {
     val defaultModel = remember { SavedModelsStore.getDefaultModel(context) }
     val allModels = remember { SavedModelsStore.getAllModels() }
 
-    ConfigSectionHeader("Smart Routing", "Tier-based model selection + auto-fallback")
+    // v3.3.7: wrap in verticalScroll so the page scrolls when content overflows.
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ConfigSectionHeader("Smart Routing", "Tier-based model selection + auto-fallback")
 
     // === Tier-based model selection ===
     Text("Task-Based Model Selection", color = custom.fg2, fontSize = 12.sp,
@@ -2333,7 +2342,8 @@ private fun SmartRoutingPage(onToast: (String) -> Unit) {
         onToast("All health records cleared")
     }) { Text("Reset All Health", fontSize = 10.sp, color = custom.fg3) }
 
-    Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
+    }  // end Column
 }
 
 @Composable
