@@ -240,7 +240,99 @@ class LLMClient(private val context: Context) {
     }
 
     /**
-     * Build request body for OpenAI-compatible APIs (OpenRouter, Z.ai, custom).
+     * v3.3.2: chatWithFailover — wraps chat() with multi-binding auto-failover.
+     *
+     * When the active binding fails permanently (429 daily quota / 402 payment
+     * required / 401 auth / 403 forbidden), this function:
+     *   1. Records the failure in BindingHealthStore (marks it unhealthy).
+     *   2. If auto-fallback is enabled, picks the next enabled healthy binding
+     *      via SavedModelsStore.resolveBinding().
+     *   3. Re-applies that binding to AIProvider + retries the chat call.
+     *   4. If all bindings fail, returns the last error.
+     *
+     * If auto-fallback is DISABLED, behaves exactly like chat() (no failover).
+     */
+    suspend fun chatWithFailover(
+        userMessage: String,
+        systemPrompt: String,
+        toolFilter: List<String>? = null,
+    ): LLMResponse = withContext(Dispatchers.IO) {
+        val autoFallback = AutoFallbackSettings.isEnabled(context)
+        if (!autoFallback) {
+            // Auto-fallback disabled — single call, no failover.
+            val resp = chat(userMessage, systemPrompt, toolFilter)
+            // Still record success/failure for health tracking.
+            recordHealthFromResponse(resp)
+            return@withContext resp
+        }
+
+        // Auto-fallback enabled — try bindings in order.
+        val defaultModel = SavedModelsStore.getDefaultModel(context) ?: run {
+            // No default model — just call chat() and let it handle the error.
+            return@withContext chat(userMessage, systemPrompt, toolFilter)
+        }
+        SavedModelsStore.load(context)
+        BindingHealthStore.load(context)
+        val activeBindings = defaultModel.activeBindings()
+        if (activeBindings.size <= 1) {
+            // Only one binding — no failover possible. Just call chat().
+            val resp = chat(userMessage, systemPrompt, toolFilter)
+            recordHealthFromResponse(resp)
+            return@withContext resp
+        }
+
+        // Try each enabled binding until one succeeds or all fail.
+        var lastResp: LLMResponse? = null
+        var triedBindings = mutableSetOf<String>()
+        for (binding in activeBindings) {
+            if (binding.id in triedBindings) continue
+            triedBindings.add(binding.id)
+            // Apply this binding to AIProvider (so chat() uses it).
+            SavedModelsStore.applyBindingForFailover(context, defaultModel.id, binding.id)
+            Log.i("LLMClient", "Failover: trying binding ${binding.providerName} (#${binding.priority})")
+            val resp = chat(userMessage, systemPrompt, toolFilter)
+            if (resp.reply.isNotEmpty() && !isPermanentFailure(resp)) {
+                // Success — record + return.
+                BindingHealthStore.recordSuccess(binding.id, 0, context)
+                return@withContext resp
+            }
+            // Permanent failure — record + try next.
+            BindingHealthStore.recordFailure(binding.id, resp.reply.take(100), context)
+            lastResp = resp
+            Log.w("LLMClient", "Binding ${binding.providerName} failed: ${resp.reply.take(80)}")
+        }
+        // All bindings failed.
+        lastResp ?: LLMResponse("All bindings failed.", emptyList())
+    }
+
+    /**
+     * Detect if a response indicates a permanent failure (worth failing over).
+     */
+    private fun isPermanentFailure(resp: LLMResponse): Boolean {
+        val r = resp.reply
+        return r.startsWith("⚠️ Daily quota exhausted") ||
+               r.startsWith("⚠️ Insufficient credits") ||
+               r.startsWith("⚠️ Authentication failed") ||
+               r.startsWith("⚠️ ${AIProvider.getCurrentProvider(context).name} server error") ||
+               r.startsWith("Error: API returned 4") ||
+               r.startsWith("Error: API returned 5")
+    }
+
+    /**
+     * Record success/failure to the currently-active binding's health.
+     */
+    private fun recordHealthFromResponse(resp: LLMResponse) {
+        val defaultModel = SavedModelsStore.getDefaultModel(context) ?: return
+        val active = defaultModel.activeBindings().firstOrNull() ?: return
+        if (isPermanentFailure(resp)) {
+            BindingHealthStore.recordFailure(active.id, resp.reply.take(100), context)
+        } else if (resp.reply.isNotEmpty()) {
+            BindingHealthStore.recordSuccess(active.id, 0, context)
+        }
+    }
+
+    /**
+     * v3.3.2: Build request body for OpenAI-compatible APIs (OpenRouter, Z.ai, custom).
      */
     private fun buildOpenAIRequest(
         model: String,

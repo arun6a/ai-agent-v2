@@ -771,7 +771,8 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     val activePrompt = systemPrompt  // already contextual from above
                     // v3.2.9: pass the contextual tool filter so we don't ship all 95 tools
                     // when the user just said "hi" or only needs a small tool group.
-                    val llmResponse = llmClient.chat(conversation.toString(), activePrompt, contextualToolFilter)
+                    // v3.3.2: use chatWithFailover so multi-binding auto-failover works.
+                    val llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, contextualToolFilter)
 
                     _state.update {
                         it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())

@@ -952,6 +952,8 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
     val defaultModel = remember { SavedModelsStore.getDefaultModel(context) }
     var testingId by remember { mutableStateOf<String?>(null) }
     var pickingKeyFor by remember { mutableStateOf<SavedModelsStore.SavedModel?>(null) }
+    // v3.3.2: bindings dialog state.
+    var editingBindingsFor by remember { mutableStateOf<SavedModelsStore.SavedModel?>(null) }
     // Refresh keys once when the tab opens so the picker sees the latest list.
     LaunchedEffect(Unit) { ApiKeyStore.load(context) }
     val allKeys = remember { ApiKeyStore.getAllKeys() }
@@ -993,6 +995,7 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
                         }
                     },
                     onPickKey = { pickingKeyFor = model },
+                    onEditBindings = { editingBindingsFor = model },
                 )
             }
         }
@@ -1015,6 +1018,40 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
             },
         )
     }
+
+    // v3.3.2: Bindings dialog — opens when user taps "Providers" on a model card.
+    editingBindingsFor?.let { model ->
+        BindingsDialog(
+            model = model,
+            allKeys = allKeys,
+            onDismiss = { editingBindingsFor = null },
+            onAddBinding = { apiKeyId ->
+                // Add a new binding using an existing API key.
+                val key = allKeys.find { it.id == apiKeyId } ?: return@BindingsDialog
+                val binding = SavedModelsStore.ModelProviderBinding(
+                    providerId = key.providerId,
+                    providerName = key.providerName,
+                    apiKeyId = key.id,
+                )
+                SavedModelsStore.addBinding(context, model.id, binding)
+                models = SavedModelsStore.getAllModels()
+                onToast("Added binding: ${key.providerName}")
+            },
+            onRemoveBinding = { bindingId ->
+                SavedModelsStore.removeBinding(context, model.id, bindingId)
+                models = SavedModelsStore.getAllModels()
+                onToast("Removed binding")
+            },
+            onToggleBinding = { bindingId, enabled ->
+                SavedModelsStore.updateBinding(context, model.id, bindingId, enabled = enabled)
+                models = SavedModelsStore.getAllModels()
+            },
+            onReorderBinding = { bindingId, direction ->
+                SavedModelsStore.reorderBinding(context, model.id, bindingId, direction)
+                models = SavedModelsStore.getAllModels()
+            },
+        )
+    }
 }
 
 @Composable
@@ -1028,6 +1065,7 @@ private fun SavedModelCard(
     onDelete: () -> Unit,
     onTest: () -> Unit,
     onPickKey: () -> Unit = {},
+    onEditBindings: () -> Unit = {},
 ) {
     val custom = LocalCustomColors.current
     Column(
@@ -1098,6 +1136,41 @@ private fun SavedModelCard(
                 }
             }
             Text("Change ›", color = custom.accent, fontSize = 10.sp)
+        }
+
+        // v3.3.2: Providers (multi-binding) row — shows count of bound providers.
+        // Tap to open the BindingsDialog where the user can add/remove/reorder/
+        // toggle multiple provider bindings for the same model.
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(top = 2.dp)
+                .clickable { onEditBindings() }
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("🔗", fontSize = 11.sp)
+            Spacer(Modifier.width(6.dp))
+            Text("Providers:", color = custom.fg3, fontSize = 10.sp)
+            Spacer(Modifier.width(6.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                val activeBindings = model.activeBindings()
+                if (activeBindings.isNotEmpty()) {
+                    Text("${activeBindings.size} bound",
+                        color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(activeBindings.joinToString(", ") { b ->
+                        val k = allKeys.find { it.id == b.apiKeyId }
+                        val alias = k?.alias?.ifEmpty { null } ?: b.providerName
+                        val health = if (!b.enabled) "✗" else if (com.ai.agent.llm.BindingHealthStore.isHealthy(b.id)) "✓" else "⚠"
+                        "$health $alias"
+                    }, color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp, maxLines = 2)
+                } else {
+                    Text("No bindings — add one",
+                        color = custom.fg3, fontSize = 11.sp,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                }
+            }
+            Text("Manage ›", color = custom.accent, fontSize = 10.sp)
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1210,6 +1283,175 @@ private fun KeyPickerRow(
             Text(label, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             Text(subtitle, color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 8.sp, maxLines = 1)
         }
+    }
+}
+
+/**
+ * v3.3.2: BindingsDialog — manage multiple provider bindings for a saved model.
+ *
+ * Shows the list of bindings (priority order) with health indicators, plus an
+ * "Add Binding" button that opens a key picker. Each binding row has up/down
+ * arrows for reordering, a toggle for enable/disable, and a remove button.
+ *
+ * This is the user-facing UI for the multi-provider routing feature.
+ * e.g. GLM-4.6 bound to Z.AI + OpenRouter + Groq — pick one based on priority
+ * + health, fall over to next on error.
+ */
+@Composable
+private fun BindingsDialog(
+    model: SavedModelsStore.SavedModel,
+    allKeys: List<ApiKeyStore.ApiKey>,
+    onDismiss: () -> Unit,
+    onAddBinding: (apiKeyId: String) -> Unit,
+    onRemoveBinding: (bindingId: String) -> Unit,
+    onToggleBinding: (bindingId: String, enabled: Boolean) -> Unit,
+    onReorderBinding: (bindingId: String, direction: SavedModelsStore.ReorderDirection) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    var showAddPicker by remember { mutableStateOf(false) }
+    // Refresh bindings from the model each recomposition.
+    val bindings = remember(model) { model.activeBindings() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = custom.canvas,
+        title = {
+            Column {
+                Text("Provider Bindings", color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("${model.modelName} — pick which providers/keys to use + their priority",
+                    color = custom.fg3, fontSize = 10.sp)
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (bindings.isEmpty()) {
+                    Text("No bindings yet. Tap '+ Add Binding' below to bind this model to an API key.",
+                        color = custom.fg3, fontSize = 11.sp,
+                        modifier = Modifier.padding(vertical = 8.dp))
+                } else {
+                    bindings.forEachIndexed { index, binding ->
+                        val key = allKeys.find { it.id == binding.apiKeyId }
+                        val isHealthy = BindingHealthStore.isHealthy(binding.id)
+                        val health = BindingHealthStore.get(binding.id)
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .background(
+                                    if (!binding.enabled) custom.ink2
+                                    else if (!isHealthy) custom.ink2
+                                    else custom.accent.copy(alpha = 0.06f),
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .border(1.dp,
+                                    if (!binding.enabled) custom.inkBorder
+                                    else if (!isHealthy) custom.fg3
+                                    else custom.accent.copy(alpha = 0.3f),
+                                    RoundedCornerShape(6.dp))
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // Priority badge
+                            Text("#${index + 1}", color = custom.fg3, fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold, modifier = Modifier.width(24.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    binding.providerName + if (key != null) " · ${key.alias.ifEmpty { "" }}" else "",
+                                    color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                if (key != null) {
+                                    Text("${key.apiKey.take(8)}... · ${key.baseUrl.take(40)}",
+                                        color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 8.sp,
+                                        maxLines = 1)
+                                }
+                                if (!binding.enabled) {
+                                    Text("DISABLED", color = custom.fg3, fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold)
+                                } else if (!isHealthy) {
+                                    Text("UNHEALTHY (${health.consecutiveFailures} failures) — cooldown",
+                                        color = custom.fg3, fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold)
+                                } else if (health.totalCalls > 0) {
+                                    Text("✓ ${health.totalSuccesses}/${health.totalCalls} · ${health.avgLatencyMs}ms avg",
+                                        color = custom.accent, fontSize = 9.sp, fontFamily = MonoFontFamily)
+                                }
+                            }
+                            // Reorder up/down
+                            IconButton(
+                                onClick = { onReorderBinding(binding.id, SavedModelsStore.ReorderDirection.UP) },
+                                enabled = index > 0,
+                                modifier = Modifier.size(20.dp),
+                            ) { Text("▲", fontSize = 10.sp, color = custom.fg3) }
+                            IconButton(
+                                onClick = { onReorderBinding(binding.id, SavedModelsStore.ReorderDirection.DOWN) },
+                                enabled = index < bindings.size - 1,
+                                modifier = Modifier.size(20.dp),
+                            ) { Text("▼", fontSize = 10.sp, color = custom.fg3) }
+                            // Toggle enable/disable
+                            Switch(
+                                checked = binding.enabled,
+                                onCheckedChange = { onToggleBinding(binding.id, it) },
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                            )
+                            // Remove
+                            IconButton(onClick = { onRemoveBinding(binding.id) }, modifier = Modifier.size(20.dp)) {
+                                Text("✕", fontSize = 11.sp, color = custom.fg3)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+
+                // Add binding button
+                TextButton(onClick = { showAddPicker = true }) {
+                    Text("+ Add Binding", fontSize = 11.sp, color = custom.accent)
+                }
+
+                if (bindings.size > 1) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("Routing: hybrid (priority → health → failover). Toggle auto-fallback in AI Settings → Advanced.",
+                        color = custom.fg3, fontSize = 9.sp, fontFamily = MonoFontFamily)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+
+    // Add binding picker — reuse the key list, but exclude already-bound keys.
+    if (showAddPicker) {
+        AlertDialog(
+            onDismissRequest = { showAddPicker = false },
+            containerColor = custom.canvas,
+            title = { Text("Pick API Key to Bind", color = custom.fg2, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                    val candidates = allKeys.filter { k -> bindings.none { it.apiKeyId == k.id } }
+                    if (candidates.isEmpty()) {
+                        item { Text("All saved keys are already bound. Add a new key first.",
+                            color = custom.fg3, fontSize = 11.sp) }
+                    } else {
+                        items(candidates, key = { it.id }) { key ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    onAddBinding(key.id)
+                                    showAddPicker = false
+                                }.padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(key.alias.ifEmpty { key.providerName },
+                                        color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                                    Text("${key.providerName} · ${key.apiKey.take(8)}... · ${key.baseUrl.take(40)}",
+                                        color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp,
+                                        maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAddPicker = false }) { Text("Cancel") } },
+        )
     }
 }
 
