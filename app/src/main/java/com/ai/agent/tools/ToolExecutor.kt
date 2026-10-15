@@ -7,6 +7,10 @@ import com.ai.agent.accessibility.AgentAccessibilityService
 import com.ai.agent.browser.BrowserController
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.LLMClient
+import com.ai.agent.llm.SavedModelsStore
+import com.ai.agent.llm.ApiKeyStore
+import com.ai.agent.llm.ProviderEndpoints
+import com.ai.agent.llm.BindingHealthStore
 import com.ai.agent.storage.AgentDatabase
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -164,36 +168,59 @@ class ToolExecutor(private val context: Context) {
                 val visionMode = AIProvider.getVisionMode(context)  // "auto" | "mlkit" | "vlm"
 
                 // v2.5.2: OPTIMIZED Screen Reading (Option C)
-                //
-                // PROBLEM with old code:
-                //   - Each tier (a11y → ML Kit → VLM) took its OWN screenshot
-                //   - When a11y clicks + retries, each retry triggered a screenshot + VLM = many API calls
-                //   - User saw "screenshot toast" repeatedly
-                //
-                // NEW approach (Option C):
-                //   1. Take ONE screenshot upfront (shared across all tiers)
-                //   2. Run a11y text + ML Kit OCR IN PARALLEL (both fast, both free)
-                //   3. Combine results (dedupe similar lines)
-                //   4. VLM only if both a11y + ML Kit return < 50 chars (last resort)
-                //   5. VLM uses the SAME screenshot (no second capture)
-                //
-                // Result: 0 API calls for 95% of screens, 1 screenshot total, no toast spam.
+                // v3.3.11: "mlkit" mode now NEVER calls VLM (cost saving).
+                //          VLM calls now use the VISION model from Vision Settings,
+                //          not the main chat model.
 
-                Log.i(TAG, "readScreen: visionMode=$visionMode (v2.5.2 optimized)")
+                Log.i(TAG, "readScreen: visionMode=$visionMode (v3.3.11)")
 
                 when (visionMode) {
                     "vlm" -> {
                         // VLM mode — skip a11y + ML Kit, go straight to VLM (1 screenshot, 1 API call)
-                        Log.i(TAG, "readScreen: VLM mode — calling VLM directly")
-                        val vlmResult = analyzeScreenWithVLM("Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
-                        ToolResult(true, "Screen text (VLM): $vlmResult")
+                        // v3.3.11: check if a vision model is configured first.
+                        val visionModel = SavedModelsStore.getVisionModel(context)
+                        if (visionModel == null) {
+                            ToolResult(false, "VLM mode selected but no vision model configured. Set one in AI Settings → Vision, or switch to Auto/ML Kit mode.")
+                        } else {
+                            Log.i(TAG, "readScreen: VLM mode — calling VLM directly (${visionModel.modelName})")
+                            val vlmResult = analyzeScreenWithVLM("Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
+                            ToolResult(true, "Screen text (VLM): $vlmResult")
+                        }
+                    }
+                    "mlkit" -> {
+                        // v3.3.11: ML Kit ONLY — a11y + ML Kit, NO VLM fallback (cost saving).
+                        // If both return < 50 chars, return what we got (even if empty).
+                        // This is the "free" mode — 0 API calls, ever.
+                        Log.i(TAG, "readScreen: ML Kit only mode — 0 API calls guaranteed")
+                        val screenshotBase64 = captureScreenshotBase64(service!!)
+                        val a11yText: String
+                        val mlText: String?
+                        kotlinx.coroutines.coroutineScope {
+                            val a11yDeferred = async(kotlinx.coroutines.Dispatchers.IO) {
+                                try { service!!.readScreen() } catch (e: Exception) { "" }
+                            }
+                            val mlKitDeferred = async(kotlinx.coroutines.Dispatchers.IO) {
+                                if (screenshotBase64 != null) {
+                                    try {
+                                        val bytes = android.util.Base64.decode(screenshotBase64, android.util.Base64.DEFAULT)
+                                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        if (bitmap != null) com.ai.agent.ml.MLKitHelper.tryRecognize(bitmap) else null
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "ML Kit OCR failed", e)
+                                        null
+                                    }
+                                } else null
+                            }
+                            a11yText = a11yDeferred.await()
+                            mlText = mlKitDeferred.await()
+                        }
+                        val combinedText = combineAndDedupe(a11yText, mlText)
+                        Log.i(TAG, "readScreen: ML Kit only — a11y=${a11yText.length}, mlKit=${mlText?.length ?: 0}, combined=${combinedText.length} (0 API calls)")
+                        ToolResult(true, combinedText.ifEmpty { "(no text on screen — try VLM mode for image-based screens)" })
                     }
                     else -> {
-                        // v2.5.2: AUTO + ML Kit modes now share the SAME optimized path:
-                        // 1. Capture ONE screenshot
-                        // 2. Run a11y + ML Kit in parallel (both free, both fast)
-                        // 3. Combine + dedupe
-                        // 4. VLM fallback on same screenshot if both empty
+                        // "auto" mode — a11y + ML Kit first, VLM fallback only if both fail.
+                        // v3.3.11: VLM fallback uses the vision model from Vision Settings.
 
                         // Step 1: Take ONE screenshot (shared)
                         val screenshotBase64 = captureScreenshotBase64(service!!)
@@ -237,13 +264,21 @@ class ToolExecutor(private val context: Context) {
                             Log.i(TAG, "readScreen: using $source (${combinedText.length} chars) — 0 API calls")
                             ToolResult(true, combinedText)
                         } else if (screenshotBase64 != null) {
-                            // Both a11y + ML Kit returned < 50 chars — VLM fallback on SAME screenshot
-                            Log.i(TAG, "readScreen: a11y+ML Kit insufficient (${combinedText.length} chars) — VLM fallback (same screenshot)")
-                            val vlmResult = analyzeScreenWithVLMBase64(
-                                screenshotBase64,
-                                "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough."
-                            )
-                            ToolResult(true, "Screen text (VLM): $vlmResult")
+                            // v3.3.11: VLM fallback — check if a vision model is configured.
+                            val visionModel = SavedModelsStore.getVisionModel(context)
+                            if (visionModel == null) {
+                                // No vision model configured — return what we got (don't waste an API call on the main chat model).
+                                Log.i(TAG, "readScreen: a11y+ML Kit insufficient (${combinedText.length} chars) but no vision model configured — returning partial (0 API calls)")
+                                ToolResult(true, combinedText.ifEmpty { "(no text detected + no vision model configured. Set one in AI Settings → Vision for image-based screen reading.)" })
+                            } else {
+                                // VLM fallback on SAME screenshot using the vision model.
+                                Log.i(TAG, "readScreen: a11y+ML Kit insufficient (${combinedText.length} chars) — VLM fallback (${visionModel.modelName}, same screenshot)")
+                                val vlmResult = analyzeScreenWithVLMBase64(
+                                    screenshotBase64,
+                                    "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough."
+                                )
+                                ToolResult(true, "Screen text (VLM): $vlmResult")
+                            }
                         } else {
                             // Screenshot failed + a11y/ML Kit empty — last resort
                             ToolResult(true, if (a11yText.isNotEmpty()) a11yText else "(no text on screen)")
@@ -2594,6 +2629,91 @@ $instructions
     private suspend fun analyzeScreenWithVLMBase64(screenshotBase64: String, prompt: String): String {
         Log.d(TAG, "VLM (reusing screenshot): ${screenshotBase64.length} chars")
 
+        // v3.3.11: use the VISION model from Vision Settings, not the main chat model.
+        // This lets the user pick a cheap VLM (e.g. Gemini Flash) for screen reading
+        // while using a different model (e.g. GLM-4.6) for chat.
+        val visionModel = SavedModelsStore.getVisionModel(context)
+        if (visionModel == null) {
+            Log.w(TAG, "VLM call requested but no vision model configured — falling back to main model")
+            return analyzeScreenWithVLMBase64Legacy(screenshotBase64, prompt)
+        }
+
+        // Resolve the vision model's binding (same hybrid routing as chat).
+        SavedModelsStore.load(context)
+        ApiKeyStore.load(context)
+        val resolved = SavedModelsStore.resolveBinding(context, visionModel, false)
+        if (resolved == null) {
+            Log.w(TAG, "Vision model '${visionModel.modelName}' has no resolvable binding — falling back to main model")
+            return analyzeScreenWithVLMBase64Legacy(screenshotBase64, prompt)
+        }
+        val (binding, key) = resolved
+        val endpoint = SavedModelsStore.resolveEndpointForBinding(visionModel, binding, key)
+        val actualModelId = SavedModelsStore.resolveActualModelIdForBinding(context, visionModel, binding)
+
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val escapedPrompt = prompt.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+                val bodyStr = """{"model":"$actualModelId","messages":[{"role":"user","content":[{"type":"text","text":"$escapedPrompt"},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,$screenshotBase64"}}]}]}"""
+                val body = bodyStr.toRequestBody("application/json".toMediaType())
+
+                val requestBuilder = okhttp3.Request.Builder()
+                    .url(endpoint)
+                    .header("Content-Type", "application/json")
+
+                // v3.3.11: use the binding's auth scheme via ProviderEndpoints.
+                val endpointInfo = ProviderEndpoints.byId(binding.providerId)
+                val authScheme = endpointInfo?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
+                when (authScheme) {
+                    ProviderEndpoints.AuthScheme.BEARER -> {
+                        if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                            requestBuilder.header("Authorization", "Bearer ${key.apiKey}")
+                        }
+                    }
+                    ProviderEndpoints.AuthScheme.X_API_KEY -> {
+                        if (key.apiKey.isNotEmpty()) {
+                            requestBuilder.header("x-api-key", key.apiKey)
+                            requestBuilder.header("anthropic-version", "2023-06-01")
+                        }
+                    }
+                    ProviderEndpoints.AuthScheme.QUERY_PARAM -> {
+                        // Gemini uses ?key=<key> — but vision calls use a different endpoint shape.
+                        // For Gemini vision, the endpoint is /models/<model>:generateContent?key=<key>
+                        // Fall back to legacy for Gemini for now.
+                    }
+                    ProviderEndpoints.AuthScheme.NONE -> { /* no auth */ }
+                }
+
+                val request = requestBuilder.post(body).build()
+                val response = visionClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: ""
+
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "VLM API error ${response.code}: ${responseBody.take(200)}")
+                    return@withContext "VLM error: ${response.code}"
+                }
+
+                val json = org.json.JSONObject(responseBody)
+                val content = json
+                    .optJSONArray("choices")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("message")
+                    ?.optString("content", "")
+                    ?: ""
+
+                Log.i(TAG, "VLM result: ${content.length} chars (model: $actualModelId via ${binding.providerName})")
+                content
+            } catch (e: Exception) {
+                Log.e(TAG, "VLM call failed", e)
+                "VLM error: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * v3.3.11: Legacy VLM call using the MAIN chat model (pre-v3.3.11 behavior).
+     * Used as a fallback when no vision model is configured.
+     */
+    private suspend fun analyzeScreenWithVLMBase64Legacy(screenshotBase64: String, prompt: String): String {
         val provider = AIProvider.getCurrentProvider(context)
         val model = AIProvider.getModel(context)
         val apiKey = AIProvider.getApiKey(context)
@@ -2641,10 +2761,10 @@ $instructions
                     ?.optString("content", "")
                     ?: ""
 
-                Log.i(TAG, "VLM result: ${content.length} chars")
+                Log.i(TAG, "VLM result (legacy): ${content.length} chars")
                 content
             } catch (e: Exception) {
-                Log.e(TAG, "VLM call failed", e)
+                Log.e(TAG, "VLM call failed (legacy)", e)
                 "VLM error: ${e.message}"
             }
         }

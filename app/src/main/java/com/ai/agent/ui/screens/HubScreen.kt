@@ -4343,9 +4343,12 @@ private fun UsageSection() {
                     value = todayStats.second.toString(),
                     modifier = Modifier.weight(1f),
                 )
+                // v3.3.11: real cost tracking (was a rough estimate before).
                 StatCard(
-                    label = "Est. Cost",
-                    value = "$" + String.format("%.3f", todayStats.second * 0.000002),
+                    label = "Cost",
+                    value = com.ai.agent.llm.ApiUsageTracker.formatCost(
+                        com.ai.agent.llm.ApiUsageTracker.getTodayCostMicro(context)
+                    ),
                     modifier = Modifier.weight(1f),
                 )
             }
