@@ -301,7 +301,30 @@ class LLMClient(private val context: Context) {
             lastResp = resp
             Log.w("LLMClient", "Binding ${binding.providerName} failed: ${resp.reply.take(80)}")
         }
-        // All bindings failed.
+        // v3.3.7: All bindings of the primary model failed — try cross-model fallback.
+        // This is the missing piece for "Sandbox goes down → try Gemini Flash".
+        if (AutoFallbackSettings.isAutoFallbackModelsEnabled(context)) {
+            val fallbackChain = SmartRouting.pickFallbackChain(context, defaultModel)
+            for (fallbackModel in fallbackChain) {
+                Log.i("LLMClient", "Cross-model failover: trying '${fallbackModel.modelName}'")
+                // Apply the fallback model to AIProvider.
+                SavedModelsStore.applyModelForRouting(context, fallbackModel.id)
+                // Try its bindings.
+                val fallbackBindings = fallbackModel.activeBindings()
+                for (binding in fallbackBindings) {
+                    SavedModelsStore.applyBindingForFailover(context, fallbackModel.id, binding.id)
+                    val resp = chat(userMessage, systemPrompt, toolFilter)
+                    if (resp.reply.isNotEmpty() && !isPermanentFailure(resp)) {
+                        BindingHealthStore.recordSuccess(binding.id, 0, context)
+                        Log.i("LLMClient", "Cross-model failover succeeded with ${fallbackModel.modelName}")
+                        return@withContext resp
+                    }
+                    BindingHealthStore.recordFailure(binding.id, resp.reply.take(100), context)
+                    lastResp = resp
+                }
+            }
+        }
+        // All bindings + all fallback models failed.
         lastResp ?: LLMResponse("All bindings failed.", emptyList())
     }
 
