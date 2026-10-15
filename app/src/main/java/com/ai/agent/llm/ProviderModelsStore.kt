@@ -186,33 +186,92 @@ object ProviderModelsStore {
     }
 
     private fun fetchAvailableModels(key: ApiKeyStore.ApiKey): List<String> {
-        val url = "${key.baseUrl.trimEnd('/')}/v1/models"
+        // v3.3.1: Use the ProviderEndpoints registry's modelsEndpoint URL when
+        // the key's providerId matches a known popular provider. This fixes the
+        // bug where {baseUrl}/v1/models was wrong for half the providers because
+        // models.dev didn't include an `api` field for them.
+        //
+        // Resolution order:
+        //   1. Sandbox proxy URL (contains "/api/llm/proxy") → POST-only, no
+        //      /v1/models endpoint. Return curated list.
+        //   2. ProviderEndpoint for this providerId → use its modelsEndpoint URL
+        //      with the correct auth scheme.
+        //   3. Fallback: append "/models" or "/v1/models" to the user-provided
+        //      baseUrl (best effort for custom providers).
+        if (key.baseUrl.contains("/api/llm/proxy")) {
+            return listOf("glm-4.6", "glm-4-flash", "glm-4.5v", "glm-4.1v")
+        }
+
+        val endpoint = ProviderEndpoints.byId(key.providerId)
+        val url = endpoint?.modelsEndpoint ?: buildModelsUrlFromBase(key.baseUrl)
+        val authScheme = endpoint?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
+
         val client = okhttp3.OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .build()
-        val request = okhttp3.Request.Builder()
-            .url(url)
-            .apply {
-                if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
-                    header("Authorization", "Bearer ${key.apiKey}")
+        val request = okhttp3.Request.Builder().url(url).apply {
+            when (authScheme) {
+                ProviderEndpoints.AuthScheme.BEARER -> {
+                    if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                        header("Authorization", "Bearer ${key.apiKey}")
+                    }
                 }
+                ProviderEndpoints.AuthScheme.X_API_KEY -> {
+                    if (key.apiKey.isNotEmpty()) {
+                        header("x-api-key", key.apiKey)
+                        // Anthropic also requires anthropic-version header.
+                        header("anthropic-version", "2023-06-01")
+                    }
+                }
+                ProviderEndpoints.AuthScheme.QUERY_PARAM -> {
+                    // Gemini uses ?key=<key> — already in the URL if user set it.
+                    // Otherwise append it here.
+                    // (handled by url construction in ProviderEndpoints for gemini)
+                }
+                ProviderEndpoints.AuthScheme.NONE -> { /* no auth header */ }
             }
-            .build()
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            Log.w(TAG, "GET $url → HTTP ${response.code} for key ${key.id}")
-            return emptyList()
+        }.build()
+
+        return try {
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                Log.w(TAG, "GET $url → HTTP ${response.code} for key ${key.id}")
+                return emptyList()
+            }
+            val body = response.body?.string() ?: return emptyList()
+            // Gemini returns {models: [...]} with different shape — handle both.
+            val json = JSONObject(body)
+            val data = json.optJSONArray("data")
+                ?: json.optJSONArray("models")  // Gemini shape
+                ?: return emptyList()
+            val ids = mutableListOf<String>()
+            for (i in 0 until data.length()) {
+                val obj = data.optJSONObject(i) ?: continue
+                val id = obj.optString("id", "")
+                    .ifEmpty { obj.optString("name", "") }  // Gemini uses "name"
+                if (id.isNotEmpty()) ids.add(id)
+            }
+            ids
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchAvailableModels failed for ${key.id}: ${e.message}")
+            emptyList()
         }
-        val body = response.body?.string() ?: return emptyList()
-        val json = JSONObject(body)
-        val data = json.optJSONArray("data") ?: return emptyList()
-        val ids = mutableListOf<String>()
-        for (i in 0 until data.length()) {
-            val obj = data.optJSONObject(i) ?: continue
-            val id = obj.optString("id", "")
-            if (id.isNotEmpty()) ids.add(id)
-        }
-        return ids
+    }
+
+    /**
+     * Best-effort: build a /models URL from a user-supplied baseUrl for custom
+     * providers (where we don't have a ProviderEndpoint). Strips trailing
+     * chat/completions or v1 path if present, then appends /v1/models or /models.
+     */
+    private fun buildModelsUrlFromBase(baseUrl: String): String {
+        var base = baseUrl.trimEnd('/')
+        // Strip /chat/completions if user pasted the full chat endpoint.
+        base = base.replace(Regex("/chat/completions$"), "")
+        // Strip /messages (Anthropic).
+        base = base.replace(Regex("/messages$"), "")
+        // If base ends with /v1, append /models.
+        return if (base.endsWith("/v1")) "${base}/models"
+        else "${base}/v1/models"
     }
 }

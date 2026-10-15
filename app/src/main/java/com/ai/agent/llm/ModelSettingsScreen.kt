@@ -270,13 +270,15 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
     val context = LocalContext.current
     val custom = LocalCustomColors.current
     val scope = rememberCoroutineScope()
-    
-    var selectedProvider by remember { mutableStateOf<ModelsDevRepository.CatalogProvider?>(null) }
+
+    // v3.3.1: selectedProvider is now a ProviderEndpoint (from our registry),
+    // not a CatalogProvider (which had wrong/empty URLs). null = Custom provider.
+    var selectedEndpoint by remember { mutableStateOf<ProviderEndpoints.ProviderEndpoint?>(null) }
     var isCustom by remember { mutableStateOf(false) }
     var providerName by remember { mutableStateOf("") }
     var apiKey by remember { mutableStateOf("") }
     var alias by remember { mutableStateOf("") }
-    var baseUrl by remember { mutableStateOf("") }
+    var baseUrl by remember { mutableStateOf("") }  // v3.3.1: editable, auto-replaced on provider switch
     var showKey by remember { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
     var chatEndpoint by remember { mutableStateOf("/v1/chat/completions") }
@@ -285,58 +287,82 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
     var showProviderPicker by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
-    
-    // Popular providers (grouped like webtoapp)
-    data class ProviderGroup(val name: String, val providers: List<ModelsDevRepository.CatalogProvider>)
+
+    // v3.3.1: Build the provider picker list from ProviderEndpoints.ALL (the
+    // canonical registry) + a "Custom" option. Grouped for the picker dialog.
+    data class ProviderGroup(val name: String, val providers: List<ProviderEndpoints.ProviderEndpoint>)
     val popularProviders = remember {
-        val all = ModelsDevRepository.allProviders()
-        val find = { id: String -> all.find { it.id == id } }
+        val byId = { id: String -> ProviderEndpoints.byId(id) }
         listOf(
-            ProviderGroup("Recommended", listOfNotNull(find("google"), find("openrouter"), find("zai"))),
-            ProviderGroup("International", listOfNotNull(find("openai"), find("anthropic"), find("xai"), find("groq"), find("mistral"), find("deepinfra"), find("togetherai"), find("perplexity"))),
-            ProviderGroup("Chinese", listOfNotNull(find("deepseek"), find("alibaba"), find("zhipuai"))),
-            ProviderGroup("Self-Hosted", listOfNotNull(find("ollama"), find("lm-studio"), find("vllm"))),
+            ProviderGroup("Recommended", listOfNotNull(
+                byId("openrouter"), byId("zai"), byId("groq"),
+            )),
+            ProviderGroup("Popular", listOfNotNull(
+                byId("openai"), byId("anthropic"), byId("gemini"),
+                byId("together"), byId("mistral"), byId("deepinfra"),
+                byId("fireworks"), byId("cerebras"),
+            )),
+            ProviderGroup("Free / Gateway", listOfNotNull(
+                byId("apikeys_in"), byId("cline"),
+            )),
         )
     }
 
     if (showProviderPicker) {
-        // Provider selection modal
         AlertDialog(
             onDismissRequest = { showProviderPicker = false },
-            title = { Text("Select Provider") },
+            containerColor = custom.canvas,
+            title = { Text("Select Provider", color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) },
             text = {
                 LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                     for (group in popularProviders) {
-                        item { Text(group.name, color = custom.fg3, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
-                        items(group.providers, key = { it.id }) { provider ->
+                        item {
+                            Text(group.name, color = custom.fg3, fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                        }
+                        items(group.providers, key = { it.providerId }) { provider ->
                             Row(
                                 modifier = Modifier.fillMaxWidth().clickable {
-                                    selectedProvider = provider
+                                    selectedEndpoint = provider
                                     isCustom = false
-                                    providerName = provider.name
-                                    baseUrl = provider.apiUrl
+                                    providerName = provider.displayName
+                                    // v3.3.1: auto-replace the endpoint URL on provider switch.
+                                    baseUrl = provider.chatEndpoint
                                     showProviderPicker = false
                                 }.padding(vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(provider.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(provider.displayName,
+                                        color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                                    Text(provider.docsUrl,
+                                        color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp,
+                                        maxLines = 1)
+                                }
                             }
                         }
                     }
                     // Custom option
-                    item { Text("Custom", color = custom.fg3, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) }
+                    item {
+                        Text("Custom", color = custom.fg3, fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                    }
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable {
                                 isCustom = true
-                                selectedProvider = null
+                                selectedEndpoint = null
                                 providerName = "Custom"
                                 baseUrl = ""
                                 showProviderPicker = false
+                                showAdvanced = true  // expand advanced for custom
                             }.padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("Custom (any OpenAI-compatible API)", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                            Text("Custom (any OpenAI-compatible API)",
+                                color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
                         }
                     }
                 }
@@ -348,7 +374,8 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add API Key") },
+        containerColor = custom.canvas,
+        title = { Text("Add API Key", color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Provider selector
@@ -360,19 +387,47 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(providerName.ifEmpty { "Select provider" }, color = if (providerName.isNotEmpty()) MaterialTheme.colorScheme.onSurface else custom.fg3, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(providerName.ifEmpty { "Select provider" },
+                        color = if (providerName.isNotEmpty()) MaterialTheme.colorScheme.onSurface else custom.fg3,
+                        fontSize = 13.sp, modifier = Modifier.weight(1f))
                     Text("▼", color = custom.fg3, fontSize = 10.sp)
                 }
 
-                // Get API Key link
-                if (selectedProvider != null) {
-                    val docUrl = selectedProvider!!.apiUrl
-                    if (docUrl.isNotEmpty()) {
+                // v3.3.1: "Get API Key" button — opens the provider's official API key page in browser.
+                if (selectedEndpoint != null) {
+                    val apiKeyUrl = selectedEndpoint!!.apiKeyUrl
+                    if (apiKeyUrl.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .background(custom.accent.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                                .border(1.dp, custom.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(apiKeyUrl)
+                                    )
+                                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("📖", fontSize = 14.sp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Get API Key →",
+                                color = custom.accent, fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("opens in browser", color = custom.fg3, fontSize = 9.sp)
+                        }
+                        // Also show the docs link as secondary.
                         TextButton(onClick = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(docUrl))
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(selectedEndpoint!!.docsUrl)
+                            )
                             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                             context.startActivity(intent)
-                        }) { Text("🔗 Get API Key", fontSize = 11.sp) }
+                        }) { Text("📚 Docs", fontSize = 10.sp, color = custom.fg3) }
                     }
                 }
 
@@ -380,14 +435,14 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                 Text("API Key", fontSize = 11.sp, color = custom.fg3)
                 OutlinedTextField(
                     value = apiKey,
-                    onValueChange = { apiKey = it },
+                    onValueChange = { apiKey = it; testResult = null },
                     placeholder = { Text("Enter your API key") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Text(if (showKey) "🙈" else "👁", fontSize = 16.sp)
+                        TextButton(onClick = { showKey = !showKey }) {
+                            Text(if (showKey) "Hide" else "Show", fontSize = 10.sp)
                         }
                     },
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
@@ -404,25 +459,36 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                 )
 
-                // Base URL (auto-filled from provider, editable for custom)
-                Text("Base URL${if (isCustom) "" else " (auto-filled)"}", fontSize = 11.sp, color = custom.fg3)
+                // v3.3.1: Endpoint URL — auto-filled from ProviderEndpoint.chatEndpoint
+                // when the user picks a popular provider, but ALWAYS editable.
+                // The user can change it if the URL is wrong, they're using a proxy,
+                // a different region, or an enterprise gateway.
+                Text("Endpoint URL${if (selectedEndpoint != null) " (auto-filled, editable)" else ""}",
+                    fontSize = 11.sp, color = custom.fg3)
                 OutlinedTextField(
                     value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    placeholder = { Text("https://api.example.com") },
+                    onValueChange = { baseUrl = it; testResult = null },
+                    placeholder = { Text("https://api.example.com/v1/chat/completions") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    enabled = isCustom || selectedProvider == null,
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                 )
-                Text("API base URL, without the /v1 path", fontSize = 9.sp, color = custom.fg3)
+                if (selectedEndpoint != null) {
+                    Text("Default: ${selectedEndpoint!!.chatEndpoint} — edit if using a proxy/region override",
+                        fontSize = 9.sp, color = custom.fg3)
+                } else {
+                    Text("Full URL including /v1/chat/completions path",
+                        fontSize = 9.sp, color = custom.fg3)
+                }
 
-                // Advanced options (collapsible)
+                // Advanced options (collapsible). Collapsed by default for popular providers,
+                // expanded by default for custom (set when user picks Custom above).
                 Row(
                     modifier = Modifier.fillMaxWidth().clickable { showAdvanced = !showAdvanced }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Advanced Options", color = custom.fg2, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text("Advanced Options", color = custom.fg2, fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Text(if (showAdvanced) "▲" else "▼", color = custom.fg3, fontSize = 10.sp)
                 }
 
@@ -435,14 +501,15 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                             modifier = Modifier.fillMaxWidth().clickable { apiFormat = fmt }.padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(if (apiFormat == fmt) "●" else "○", color = if (apiFormat == fmt) custom.accent else custom.fg3, fontSize = 12.sp)
+                            Text(if (apiFormat == fmt) "●" else "○",
+                                color = if (apiFormat == fmt) custom.accent else custom.fg3, fontSize = 12.sp)
                             Spacer(Modifier.width(8.dp))
                             Text(fmt, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp)
                         }
                     }
 
-                    // Chat Endpoint
-                    Text("Chat Endpoint", fontSize = 11.sp, color = custom.fg3)
+                    // Chat Endpoint (relative path)
+                    Text("Chat Endpoint (relative path)", fontSize = 11.sp, color = custom.fg3)
                     OutlinedTextField(
                         value = chatEndpoint,
                         onValueChange = { chatEndpoint = it },
@@ -453,8 +520,8 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
                     )
                     Text("Default: /v1/chat/completions", fontSize = 9.sp, color = custom.fg3)
 
-                    // Models Endpoint
-                    Text("Models Endpoint", fontSize = 11.sp, color = custom.fg3)
+                    // Models Endpoint (relative path)
+                    Text("Models Endpoint (relative path)", fontSize = 11.sp, color = custom.fg3)
                     OutlinedTextField(
                         value = modelsEndpoint,
                         onValueChange = { modelsEndpoint = it },
@@ -468,7 +535,9 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
 
                 // Test result
                 if (testResult != null) {
-                    Text(testResult!!, color = if (testResult!!.startsWith("✅")) custom.accent else custom.fg3, fontSize = 11.sp)
+                    Text(testResult!!,
+                        color = if (testResult!!.startsWith("✅")) custom.accent else custom.fg3,
+                        fontSize = 11.sp, fontFamily = MonoFontFamily)
                 }
                 if (testing) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -477,25 +546,33 @@ private fun AddApiKeyDialog(onDismiss: () -> Unit, onSave: (ApiKeyStore.ApiKey) 
         },
         confirmButton = {
             Row {
-                // Test button
+                // Test button — uses the new authScheme-aware tester.
                 TextButton(
                     onClick = {
                         testing = true
                         testResult = null
                         scope.launch {
-                            val result = testApiKey(baseUrl, apiKey, modelsEndpoint)
-                            testResult = result
+                            // Build a temp ApiKey for testing — uses whatever's in baseUrl now.
+                            val tempKey = ApiKeyStore.ApiKey(
+                                id = "test",
+                                providerId = selectedEndpoint?.providerId ?: "custom",
+                                providerName = providerName.ifEmpty { "Test" },
+                                apiKey = apiKey,
+                                alias = alias,
+                                baseUrl = baseUrl,
+                            )
+                            testResult = testApiKeyConnection(tempKey)
                             testing = false
                         }
                     },
                     enabled = apiKey.isNotEmpty() && baseUrl.isNotEmpty() && !testing,
                 ) { Text("Test", fontSize = 11.sp) }
-                
+
                 // Save button
                 TextButton(
                     onClick = {
                         if (apiKey.isNotEmpty() && providerName.isNotEmpty()) {
-                            val providerId = selectedProvider?.id ?: "custom"
+                            val providerId = selectedEndpoint?.providerId ?: "custom"
                             onSave(ApiKeyStore.ApiKey(
                                 providerId = providerId,
                                 providerName = providerName,
@@ -557,9 +634,33 @@ private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
                 .build()
 
             // v3.2.8: Sandbox proxy (/api/llm/proxy) is POST-only (chat completions).
-            // For that URL, send a tiny "ping" chat request instead of GET.
-            // For other custom URLs, hit GET /v1/models (standard OpenAI discovery).
+            // v3.3.1: Look up the provider's authScheme via ProviderEndpoints.
             val isSandboxProxy = key.baseUrl.contains("/api/llm/proxy")
+            val endpoint = ProviderEndpoints.byId(key.providerId)
+            val authScheme = endpoint?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
+
+            // Build the auth headers/query according to the provider's scheme.
+            fun okhttp3.Request.Builder.applyAuth(): okhttp3.Request.Builder = this.apply {
+                when (authScheme) {
+                    ProviderEndpoints.AuthScheme.BEARER -> {
+                        if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                            header("Authorization", "Bearer ${key.apiKey}")
+                        }
+                    }
+                    ProviderEndpoints.AuthScheme.X_API_KEY -> {
+                        if (key.apiKey.isNotEmpty()) {
+                            header("x-api-key", key.apiKey)
+                            header("anthropic-version", "2023-06-01")
+                        }
+                    }
+                    ProviderEndpoints.AuthScheme.QUERY_PARAM -> {
+                        // Gemini uses ?key=<key>. If user's baseUrl doesn't have it, append it.
+                        // (handled when constructing URL)
+                    }
+                    ProviderEndpoints.AuthScheme.NONE -> { /* no auth */ }
+                }
+            }
+
             val request = if (isSandboxProxy) {
                 val body = org.json.JSONObject().apply {
                     put("model", "glm-4.6")
@@ -574,29 +675,31 @@ private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
                 okhttp3.Request.Builder()
                     .url(key.baseUrl)
                     .header("Content-Type", "application/json")
-                    .apply {
-                        if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
-                            header("Authorization", "Bearer ${key.apiKey}")
-                        }
-                    }
+                    .applyAuth()
                     .post(body.toString().toRequestBody("application/json".toMediaType()))
                     .build()
             } else {
-                val url = "${key.baseUrl.trimEnd('/')}/v1/models"
+                // v3.3.1: Use the registry's modelsEndpoint if available, else fall back.
+                val url = endpoint?.modelsEndpoint ?: run {
+                    var base = key.baseUrl.trimEnd('/')
+                    base = base.replace(Regex("/chat/completions$"), "")
+                    base = base.replace(Regex("/messages$"), "")
+                    if (base.endsWith("/v1")) "${base}/models" else "${base}/v1/models"
+                }
+                // Append ?key=<key> for Gemini-style query-param auth.
+                val finalUrl = if (authScheme == ProviderEndpoints.AuthScheme.QUERY_PARAM
+                    && key.apiKey.isNotEmpty() && !url.contains("key=")) {
+                    "$url${if (url.contains("?")) "&" else "?"}key=${key.apiKey}"
+                } else url
                 okhttp3.Request.Builder()
-                    .url(url)
-                    .apply {
-                        if (key.apiKey.isNotEmpty()) {
-                            header("Authorization", "Bearer ${key.apiKey}")
-                        }
-                    }
+                    .url(finalUrl)
+                    .applyAuth()
                     .build()
             }
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
                 val respBody = response.body?.string() ?: ""
                 if (isSandboxProxy) {
-                    // It's a chat response — try to extract the reply.
                     val reply = try {
                         org.json.JSONObject(respBody).optJSONArray("choices")
                             ?.optJSONObject(0)?.optJSONObject("message")
@@ -606,9 +709,8 @@ private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
                     if (reply.isNotEmpty()) "✅ Connected! Reply: $preview"
                     else "✅ Connected (HTTP ${response.code})"
                 } else {
-                    val count = try {
-                        org.json.JSONObject(respBody).optJSONArray("data")?.length() ?: -1
-                    } catch (_: Exception) { -1 }
+                    val json = org.json.JSONObject(respBody)
+                    val count = (json.optJSONArray("data") ?: json.optJSONArray("models"))?.length() ?: -1
                     if (count >= 0) "✅ Connected! $count models available"
                     else "✅ Connected (HTTP ${response.code})"
                 }
@@ -716,12 +818,48 @@ private fun EditApiKeyDialog(
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
 
+    // v3.3.1: Look up the ProviderEndpoint for this key's providerId so we can
+    // show the "Get API Key" + "Docs" buttons (only for popular providers).
+    val endpoint = remember { ProviderEndpoints.byId(original.providerId) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = custom.canvas,
         title = { Text("Edit API Key", color = custom.fg2, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // v3.3.1: Show "Get API Key" + Docs buttons for popular providers.
+                if (endpoint != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(custom.accent.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+                            .border(1.dp, custom.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .clickable {
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(endpoint.apiKeyUrl)
+                                )
+                                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("📖", fontSize = 14.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Get API Key →",
+                            color = custom.accent, fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    }
+                    TextButton(onClick = {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(endpoint.docsUrl)
+                        )
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    }) { Text("📚 Docs", fontSize = 10.sp, color = custom.fg3) }
+                }
                 OutlinedTextField(
                     value = providerName, onValueChange = { providerName = it },
                     label = { Text("Provider Name", fontSize = 11.sp) },
@@ -749,12 +887,18 @@ private fun EditApiKeyDialog(
                 )
                 OutlinedTextField(
                     value = baseUrl, onValueChange = { baseUrl = it; testResult = null },
-                    label = { Text("Base URL / Endpoint", fontSize = 11.sp) },
+                    label = { Text("Endpoint URL", fontSize = 11.sp) },
                     singleLine = true,
                     textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                 )
+                if (endpoint != null) {
+                    Text("Default for ${endpoint.displayName}: ${endpoint.chatEndpoint}",
+                        fontSize = 9.sp, color = custom.fg3, fontFamily = MonoFontFamily)
+                }
                 if (testResult != null) {
-                    Text(testResult!!, color = if (testResult!!.startsWith("✅")) custom.accent else custom.fg3, fontSize = 11.sp)
+                    Text(testResult!!,
+                        color = if (testResult!!.startsWith("✅")) custom.accent else custom.fg3,
+                        fontSize = 11.sp, fontFamily = MonoFontFamily)
                 }
                 if (testing) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -768,7 +912,6 @@ private fun EditApiKeyDialog(
                         testing = true
                         testResult = null
                         scope.launch {
-                            // Test using the same logic as the saved-key test.
                             val tempKey = original.copy(
                                 apiKey = apiKey, baseUrl = baseUrl,
                                 providerName = providerName, alias = alias,

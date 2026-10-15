@@ -168,7 +168,12 @@ object ModelsDevRepository {
             val envList = providerObj.optJSONArray("env")
             val envVar = if (envList != null && envList.length() > 0) envList.optString(0) else ""
 
-            providerList.add(CatalogProvider(providerKey, providerName, apiUrl, envVar, npmPkg))
+            // v3.3.1: normalize the provider ID using ProviderEndpoints.
+            // This maps "togetherai" → "together", "fireworks-ai" → "fireworks",
+            // "zhipuai" → "zai", "google" → "gemini". Keeps the original key for display.
+            val normalizedProviderId = ProviderEndpoints.normalizeProviderId(providerKey)
+
+            providerList.add(CatalogProvider(normalizedProviderId, providerName, apiUrl, envVar, npmPkg))
 
             val modelsObj = providerObj.optJSONObject("models")
             if (modelsObj != null) {
@@ -206,7 +211,7 @@ object ModelsDevRepository {
                     modelList.add(CatalogModel(
                         id = modelKey,
                         name = modelName,
-                        providerId = providerKey,
+                        providerId = normalizedProviderId,  // v3.3.1: normalized so it matches our internal ProviderEndpoints
                         providerName = providerName,
                         contextLength = ctxLen,
                         maxOutput = maxOut,
