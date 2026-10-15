@@ -19,6 +19,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.ai.agent.tools.categories.ContactTools
+import com.ai.agent.tools.categories.DeviceTools
+import com.ai.agent.tools.categories.FileTools
+import com.ai.agent.tools.categories.LocationTools
+import com.ai.agent.tools.categories.MemoryTools
 
 /**
  * Executes tool calls from the LLM.
@@ -368,26 +373,9 @@ class ToolExecutor(private val context: Context) {
                 ToolResult(true, "Waited ${seconds}s (${reason}). Continuing — check the status now.")
             }
             // Memory tools
-            "remember" -> {
-                val key = call.args["key"] as? String ?: return ToolResult(false, "missing key")
-                val value = call.args["value"] as? String ?: return ToolResult(false, "missing value")
-                database.remember(key, value)
-                ToolResult(true, "Remembered: $key = $value")
-            }
-            "recall" -> {
-                val key = call.args["key"] as? String ?: return ToolResult(false, "missing key")
-                val value = database.recall(key)
-                ToolResult(true, if (value != null) "$key = $value" else "I don't remember $key")
-            }
-            "recallAll" -> {
-                val memory = database.getAllMemory()
-                val memoryStr = if (memory.isEmpty()) {
-                    "I don't have any stored memories yet."
-                } else {
-                    memory.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                }
-                ToolResult(true, memoryStr)
-            }
+            "remember" -> MemoryTools.execute(call, context, service, database)
+            "recall" -> MemoryTools.execute(call, context, service, database)
+            "recallAll" -> MemoryTools.execute(call, context, service, database)
             // Vision tools
             "analyzeScreen" -> {
                 val prompt = call.args["prompt"] as? String ?: "Describe what's on the screen."
@@ -403,11 +391,7 @@ class ToolExecutor(private val context: Context) {
                 }
             }
             // System tools
-            "getBatteryLevel" -> {
-                val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
-                val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-                ToolResult(true, "Battery level: $level%")
-            }
+            "getBatteryLevel" -> DeviceTools.execute(call, context, service, database)
             "openUrl" -> {
                 val url = call.args["url"] as? String ?: return ToolResult(false, "missing url")
                 try {
@@ -420,99 +404,16 @@ class ToolExecutor(private val context: Context) {
                     ToolResult(false, "Failed to open URL: ${e.message}")
                 }
             }
-            "getCurrentTime" -> {
-                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss EEEE", java.util.Locale.getDefault())
-                ToolResult(true, "Current time: ${sdf.format(java.util.Date())}")
-            }
+            "getCurrentTime" -> DeviceTools.execute(call, context, service, database)
             // v3.0.0: speak tool — for rules to use TTS (Text-to-Speech)
-            "speak" -> {
-                val text = call.args["text"] as? String ?: call.args["message"] as? String
-                    ?: return ToolResult(false, "missing text to speak")
-                try {
-                    val ttsReady = kotlinx.coroutines.CompletableDeferred<Boolean>()
-                    val ttsInstance = android.speech.tts.TextToSpeech(context) { status ->
-                        ttsReady.complete(status == android.speech.tts.TextToSpeech.SUCCESS)
-                    }
-                    // Wait for TTS to initialize (max 2 seconds)
-                    val ready = kotlinx.coroutines.withTimeoutOrNull(2000) { ttsReady.await() }
-                    if (ready == true) {
-                        ttsInstance.language = java.util.Locale("en", "IN")
-                        ttsInstance.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "rule_speak_${System.currentTimeMillis()}")
-                        delay(500)  // Give TTS a moment to start speaking
-                        ToolResult(true, "Spoken: $text")
-                    } else {
-                        ToolResult(false, "TTS failed to initialize")
-                    }
-                } catch (e: Exception) {
-                    ToolResult(false, "TTS error: ${e.message}")
-                }
-            }
+            "speak" -> DeviceTools.execute(call, context, service, database)
             // === DEVICE CONTROL TOOLS ===
-            "getClipboard" -> {
-                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val text = clipboard.primaryClip?.getItemAt(0)?.text?.toString() ?: "(clipboard empty)"
-                ToolResult(true, "Clipboard: $text")
-            }
-            "setClipboard" -> {
-                val text = call.args["text"] as? String ?: return ToolResult(false, "missing text")
-                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("AI Agent", text))
-                ToolResult(true, "Copied to clipboard: $text")
-            }
-            "setVolume" -> {
-                val level = (call.args["level"] as? Number)?.toInt() ?: return ToolResult(false, "missing level (0-15)")
-                val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-                audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, level, 0)
-                ToolResult(true, "Volume set to $level")
-            }
-            "getVolume" -> {
-                val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-                val vol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                val max = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                ToolResult(true, "Volume: $vol/$max")
-            }
-            "setBrightness" -> {
-                // v2.5.1: Accept level as Number OR String (direct rules pass strings).
-                // Accept 0-100 (percent) OR 0-255 (raw). Auto-detect: if value > 100, treat as raw.
-                val rawLevel = call.args["level"] ?: call.args["value"] ?: call.args["brightness"]
-                val level: Int = when (rawLevel) {
-                    is Number -> rawLevel.toInt()
-                    is String -> rawLevel.toIntOrNull() ?: return ToolResult(false, "invalid level: $rawLevel (must be number)")
-                    else -> return ToolResult(false, "missing level (0-100 percent or 0-255 raw)")
-                }
-                // v2.5.1: If user passes 0-100, treat as percentage → convert to 0-255.
-                val finalLevel = if (level <= 100) (level * 255 / 100) else level
-                try {
-                    // v2.5.1: Set brightness mode to MANUAL first (otherwise setting value is ignored)
-                    android.provider.Settings.System.putInt(
-                        context.contentResolver,
-                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                    )
-                    android.provider.Settings.System.putInt(
-                        context.contentResolver,
-                        android.provider.Settings.System.SCREEN_BRIGHTNESS,
-                        finalLevel
-                    )
-                    ToolResult(true, "Brightness set to $finalLevel (user requested $level${if (level <= 100) "%" else ""})")
-                } catch (e: SecurityException) {
-                    ToolResult(false, "Cannot change brightness — need WRITE_SETTINGS permission. Grant in Settings → Apps → Aira → Modify system settings.")
-                } catch (e: Exception) {
-                    ToolResult(false, "Cannot change brightness: ${e.message}")
-                }
-            }
-            "toggleFlashlight" -> {
-                try {
-                    val cameraManager = context.getSystemService(android.content.Context.CAMERA_SERVICE) as android.hardware.camera2.CameraManager
-                    val cameraId = cameraManager.cameraIdList[0]
-                    cameraManager.setTorchMode(cameraId, true)
-                    delay(2000)
-                    cameraManager.setTorchMode(cameraId, false)
-                    ToolResult(true, "Flashlight toggled")
-                } catch (e: Exception) {
-                    ToolResult(false, "Flashlight error: ${e.message}")
-                }
-            }
+            "getClipboard" -> MemoryTools.execute(call, context, service, database)
+            "setClipboard" -> MemoryTools.execute(call, context, service, database)
+            "setVolume" -> DeviceTools.execute(call, context, service, database)
+            "getVolume" -> DeviceTools.execute(call, context, service, database)
+            "setBrightness" -> DeviceTools.execute(call, context, service, database)
+            "toggleFlashlight" -> DeviceTools.execute(call, context, service, database)
             "mediaPlayPause" -> {
                 val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
                 audioManager.dispatchMediaKeyEvent(
@@ -554,65 +455,11 @@ class ToolExecutor(private val context: Context) {
                     ToolResult(false, "Cannot open camera: ${e.message}")
                 }
             }
-            "listFiles" -> {
-                val path = call.args["path"] as? String ?: "/storage/emulated/0/Documents/ai-workspace"
-                try {
-                    val dir = java.io.File(path)
-                    if (!dir.exists()) return ToolResult(false, "Directory not found: $path")
-                    val files = dir.listFiles()?.joinToString("\n") { f ->
-                        "${if (f.isDirectory) "[DIR]" else "      "} ${f.name} (${f.length()} bytes)"
-                    } ?: "(empty or no access)"
-                    ToolResult(true, "Files in $path:\n$files")
-                } catch (e: Exception) {
-                    ToolResult(false, "Error: ${e.message}")
-                }
-            }
-            "readFile" -> {
-                val path = call.args["path"] as? String ?: return ToolResult(false, "missing path")
-                try {
-                    val content = java.io.File(path).readText()
-                    ToolResult(true, content.take(2000))  // limit to 2000 chars
-                } catch (e: Exception) {
-                    ToolResult(false, "Error reading file: ${e.message}")
-                }
-            }
-            "writeFile" -> {
-                val path = call.args["path"] as? String ?: return ToolResult(false, "missing path")
-                val content = call.args["content"] as? String ?: return ToolResult(false, "missing content")
-                try {
-                    val file = java.io.File(path)
-                    file.parentFile?.mkdirs()
-                    file.writeText(content)
-                    ToolResult(true, "File written: $path (${content.length} chars)")
-                } catch (e: Exception) {
-                    ToolResult(false, "Error writing file: ${e.message}")
-                }
-            }
-            "toggleWifi" -> {
-                // Note: requires CHANGE_WIFI_STATE permission, may not work on Android 10+
-                try {
-                    val wifiManager = context.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-                    val enabled = call.args["enabled"] as? Boolean ?: !wifiManager.isWifiEnabled
-                    @Suppress("DEPRECATION")
-                    wifiManager.setWifiEnabled(enabled)
-                    ToolResult(true, "WiFi ${if (enabled) "enabled" else "disabled"}")
-                } catch (e: Exception) {
-                    ToolResult(false, "Cannot toggle WiFi: ${e.message}")
-                }
-            }
-            "getNetworkInfo" -> {
-                try {
-                    val wifiManager = context.getSystemService(android.content.Context.WIFI_SERVICE) as android.net.wifi.WifiManager
-                    val connManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-                    val info = connManager.activeNetworkInfo
-                    val wifiOn = wifiManager.isWifiEnabled
-                    val connected = info?.isConnected == true
-                    val type = info?.typeName ?: "none"
-                    ToolResult(true, "WiFi: ${if (wifiOn) "ON" else "OFF"}, Connected: $connected, Type: $type")
-                } catch (e: Exception) {
-                    ToolResult(false, "Error: ${e.message}")
-                }
-            }
+            "listFiles" -> FileTools.execute(call, context, service, database)
+            "readFile" -> FileTools.execute(call, context, service, database)
+            "writeFile" -> FileTools.execute(call, context, service, database)
+            "toggleWifi" -> DeviceTools.execute(call, context, service, database)
+            "getNetworkInfo" -> DeviceTools.execute(call, context, service, database)
             "lockScreen" -> {
                 service!!.lockScreen()
                 ToolResult(true, "Screen locked")
@@ -660,126 +507,13 @@ class ToolExecutor(private val context: Context) {
                 }
             }
             // === CONTACTS ===
-            "readContacts" -> {
-                try {
-                    val cursor = context.contentResolver.query(
-                        android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                        arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                               android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER),
-                        null, null, "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
-                    )
-                    val contacts = mutableListOf<String>()
-                    cursor?.use {
-                        while (it.moveToNext() && contacts.size < 50) {
-                            val name = it.getString(0) ?: ""
-                            val number = it.getString(1) ?: ""
-                            contacts.add("$name: $number")
-                        }
-                    }
-                    ToolResult(true, if (contacts.isEmpty()) "No contacts found" else "Contacts (${contacts.size}):\n${contacts.joinToString("\n")}")
-                } catch (e: Exception) {
-                    ToolResult(false, "Contacts error: ${e.message}")
-                }
-            }
-            "searchContacts" -> {
-                val query = call.args["name"] as? String ?: return ToolResult(false, "missing name")
-                try {
-                    val cursor = context.contentResolver.query(
-                        android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                        arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                               android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER),
-                        "${android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?",
-                        arrayOf("%$query%"), null
-                    )
-                    val results = mutableListOf<String>()
-                    cursor?.use {
-                        while (it.moveToNext()) {
-                            results.add("${it.getString(0)}: ${it.getString(1)}")
-                        }
-                    }
-                    ToolResult(true, if (results.isEmpty()) "No contacts found for '$query'" else results.joinToString("\n"))
-                } catch (e: Exception) {
-                    ToolResult(false, "Search error: ${e.message}")
-                }
-            }
-            "callContact" -> {
-                val number = call.args["number"] as? String ?: return ToolResult(false, "missing number")
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_CALL).apply {
-                        data = android.net.Uri.parse("tel:$number")
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ToolResult(true, "Calling $number...")
-                } catch (e: Exception) {
-                    ToolResult(false, "Call error: ${e.message}")
-                }
-            }
-            "sendSMS" -> {
-                val number = call.args["number"] as? String ?: return ToolResult(false, "missing number")
-                val message = call.args["message"] as? String ?: return ToolResult(false, "missing message")
-                try {
-                    val smsManager = android.telephony.SmsManager.getDefault()
-                    smsManager.sendTextMessage(number, null, message, null, null)
-                    ToolResult(true, "SMS sent to $number: $message")
-                } catch (e: Exception) {
-                    ToolResult(false, "SMS error: ${e.message}")
-                }
-            }
+            "readContacts" -> ContactTools.execute(call, context, service, database)
+            "searchContacts" -> ContactTools.execute(call, context, service, database)
+            "callContact" -> ContactTools.execute(call, context, service, database)
+            "sendSMS" -> ContactTools.execute(call, context, service, database)
             // === CALENDAR ===
-            "getCalendarEvents" -> {
-                try {
-                    val now = System.currentTimeMillis()
-                    val endOfDay = now + 86400000 * 7 // next 7 days
-                    val cursor = context.contentResolver.query(
-                        android.provider.CalendarContract.Events.CONTENT_URI,
-                        arrayOf(android.provider.CalendarContract.Events.TITLE,
-                               android.provider.CalendarContract.Events.DTSTART,
-                               android.provider.CalendarContract.Events.DTEND,
-                               android.provider.CalendarContract.Events.EVENT_LOCATION),
-                        "${android.provider.CalendarContract.Events.DTSTART} >= ? AND ${android.provider.CalendarContract.Events.DTSTART} <= ?",
-                        arrayOf(now.toString(), endOfDay.toString()),
-                        "${android.provider.CalendarContract.Events.DTSTART} ASC"
-                    )
-                    val events = mutableListOf<String>()
-                    val sdf = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
-                    cursor?.use {
-                        while (it.moveToNext() && events.size < 20) {
-                            val title = it.getString(0) ?: ""
-                            val start = it.getLong(1)
-                            val end = it.getLong(2)
-                            val location = it.getString(3) ?: ""
-                            events.add("${sdf.format(java.util.Date(start))} - ${sdf.format(java.util.Date(end))}: $title${if (location.isNotEmpty()) " @ $location" else ""}")
-                        }
-                    }
-                    ToolResult(true, if (events.isEmpty()) "No upcoming events" else "Upcoming events:\n${events.joinToString("\n")}")
-                } catch (e: Exception) {
-                    ToolResult(false, "Calendar error: ${e.message}")
-                }
-            }
-            "createCalendarEvent" -> {
-                val title = call.args["title"] as? String ?: return ToolResult(false, "missing title")
-                val startTime = call.args["startTime"] as? String ?: return ToolResult(false, "missing startTime (epoch ms or yyyy-MM-dd HH:mm)")
-                try {
-                    val startMs = if (startTime.matches(Regex("\\d+"))) startTime.toLong()
-                    else {
-                        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-                        sdf.parse(startTime)?.time ?: return ToolResult(false, "Invalid time format")
-                    }
-                    val durationMin = (call.args["durationMinutes"] as? Number)?.toInt() ?: 60
-                    val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
-                        data = android.provider.CalendarContract.Events.CONTENT_URI
-                        putExtra(android.provider.CalendarContract.Events.TITLE, title)
-                        putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMs)
-                        putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, startMs + durationMin * 60000)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ToolResult(true, "Calendar event '$title' created")
-                } catch (e: Exception) {
-                    ToolResult(false, "Calendar error: ${e.message}")
-                }
-            }
+            "getCalendarEvents" -> ContactTools.execute(call, context, service, database)
+            "createCalendarEvent" -> ContactTools.execute(call, context, service, database)
             // === HTTP REQUESTS (Web Research) ===
             "makeHttpRequest" -> {
                 val url = call.args["url"] as? String ?: return ToolResult(false, "missing url")
@@ -1051,299 +785,22 @@ class ToolExecutor(private val context: Context) {
                 }
             }
             // === CALL LOG ===
-            "getCallLog" -> {
-                try {
-                    val cursor = context.contentResolver.query(
-                        android.provider.CallLog.Calls.CONTENT_URI,
-                        arrayOf(android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.CACHED_NAME,
-                               android.provider.CallLog.Calls.TYPE, android.provider.CallLog.Calls.DATE,
-                               android.provider.CallLog.Calls.DURATION),
-                        null, null, "${android.provider.CallLog.Calls.DATE} DESC LIMIT 20"
-                    )
-                    val calls = mutableListOf<String>()
-                    val sdf = java.text.SimpleDateFormat("MMM dd HH:mm", java.util.Locale.getDefault())
-                    cursor?.use {
-                        while (it.moveToNext() && calls.size < 20) {
-                            val number = it.getString(0) ?: ""
-                            val name = it.getString(1) ?: "Unknown"
-                            val type = when (it.getInt(2)) {
-                                android.provider.CallLog.Calls.INCOMING_TYPE -> "Incoming"
-                                android.provider.CallLog.Calls.OUTGOING_TYPE -> "Outgoing"
-                                android.provider.CallLog.Calls.MISSED_TYPE -> "Missed"
-                                else -> "Unknown"
-                            }
-                            val date = sdf.format(java.util.Date(it.getLong(3)))
-                            val duration = it.getString(4) ?: "0"
-                            calls.add("$date $type: $name ($number) ${duration}s")
-                        }
-                    }
-                    ToolResult(true, if (calls.isEmpty()) "No call history" else "Recent calls:\n${calls.joinToString("\n")}")
-                } catch (e: Exception) {
-                    ToolResult(false, "Call log error: ${e.message}")
-                }
-            }
+            "getCallLog" -> ContactTools.execute(call, context, service, database)
             // === LOCATION ===
-            "getCurrentLocation" -> {
-                try {
-                    val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
-                    val providers = lm.getProviders(true)
-                    var location: android.location.Location? = null
-                    for (provider in providers) {
-                        try {
-                            @Suppress("MissingPermission")
-                            val loc = lm.getLastKnownLocation(provider)
-                            if (loc != null && (location == null || loc.accuracy < location!!.accuracy)) {
-                                location = loc
-                            }
-                        } catch (_: Exception) {}
-                    }
-                    if (location != null) {
-                        ToolResult(true, "Location: ${location.latitude}, ${location.longitude} (accuracy: ${location.accuracy}m)")
-                    } else {
-                        ToolResult(false, "Location not available. Enable GPS.")
-                    }
-                } catch (e: Exception) {
-                    ToolResult(false, "Location error: ${e.message}")
-                }
-            }
-            "openMaps" -> {
-                val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
-                try {
-                    // Force Google Maps — no app picker
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("google.maps:q=$query")).apply {
-                        setPackage("com.google.android.apps.maps")
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    if (intent.resolveActivity(context.packageManager) != null) {
-                        context.startActivity(intent)
-                        ToolResult(true, "Google Maps opened for: $query")
-                    } else {
-                        // Fallback: open in browser
-                        val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://maps.google.com/maps?q=$query")).apply {
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(browserIntent)
-                        ToolResult(true, "Maps opened in browser for: $query (Google Maps app not installed)")
-                    }
-                } catch (e: Exception) {
-                    ToolResult(false, "Maps error: ${e.message}")
-                }
-            }
+            "getCurrentLocation" -> LocationTools.execute(call, context, service, database)
+            "openMaps" -> LocationTools.execute(call, context, service, database)
             // v2.3.3: getWeather — uses GPS location + free Open-Meteo API (no key needed, works in India)
-            "getWeather" -> {
-                try {
-                    // Step 1: Get GPS location
-                    val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
-                    val providers = lm.getProviders(true)
-                    var location: android.location.Location? = null
-                    for (provider in providers) {
-                        try {
-                            @Suppress("MissingPermission")
-                            val loc = lm.getLastKnownLocation(provider)
-                            if (loc != null && (location == null || loc.accuracy < location!!.accuracy)) {
-                                location = loc
-                            }
-                        } catch (_: Exception) {}
-                    }
-                    if (location == null) {
-                        return ToolResult(false, "GPS location not available. Enable GPS and try again, or specify a city: getWeather(city=\"Bangalore\")")
-                    }
-                    val lat = location.latitude
-                    val lon = location.longitude
-
-                    // Step 2: Call free Open-Meteo API (no API key, works globally including India)
-                    val (weatherBody, weatherCode) = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-                            "&current=temperature_2m,relative_humidity_2m,apparent_temperature," +
-                            "weather_code,wind_speed_10m,precipitation" +
-                            "&daily=temperature_2m_max,temperature_2m_min,weather_code" +
-                            "&timezone=auto&forecast_days=3"
-                        val client = okhttp3.OkHttpClient.Builder()
-                            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                            .build()
-                        val request = okhttp3.Request.Builder().url(url).build()
-                        val response = client.newCall(request).execute()
-                        (response.body?.string() ?: "") to response.code
-                    }
-
-                    if (weatherCode != 200 || weatherBody.isEmpty()) {
-                        return ToolResult(false, "Weather API error: HTTP $weatherCode")
-                    }
-
-                    // Step 3: Parse JSON response
-                    val json = org.json.JSONObject(weatherBody)
-                    val current = json.optJSONObject("current")
-                    val daily = json.optJSONObject("daily")
-
-                    val temp = current?.optDouble("temperature_2m", 0.0) ?: 0.0
-                    val humidity = current?.optInt("relative_humidity_2m", 0) ?: 0
-                    val feelsLike = current?.optDouble("apparent_temperature", temp) ?: temp
-                    val windSpeed = current?.optDouble("wind_speed_10m", 0.0) ?: 0.0
-                    val precip = current?.optDouble("precipitation", 0.0) ?: 0.0
-                    val wmoCode = current?.optInt("weather_code", -1) ?: -1
-                    val timezone = json.optString("timezone", "unknown")
-
-                    // WMO weather description
-                    val weatherDesc = when (wmoCode) {
-                        0 -> "Clear sky"
-                        1 -> "Mainly clear"
-                        2 -> "Partly cloudy"
-                        3 -> "Overcast"
-                        45 -> "Foggy"
-                        48 -> "Rime fog"
-                        51 -> "Light drizzle"
-                        53 -> "Moderate drizzle"
-                        55 -> "Dense drizzle"
-                        61 -> "Slight rain"
-                        63 -> "Moderate rain"
-                        65 -> "Heavy rain"
-                        71 -> "Slight snow"
-                        73 -> "Moderate snow"
-                        75 -> "Heavy snow"
-                        80 -> "Rain showers"
-                        81 -> "Heavy rain showers"
-                        82 -> "Violent rain showers"
-                        95 -> "Thunderstorm"
-                        96 -> "Thunderstorm with hail"
-                        else -> "Unknown ($wmoCode)"
-                    }
-
-                    // Build 3-day forecast
-                    val forecast = StringBuilder()
-                    if (daily != null) {
-                        val maxTemps = daily.optJSONArray("temperature_2m_max")
-                        val minTemps = daily.optJSONArray("temperature_2m_min")
-                        val dates = daily.optJSONArray("time")
-                        val codes = daily.optJSONArray("weather_code")
-                        val days = minOf(3, maxTemps?.length() ?: 0)
-                        for (i in 0 until days) {
-                            val date = dates?.optString(i, "") ?: ""
-                            val max = maxTemps?.optDouble(i, 0.0) ?: 0.0
-                            val min = minTemps?.optDouble(i, 0.0) ?: 0.0
-                            val dc = codes?.optInt(i, -1) ?: -1
-                            val desc = when (dc) {
-                                0 -> "Clear"
-                                1 -> "Mainly clear"
-                                2 -> "Partly cloudy"
-                                3 -> "Cloudy"
-                                51 -> "Drizzle"
-                                61 -> "Rain"
-                                63 -> "Rain"
-                                80 -> "Showers"
-                                95 -> "Thunderstorm"
-                                else -> "—"
-                            }
-                            forecast.append("  $date: $min°C - $max°C ($desc)\n")
-                        }
-                    }
-
-                    val result = buildString {
-                        append("Current Weather ($timezone)\n")
-                        // v2.3.3: Use Locale.US to force dot decimal separator (some Indian locales use comma → parse errors)
-                        append("Temperature: ${String.format(java.util.Locale.US, "%.1f", temp)}°C (feels like ${String.format(java.util.Locale.US, "%.1f", feelsLike)}°C)\n")
-                        append("Condition: $weatherDesc\n")
-                        append("Humidity: $humidity%\n")
-                        append("Wind: ${String.format(java.util.Locale.US, "%.1f", windSpeed)} km/h\n")
-                        append("Precipitation: ${String.format(java.util.Locale.US, "%.1f", precip)} mm\n")
-                        append("Location: ${String.format(java.util.Locale.US, "%.4f", lat)}, ${String.format(java.util.Locale.US, "%.4f", lon)}\n")
-                        if (forecast.isNotEmpty()) {
-                            append("\n3-day forecast:\n")
-                            append(forecast.toString().trimEnd())
-                        }
-                    }
-
-                    ToolResult(true, result)
-                } catch (e: Exception) {
-                    ToolResult(false, "Weather error: ${e.message}")
-                }
-            }
+            "getWeather" -> LocationTools.execute(call, context, service, database)
             // === DEVICE INFO ===
-            "getDeviceInfo" -> {
-                val info = buildString {
-                    append("Model: ${android.os.Build.MODEL}\n")
-                    append("Brand: ${android.os.Build.BRAND}\n")
-                    append("Manufacturer: ${android.os.Build.MANUFACTURER}\n")
-                    append("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})\n")
-                    append("Device: ${android.os.Build.DEVICE}\n")
-                    append("Board: ${android.os.Build.BOARD}\n")
-                    val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
-                    append("Battery: ${bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)}%\n")
-                    val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-                    val mi = android.app.ActivityManager.MemoryInfo()
-                    am.getMemoryInfo(mi)
-                    append("RAM: ${mi.availMem / 1048576}MB / ${mi.totalMem / 1048576}MB\n")
-                    append("Storage: ${android.os.Environment.getDataDirectory().let { java.io.File(it.path).freeSpace / 1048576 }}MB free\n")
-                    val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager
-                    val display = wm.defaultDisplay
-                    val size = android.graphics.Point()
-                    display.getRealSize(size)
-                    append("Screen: ${size.x}x${size.y}\n")
-                    append("Root: ${if (java.io.File("/system/bin/su").exists()) "YES" else "NO"}\n")
-                }
-                ToolResult(true, info)
-            }
+            "getDeviceInfo" -> DeviceTools.execute(call, context, service, database)
             // === FILE OPERATIONS ===
-            "copyFile" -> {
-                val src = call.args["source"] as? String ?: return ToolResult(false, "missing source")
-                val dst = call.args["destination"] as? String ?: return ToolResult(false, "missing destination")
-                try {
-                    java.io.File(src).copyTo(java.io.File(dst), overwrite = true)
-                    ToolResult(true, "Copied $src to $dst")
-                } catch (e: Exception) { ToolResult(false, "Copy error: ${e.message}") }
-            }
-            "moveFile" -> {
-                val src = call.args["source"] as? String ?: return ToolResult(false, "missing source")
-                val dst = call.args["destination"] as? String ?: return ToolResult(false, "missing destination")
-                try {
-                    java.io.File(src).renameTo(java.io.File(dst))
-                    ToolResult(true, "Moved $src to $dst")
-                } catch (e: Exception) { ToolResult(false, "Move error: ${e.message}") }
-            }
-            "deleteFile" -> {
-                val path = call.args["path"] as? String ?: return ToolResult(false, "missing path")
-                try {
-                    val file = java.io.File(path)
-                    val deleted = file.delete()
-                    ToolResult(deleted, if (deleted) "Deleted $path" else "Could not delete $path")
-                } catch (e: Exception) { ToolResult(false, "Delete error: ${e.message}") }
-            }
-            "createDirectory" -> {
-                val path = call.args["path"] as? String ?: return ToolResult(false, "missing path")
-                try {
-                    val dir = java.io.File(path)
-                    val created = dir.mkdirs()
-                    ToolResult(created || dir.exists(), "Directory $path ${if (created) "created" else "already exists"}")
-                } catch (e: Exception) { ToolResult(false, "Error: ${e.message}") }
-            }
+            "copyFile" -> FileTools.execute(call, context, service, database)
+            "moveFile" -> FileTools.execute(call, context, service, database)
+            "deleteFile" -> FileTools.execute(call, context, service, database)
+            "createDirectory" -> FileTools.execute(call, context, service, database)
             // === ALARM ===
-            "setAlarm" -> {
-                val hour = (call.args["hour"] as? Number)?.toInt() ?: return ToolResult(false, "missing hour")
-                val minute = (call.args["minute"] as? Number)?.toInt() ?: return ToolResult(false, "missing minute")
-                try {
-                    val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
-                        putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
-                        putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ToolResult(true, "Alarm set for $hour:$minute")
-                } catch (e: Exception) { ToolResult(false, "Alarm error: ${e.message}") }
-            }
-            "setTimer" -> {
-                val seconds = (call.args["seconds"] as? Number)?.toInt() ?: return ToolResult(false, "missing seconds")
-                try {
-                    val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_TIMER).apply {
-                        putExtra(android.provider.AlarmClock.EXTRA_LENGTH, seconds)
-                        putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, call.args["message"] as? String ?: "Timer")
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ToolResult(true, "Timer set for ${seconds}s")
-                } catch (e: Exception) { ToolResult(false, "Timer error: ${e.message}") }
-            }
+            "setAlarm" -> ContactTools.execute(call, context, service, database)
+            "setTimer" -> ContactTools.execute(call, context, service, database)
             // === APP MANAGEMENT ===
             "getAppInfo" -> {
                 val pkg = call.args["package"] as? String ?: return ToolResult(false, "missing package")
@@ -1375,34 +832,9 @@ class ToolExecutor(private val context: Context) {
                 } catch (e: Exception) { ToolResult(false, "Error: ${e.message}") }
             }
             // === EMAIL ===
-            "sendEmail" -> {
-                val to = call.args["to"] as? String ?: return ToolResult(false, "missing 'to' email")
-                val subject = call.args["subject"] as? String ?: ""
-                val body = call.args["body"] as? String ?: ""
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(to))
-                        putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
-                        putExtra(android.content.Intent.EXTRA_TEXT, body)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ToolResult(true, "Email draft created for $to")
-                } catch (e: Exception) { ToolResult(false, "Email error: ${e.message}") }
-            }
+            "sendEmail" -> ContactTools.execute(call, context, service, database)
             // === BLUETOOTH ===
-            "getBluetoothState" -> {
-                try {
-                    val bm = context.getSystemService(android.content.Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
-                    val adapter = bm.adapter
-                    if (adapter != null) {
-                        ToolResult(true, "Bluetooth: ${if (adapter.isEnabled) "ON" else "OFF"}\nName: ${adapter.name ?: "N/A"}\nAddress: ${adapter.address}")
-                    } else {
-                        ToolResult(false, "Bluetooth not available")
-                    }
-                } catch (e: Exception) { ToolResult(false, "Bluetooth error: ${e.message}") }
-            }
+            "getBluetoothState" -> DeviceTools.execute(call, context, service, database)
             // === SHARE TEXT ===
             "shareText" -> {
                 val text = call.args["text"] as? String ?: return ToolResult(false, "missing text")
@@ -1444,17 +876,7 @@ class ToolExecutor(private val context: Context) {
                 } catch (e: Exception) { ToolResult(false, "Share file error: ${e.message}") }
             }
             // === OPEN DIALER (don't auto-call, just open) ===
-            "openDialer" -> {
-                val number = call.args["number"] as? String ?: return ToolResult(false, "missing number")
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_DIAL).apply {
-                        data = android.net.Uri.parse("tel:$number")
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                    ToolResult(true, "Opened dialer with $number")
-                } catch (e: Exception) { ToolResult(false, "Dialer error: ${e.message}") }
-            }
+            "openDialer" -> ContactTools.execute(call, context, service, database)
             // === OPEN CONTACT CARD ===
             "openContact" -> {
                 val contactId = (call.args["id"] as? Number)?.toLong()
@@ -1499,15 +921,7 @@ class ToolExecutor(private val context: Context) {
                 } catch (e: Exception) { ToolResult(false, "Settings error: ${e.message}") }
             }
             // === PING ===
-            "pingHost" -> {
-                val host = call.args["host"] as? String ?: return ToolResult(false, "missing host")
-                try {
-                    val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "ping -c 3 $host"))
-                    val output = process.inputStream.bufferedReader().readText()
-                    process.waitFor()
-                    ToolResult(true, output)
-                } catch (e: Exception) { ToolResult(false, "Ping error: ${e.message}") }
-            }
+            "pingHost" -> DeviceTools.execute(call, context, service, database)
             // === TRANSLATE (via LLM) ===
             "translateText" -> {
                 val text = call.args["text"] as? String ?: return ToolResult(false, "missing text")
@@ -1761,146 +1175,16 @@ class ToolExecutor(private val context: Context) {
                 }
             }
             // ==================== VECTOR MEMORY ====================
-            "recallSimilar" -> {
-                val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
-                val results = database.recallSimilar(query)
-                if (results.isEmpty()) {
-                    ToolResult(true, "No similar memories found for: $query")
-                } else {
-                    val sb = StringBuilder("Similar memories (top ${results.size}):\n")
-                    for ((key, value, score) in results) {
-                        sb.append("- $key: $value (similarity: ${"%.0f".format(score * 100)}%)\n")
-                    }
-                    ToolResult(true, sb.toString())
-                }
-            }
-            "searchMemory" -> {
-                val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
-                val results = database.searchMemory(query)
-                if (results.isEmpty()) {
-                    ToolResult(true, "No memories found containing: $query")
-                } else {
-                    val sb = StringBuilder("Found ${results.size} memories:\n")
-                    for ((key, value) in results) {
-                        sb.append("- $key: $value\n")
-                    }
-                    ToolResult(true, sb.toString())
-                }
-            }
+            "recallSimilar" -> MemoryTools.execute(call, context, service, database)
+            "searchMemory" -> MemoryTools.execute(call, context, service, database)
             // ==================== KNOWLEDGE (v6.0.0) ====================
-            "saveToKnowledge" -> {
-                val name = call.args["name"] as? String ?: return ToolResult(false, "missing name")
-                val content = call.args["content"] as? String ?: return ToolResult(false, "missing content")
-                val source = call.args["source"] as? String ?: "manual"
-                database.saveKnowledge(name, content, source)
-                ToolResult(true, "Saved knowledge: $name (${content.length} chars, source: $source)")
-            }
-            "recallKnowledge" -> {
-                val query = call.args["query"] as? String ?: return ToolResult(false, "missing query")
-                val results = database.recallKnowledge(query)
-                if (results.isEmpty()) {
-                    ToolResult(true, "No knowledge found for: $query")
-                } else {
-                    val sb = StringBuilder("Knowledge (top ${results.size}):\n")
-                    for ((name, content, score) in results) {
-                        sb.append("- $name (similarity: ${"%.0f".format(score * 100)}%): ${content.take(200)}...\n")
-                    }
-                    ToolResult(true, sb.toString())
-                }
-            }
-            "listKnowledge" -> {
-                val all = database.getAllKnowledge()
-                if (all.isEmpty()) {
-                    ToolResult(true, "No knowledge stored yet.")
-                } else {
-                    val sb = StringBuilder("Knowledge (${all.size}):\n")
-                    for ((name, content, source) in all) {
-                        sb.append("- $name (${content.length} chars, source: $source)\n")
-                    }
-                    ToolResult(true, sb.toString())
-                }
-            }
+            "saveToKnowledge" -> MemoryTools.execute(call, context, service, database)
+            "recallKnowledge" -> MemoryTools.execute(call, context, service, database)
+            "listKnowledge" -> MemoryTools.execute(call, context, service, database)
             // ==================== FILE ATTACHMENTS (v6.0.0) ====================
-            "listAttachments" -> {
-                val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/attachments")
-                if (!dir.exists()) {
-                    ToolResult(true, "No attachments directory. Files attached to chat messages will appear here.")
-                } else {
-                    val files = dir.listFiles()?.filter { it.isFile } ?: emptyList()
-                    if (files.isEmpty()) {
-                        ToolResult(true, "No attachments found.")
-                    } else {
-                        val sb = StringBuilder("Attachments (${files.size}):\n")
-                        for (file in files.take(20)) {
-                            val sizeKb = file.length() / 1024
-                            sb.append("- ${file.name} (${sizeKb}KB)\n")
-                        }
-                        ToolResult(true, sb.toString())
-                    }
-                }
-            }
-            "readAttachment" -> {
-                val filename = call.args["filename"] as? String ?: return ToolResult(false, "missing filename")
-                val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/attachments")
-                val file = java.io.File(dir, filename)
-                if (!file.exists()) {
-                    // Try exact path
-                    val directFile = java.io.File(filename)
-                    if (directFile.exists()) {
-                        val content = directFile.readText()
-                        val truncated = if (content.length > 3000) content.take(3000) + "\n[...truncated]" else content
-                        ToolResult(true, "File: $filename\n\nContent:\n$truncated")
-                    } else {
-                        ToolResult(false, "File not found: $filename")
-                    }
-                } else {
-                    val ext = file.extension.lowercase()
-                    when (ext) {
-                        "txt", "md", "json", "csv", "xml", "html", "log" -> {
-                            val content = file.readText()
-                            val truncated = if (content.length > 3000) content.take(3000) + "\n[...truncated]" else content
-                            ToolResult(true, "File: $filename (${file.length()} bytes)\n\nContent:\n$truncated")
-                        }
-                        "jpg", "jpeg", "png", "webp", "bmp" -> {
-                            ToolResult(true, "Image file: $filename (${file.length() / 1024}KB). Use analyzeScreen or VLM to describe the image content.")
-                        }
-                        "pdf" -> {
-                            ToolResult(true, "PDF file: $filename (${file.length() / 1024}KB). PDF text extraction not implemented — use the file path to share or upload.")
-                        }
-                        else -> {
-                            ToolResult(true, "File: $filename (${file.length()} bytes, type: $ext). Binary file — use shareFile to send to another app.")
-                        }
-                    }
-                }
-            }
-            "sendAttachmentTo" -> {
-                val filename = call.args["filename"] as? String ?: return ToolResult(false, "missing filename")
-                val appPackage = call.args["package"] as? String ?: return ToolResult(false, "missing package")
-                val caption = call.args["caption"] as? String  // v6.1.0: optional caption
-                val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/attachments")
-                val file = java.io.File(dir, filename).let { if (it.exists()) it else java.io.File(filename) }
-                if (!file.exists()) return ToolResult(false, "File not found: $filename")
-                try {
-                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                        context, "${context.packageName}.fileprovider", file
-                    )
-                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = context.contentResolver.getType(uri) ?: "*/*"
-                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                        if (caption != null) {
-                            putExtra(android.content.Intent.EXTRA_TEXT, caption)
-                        }
-                        setPackage(appPackage)
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(shareIntent)
-                    val msg = if (caption != null) "Sent $filename to $appPackage with caption: $caption" else "Sent $filename to $appPackage"
-                    ToolResult(true, msg)
-                } catch (e: Exception) {
-                    ToolResult(false, "Failed to send: ${e.message}")
-                }
-            }
+            "listAttachments" -> FileTools.execute(call, context, service, database)
+            "readAttachment" -> FileTools.execute(call, context, service, database)
+            "sendAttachmentTo" -> FileTools.execute(call, context, service, database)
             // ==================== SKILL MANAGEMENT (v6.1.0) ====================
             "createSkill" -> {
                 val name = call.args["name"] as? String ?: return ToolResult(false, "missing name")
@@ -2354,31 +1638,7 @@ $instructions
                 }
             }
 
-            "composeEmail" -> {
-                val to = call.args["to"] as? String
-                    ?: return ToolResult(false, "missing to (email address)")
-                val subject = call.args["subject"] as? String ?: ""
-                val body = call.args["body"] as? String ?: ""
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO)
-                    intent.data = android.net.Uri.parse("mailto:")
-                    intent.putExtra(android.content.Intent.EXTRA_EMAIL, arrayOf(to))
-                    intent.putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
-                    intent.putExtra(android.content.Intent.EXTRA_TEXT, body)
-                    intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                    intent.setPackage("com.google.android.gm")
-                    try {
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        intent.setPackage(null)
-                        context.startActivity(intent)
-                    }
-                    delay(1500)
-                    ToolResult(true, "Opened email composer: to=$to, subject=$subject")
-                } catch (e: Exception) {
-                    ToolResult(false, "composeEmail($to) failed: ${e.message}")
-                }
-            }
+            "composeEmail" -> ContactTools.execute(call, context, service, database)
 
             "playSpotify" -> {
                 val query = call.args["query"] as? String
@@ -2446,27 +1706,7 @@ $instructions
                 }
             }
 
-            "makePhoneCall" -> {
-                val number = call.args["number"] as? String
-                    ?: return ToolResult(false, "missing number")
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_CALL,
-                        android.net.Uri.parse("tel:$number"))
-                    intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                    context.startActivity(intent)
-                    delay(1000)
-                    ToolResult(true, "Calling $number...")
-                } catch (e: SecurityException) {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_DIAL,
-                        android.net.Uri.parse("tel:$number"))
-                    intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                    context.startActivity(intent)
-                    delay(1000)
-                    ToolResult(true, "Opened dialer with $number (CALL_PHONE permission not granted — tap call button)")
-                } catch (e: Exception) {
-                    ToolResult(false, "makePhoneCall($number) failed: ${e.message}")
-                }
-            }
+            "makePhoneCall" -> ContactTools.execute(call, context, service, database)
 
             "openGoogleSearch" -> {
                 val query = call.args["query"] as? String
