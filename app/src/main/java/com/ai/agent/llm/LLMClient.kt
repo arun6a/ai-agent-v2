@@ -266,16 +266,20 @@ class LLMClient(private val context: Context) {
             return@withContext resp
         }
 
-        // Auto-fallback enabled — try bindings in order.
-        val defaultModel = SavedModelsStore.getDefaultModel(context) ?: run {
-            // No default model — just call chat() and let it handle the error.
+        // v3.3.9: Read the tier-picked model that SmartRouting.applyModelForRouting
+        // just wrote to AIProvider prefs — NOT the saved default. This is what
+        // makes Tier 1 (Fast/Cheap) + Tier 3 (Advanced) routing actually work.
+        // Previously this called getDefaultModel() which always returned GLM-4.6
+        // (the saved default), ignoring the tier-picked Gemini Flash / Grok 4.7.
+        val pickedModel = SmartRouting.getCurrentlyRoutedModel(context) ?: run {
+            // No routed model — fall back to chat() directly.
             return@withContext chat(userMessage, systemPrompt, toolFilter)
         }
         SavedModelsStore.load(context)
         BindingHealthStore.load(context)
-        val activeBindings = defaultModel.activeBindings()
-        if (activeBindings.size <= 1) {
-            // Only one binding — no failover possible. Just call chat().
+        val activeBindings = pickedModel.activeBindings()
+        if (activeBindings.isEmpty()) {
+            // No bindings — try chat() directly (might use legacy apiKeyId path).
             val resp = chat(userMessage, systemPrompt, toolFilter)
             recordHealthFromResponse(resp)
             return@withContext resp
@@ -283,13 +287,13 @@ class LLMClient(private val context: Context) {
 
         // Try each enabled binding until one succeeds or all fail.
         var lastResp: LLMResponse? = null
-        var triedBindings = mutableSetOf<String>()
+        val triedBindings = mutableSetOf<String>()
         for (binding in activeBindings) {
             if (binding.id in triedBindings) continue
             triedBindings.add(binding.id)
             // Apply this binding to AIProvider (so chat() uses it).
-            SavedModelsStore.applyBindingForFailover(context, defaultModel.id, binding.id)
-            Log.i("LLMClient", "Failover: trying binding ${binding.providerName} (#${binding.priority})")
+            SavedModelsStore.applyBindingForFailover(context, pickedModel.id, binding.id)
+            Log.i("LLMClient", "Failover: trying binding ${binding.providerName} (#${binding.priority}) for ${pickedModel.modelName}")
             val resp = chat(userMessage, systemPrompt, toolFilter)
             if (resp.reply.isNotEmpty() && !isPermanentFailure(resp)) {
                 // Success — record + return.
@@ -301,15 +305,13 @@ class LLMClient(private val context: Context) {
             lastResp = resp
             Log.w("LLMClient", "Binding ${binding.providerName} failed: ${resp.reply.take(80)}")
         }
-        // v3.3.7: All bindings of the primary model failed — try cross-model fallback.
+        // v3.3.7: All bindings of the picked model failed — try cross-model fallback.
         // This is the missing piece for "Sandbox goes down → try Gemini Flash".
         if (AutoFallbackSettings.isAutoFallbackModelsEnabled(context)) {
-            val fallbackChain = SmartRouting.pickFallbackChain(context, defaultModel)
+            val fallbackChain = SmartRouting.pickFallbackChain(context, pickedModel)
             for (fallbackModel in fallbackChain) {
                 Log.i("LLMClient", "Cross-model failover: trying '${fallbackModel.modelName}'")
-                // Apply the fallback model to AIProvider.
                 SavedModelsStore.applyModelForRouting(context, fallbackModel.id)
-                // Try its bindings.
                 val fallbackBindings = fallbackModel.activeBindings()
                 for (binding in fallbackBindings) {
                     SavedModelsStore.applyBindingForFailover(context, fallbackModel.id, binding.id)
@@ -343,10 +345,11 @@ class LLMClient(private val context: Context) {
 
     /**
      * Record success/failure to the currently-active binding's health.
+     * v3.3.9: uses the tier-picked routed model, not the saved default.
      */
     private fun recordHealthFromResponse(resp: LLMResponse) {
-        val defaultModel = SavedModelsStore.getDefaultModel(context) ?: return
-        val active = defaultModel.activeBindings().firstOrNull() ?: return
+        val routedModel = SmartRouting.getCurrentlyRoutedModel(context) ?: return
+        val active = routedModel.activeBindings().firstOrNull() ?: return
         if (isPermanentFailure(resp)) {
             BindingHealthStore.recordFailure(active.id, resp.reply.take(100), context)
         } else if (resp.reply.isNotEmpty()) {

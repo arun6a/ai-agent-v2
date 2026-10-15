@@ -56,6 +56,41 @@ object SmartRouting {
     }
 
     /**
+     * v3.3.9: Get the model that was tier-picked + applied to AIProvider by
+     * ChatViewModel.runAgentLoop → SmartRouting.pickModelForMessage →
+     * SavedModelsStore.applyModelForRouting.
+     *
+     * This reads the AIProvider prefs (provider + model) that were just written
+     * + finds the matching SavedModel. This is what chatWithFailover should
+     * use to know which model's bindings to try — NOT getDefaultModel() which
+     * always returns the saved default (ignoring the tier-picked model).
+     *
+     * Returns null if no saved model matches the current AIProvider config
+     * (e.g. user hasn't set up Smart Routing yet, or the routed model was
+     * deleted).
+     */
+    fun getCurrentlyRoutedModel(context: Context): SavedModelsStore.SavedModel? {
+        SavedModelsStore.load(context)
+        // First try: find by the tier-picked modelId we stored.
+        val allModels = SavedModelsStore.getAllModels()
+        if (allModels.isEmpty()) return SavedModelsStore.getDefaultModel(context)
+
+        // The tier-picked model was applied via applyModelForRouting which
+        // writes the model's modelId to AIProvider.KEY_MODEL. Find the
+        // SavedModel whose modelId matches what's in AIProvider prefs.
+        val currentModelId = AIProvider.getModel(context)
+        val currentProviderId = AIProvider.getProviderId(context)
+
+        // Try exact match by modelId first.
+        val exact = allModels.find { it.modelId == currentModelId }
+        if (exact != null) return exact
+
+        // Fall back: the saved default (for backward compat when Smart Routing
+        // hasn't been configured or the picked model isn't in SavedModelsStore).
+        return SavedModelsStore.getDefaultModel(context)
+    }
+
+    /**
      * Build the cross-model fallback chain when the primary model fails entirely.
      *
      * The chain tries the OTHER tiers' models (excluding the primary):
