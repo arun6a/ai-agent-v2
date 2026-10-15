@@ -183,6 +183,8 @@ private fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Strin
                     key = key,
                     onDelete = {
                         ApiKeyStore.deleteKey(context, key.id)
+                        // v3.3.0: drop this key's cached model list too.
+                        ProviderModelsStore.invalidate(context, key.id)
                         keys = ApiKeyStore.getAllKeys()
                         onToast("Key deleted: ${key.providerName}")
                     },
@@ -207,7 +209,12 @@ private fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Strin
                 ApiKeyStore.addKey(context, newKey)
                 keys = ApiKeyStore.getAllKeys()
                 showAddDialog = false
-                onToast("Key saved: ${newKey.providerName}")
+                onToast("Key saved: ${newKey.providerName} — fetching available models...")
+                // v3.3.0: fetch this key's available models in the background.
+                scope.launch {
+                    val count = ProviderModelsStore.fetchAndCache(context, newKey).size
+                    onToast("✅ ${newKey.providerName}: $count models available")
+                }
             },
         )
     }
@@ -220,7 +227,13 @@ private fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Strin
                 ApiKeyStore.updateKey(context, updated)
                 keys = ApiKeyStore.getAllKeys()
                 editingKey = null
-                onToast("Key updated: ${updated.providerName}")
+                onToast("Key updated: ${updated.providerName} — refreshing models...")
+                // v3.3.0: re-fetch on edit (URL or key may have changed) + invalidate old cache.
+                scope.launch {
+                    ProviderModelsStore.invalidate(context, key.id)
+                    val count = ProviderModelsStore.fetchAndCache(context, updated).size
+                    onToast("✅ ${updated.providerName}: $count models available")
+                }
             },
         )
     }
@@ -1068,6 +1081,11 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
     var selectedCapability by remember { mutableStateOf<ModelCapability?>(null) }
     var isLoaded by remember { mutableStateOf(ModelsDevRepository.isLoaded()) }
     var models by remember { mutableStateOf(ModelsDevRepository.allModels()) }
+    // v3.3.0: "My Available Models" filter — only show models the user's saved
+    // API keys can actually access (based on ProviderModelsStore cache).
+    var onlyAvailable by remember { mutableStateOf(false) }
+    // Bump to trigger recomposition after a fetch.
+    var availableCacheKey by remember { mutableStateOf(0) }
 
     // Refresh models when loaded
     LaunchedEffect(isLoaded) {
@@ -1080,14 +1098,40 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
         }
     }
 
+    // v3.3.0: Initial fetch of per-key available models when the catalog opens.
+    LaunchedEffect(Unit) {
+        if (ApiKeyStore.getAllKeys().isNotEmpty()) {
+            scope.launch {
+                ProviderModelsStore.refreshAll(context)
+                availableCacheKey++  // trigger recomposition
+            }
+        }
+    }
+
     val providers = remember { ModelsDevRepository.allProviders() }
     val capabilities = listOf(ModelCapability.VISION, ModelCapability.TOOLS, ModelCapability.REASONING, ModelCapability.FREE, ModelCapability.IMAGE_GEN)
 
+    // v3.3.0: Compute available-keys-per-model on demand (cheap — cached).
+    // Reading ProviderModelsStore inside the filter block ensures the
+    // availableCacheKey recomposition actually re-evaluates.
+    val availableIds = remember(availableCacheKey, onlyAvailable) {
+        if (onlyAvailable) ProviderModelsStore.getAllAvailableModelIds(context) else emptySet()
+    }
+
     // Filter models
-    val filteredModels = remember(searchQuery, selectedProvider, selectedCapability, models) {
+    val filteredModels = remember(searchQuery, selectedProvider, selectedCapability, models, availableCacheKey, onlyAvailable) {
         var result = if (searchQuery.isNotEmpty()) ModelsDevRepository.searchModels(searchQuery) else models
         if (selectedProvider != null) result = result.filter { it.providerId == selectedProvider }
         if (selectedCapability != null) result = result.filter { selectedCapability in it.capabilities }
+        if (onlyAvailable) {
+            result = result.filter { m ->
+                // Loose match: catalog model ID matches any cached ID.
+                availableIds.any { avail ->
+                    val a = avail.lowercase(); val b = m.id.lowercase()
+                    a == b || a.contains(b) || b.contains(a)
+                }
+            }
+        }
         result.take(100)  // limit to 100 for performance
     }
 
@@ -1106,7 +1150,7 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                     if (!isLoaded) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("${ModelsDevRepository.allModels().size}", color = custom.fg3, fontSize = 10.sp)
+                        Text("${filteredModels.size}/${ModelsDevRepository.allModels().size}", color = custom.fg3, fontSize = 10.sp)
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -1136,11 +1180,12 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
             }
         }
 
-        // Capability filter chips
+        // Capability filter chips + v3.3.0 "My Available Models" toggle + Refresh button.
         item {
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 FilterChip(
                     selected = selectedCapability == null,
@@ -1154,16 +1199,41 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                         label = { Text(cap.name, fontSize = 10.sp) },
                     )
                 }
+                Spacer(Modifier.width(8.dp))
+                // v3.3.0: Available filter chip.
+                FilterChip(
+                    selected = onlyAvailable,
+                    onClick = { onlyAvailable = !onlyAvailable },
+                    label = { Text(if (onlyAvailable) "✓ Available" else "Available", fontSize = 10.sp) },
+                )
+                // v3.3.0: Manual refresh button.
+                IconButton(onClick = {
+                    scope.launch {
+                        onToast("Refreshing available models for all keys...")
+                        ProviderModelsStore.invalidateAll(context)
+                        ProviderModelsStore.refreshAll(context)
+                        availableCacheKey++
+                        onToast("✅ Refreshed")
+                    }
+                }) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", tint = custom.fg3, modifier = Modifier.size(16.dp))
+                }
             }
         }
 
         // Model cards
         items(filteredModels, key = { "${it.providerId}_${it.id}" }) { model ->
+            // v3.3.0: Compute which of the user's saved keys can access this model.
+            val keysWithModel = remember(availableCacheKey) { ProviderModelsStore.keysWithModel(context, model.id) }
             CatalogModelCard(
                 model = model,
                 isSaved = SavedModelsStore.isAlreadySaved(model.id, model.providerId),
+                availableKeys = keysWithModel,
                 onAdd = {
-                    val apiKeyId = ApiKeyStore.getKey(model.providerId)?.id
+                    // v3.3.0: prefer the first available key (if any) when saving —
+                    // this auto-binds the model to a key that actually has access.
+                    val apiKeyId = keysWithModel.firstOrNull()?.id
+                        ?: ApiKeyStore.getKey(model.providerId)?.id
                     SavedModelsStore.addModel(context, SavedModelsStore.SavedModel(
                         modelId = model.id,
                         modelName = model.name,
@@ -1187,6 +1257,7 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
 private fun CatalogModelCard(
     model: ModelsDevRepository.CatalogModel,
     isSaved: Boolean,
+    availableKeys: List<ApiKeyStore.ApiKey> = emptyList(),
     onAdd: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
@@ -1213,6 +1284,21 @@ private fun CatalogModelCard(
             }
             Spacer(Modifier.height(4.dp))
             Text("${model.contextStr} · ${model.priceStr}", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp)
+            // v3.3.0: "Available with" badge — shows which of the user's saved keys
+            // can access this model. Skipped if no keys exist or none match.
+            if (availableKeys.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("✅", fontSize = 9.sp)
+                    Text(
+                        availableKeys.joinToString(", ") { it.alias.ifEmpty { it.providerName } },
+                        color = custom.accent,
+                        fontSize = 9.sp,
+                        fontFamily = MonoFontFamily,
+                        modifier = Modifier.background(custom.accent.copy(alpha = 0.08f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp),
+                    )
+                }
+            }
         }
         if (isSaved) {
             Icon(Icons.Outlined.Check, contentDescription = "Saved", tint = custom.accent, modifier = Modifier.size(16.dp))
