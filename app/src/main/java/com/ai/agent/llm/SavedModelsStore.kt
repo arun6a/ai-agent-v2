@@ -403,7 +403,30 @@ object SavedModelsStore {
         val key = ApiKeyStore.getAllKeys().find { it.id == binding.apiKeyId } ?: return
         AIProvider.setProvider(context, binding.providerId)
         AIProvider.setModel(context, model.modelId)
-        val endpoint = when {
+        val endpoint = resolveEndpointForBinding(model, binding, key)
+        if (endpoint.isNotEmpty()) AIProvider.setEndpoint(context, endpoint)
+        AIProvider.setApiKey(context, key.apiKey)
+    }
+
+    /**
+     * v3.3.4: Shared endpoint resolver — used by applyModelToProvider,
+     * applyBindingForFailover, and testSavedModel so they all agree on which
+     * endpoint URL to hit.
+     *
+     * Priority:
+     *   1. binding.endpointOverride (user can override per-binding)
+     *   2. saved key's baseUrl (e.g. sandbox proxy full URL or Gemini base)
+     *   3. ProviderEndpoint.chatEndpoint from the registry (e.g. OpenAI's
+     *      https://api.openai.com/v1/chat/completions)
+     *   4. model's apiUrl (catalog default — usually empty for popular providers)
+     *   5. PROVIDERS legacy defaultEndpoint
+     */
+    fun resolveEndpointForBinding(
+        model: SavedModel,
+        binding: ModelProviderBinding,
+        key: ApiKeyStore.ApiKey,
+    ): String {
+        return when {
             !binding.endpointOverride.isNullOrEmpty() -> binding.endpointOverride!!
             key.baseUrl.isNotEmpty() -> key.baseUrl
             ProviderEndpoints.byId(binding.providerId)?.chatEndpoint != null ->
@@ -411,8 +434,6 @@ object SavedModelsStore {
             model.apiUrl.isNotEmpty() -> model.apiUrl
             else -> AIProvider.PROVIDERS.find { it.id == binding.providerId }?.defaultEndpoint ?: ""
         }
-        if (endpoint.isNotEmpty()) AIProvider.setEndpoint(context, endpoint)
-        AIProvider.setApiKey(context, key.apiKey)
     }
 
     @Synchronized
@@ -516,19 +537,8 @@ object SavedModelsStore {
         AIProvider.setProvider(context, effectiveProviderId)
         AIProvider.setModel(context, model.modelId)
 
-        // Endpoint priority:
-        //   1. binding.endpointOverride (user can override per-binding)
-        //   2. saved key's baseUrl (e.g. sandbox proxy full URL)
-        //   3. ProviderEndpoint.chatEndpoint from the registry
-        //   4. model's apiUrl (catalog default)
-        val endpoint = when {
-            !binding.endpointOverride.isNullOrEmpty() -> binding.endpointOverride!!
-            key.baseUrl.isNotEmpty() -> key.baseUrl
-            ProviderEndpoints.byId(effectiveProviderId)?.chatEndpoint != null ->
-                ProviderEndpoints.byId(effectiveProviderId)!!.chatEndpoint
-            model.apiUrl.isNotEmpty() -> model.apiUrl
-            else -> AIProvider.PROVIDERS.find { it.id == effectiveProviderId }?.defaultEndpoint ?: ""
-        }
+        // v3.3.4: use the shared endpoint resolver.
+        val endpoint = resolveEndpointForBinding(model, binding, key)
         if (endpoint.isNotEmpty()) {
             AIProvider.setEndpoint(context, endpoint)
         }

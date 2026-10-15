@@ -734,61 +734,94 @@ private suspend fun testSavedModel(
 ): String {
     return withContext(Dispatchers.IO) {
         try {
-            // Resolve the saved key the same way applyModelToProvider does.
+            // v3.3.4: use the same resolveBinding() logic as applyModelToProvider
+            // so the test reflects what chat will actually do. Previously this
+            // used the old apiKeyId-only resolution → 404 for Gemini/Anthropic
+            // + providers whose baseUrl is a base URL, not the chat completions URL.
+            SavedModelsStore.load(context)
             ApiKeyStore.load(context)
-            val allKeys = ApiKeyStore.getAllKeys()
-            val resolvedKey: ApiKeyStore.ApiKey? = when {
-                !model.apiKeyId.isNullOrEmpty() ->
-                    allKeys.find { it.id == model.apiKeyId }
-                else -> allKeys.find { it.providerId == model.providerId }
-            } ?: allKeys.find { it.providerId == "custom" }
-
-            val endpoint = when {
-                !resolvedKey?.baseUrl.isNullOrEmpty() -> resolvedKey!!.baseUrl
-                model.apiUrl.isNotEmpty() -> model.apiUrl
-                else -> AIProvider.PROVIDERS.find { it.id == model.providerId }?.defaultEndpoint ?: ""
+            BindingHealthStore.load(context)
+            val resolved = SavedModelsStore.resolveBinding(context, model, false)
+            if (resolved == null) {
+                return@withContext "❌ No binding/key resolved — add an API key first"
             }
-            val apiKey = resolvedKey?.apiKey ?: ""
-
+            val (binding, key) = resolved
+            val endpoint = SavedModelsStore.resolveEndpointForBinding(model, binding, key)
             if (endpoint.isEmpty()) {
-                return@withContext "❌ No endpoint resolved — add an API key first"
+                return@withContext "❌ No endpoint resolved for ${binding.providerName}"
             }
-
-            // Send a tiny chat completion request.
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
-            val body = org.json.JSONObject().apply {
-                put("model", model.modelId)
-                put("stream", false)
-                put("messages", org.json.JSONArray().apply {
-                    put(org.json.JSONObject().apply {
-                        put("role", "user")
-                        put("content", "ping")
-                    })
-                })
-            }
-            val request = okhttp3.Request.Builder()
-                .url(endpoint)
-                .header("Content-Type", "application/json")
-                .apply {
-                    if (apiKey.isNotEmpty() && apiKey != "sandbox") {
-                        header("Authorization", "Bearer $apiKey")
-                    }
+            // v3.3.4: use the provider's auth scheme (BEARER / X_API_KEY / QUERY_PARAM / NONE).
+            val endpointInfo = ProviderEndpoints.byId(binding.providerId)
+            val authScheme = endpointInfo?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
+            // v3.3.4: Gemini uses a different API shape — its test goes to /models, not chat.
+            if (binding.providerId == "gemini") {
+                val url = "${endpoint.trimEnd('/')}/models?key=${key.apiKey}"
+                val req = okhttp3.Request.Builder().url(url).build()
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val resp = client.newCall(req).execute()
+                if (resp.isSuccessful) {
+                    val count = try {
+                        org.json.JSONObject(resp.body?.string() ?: "")
+                            .optJSONArray("models")?.length() ?: -1
+                    } catch (_: Exception) { -1 }
+                    if (count >= 0) "✅ Gemini connected! $count models available"
+                    else "✅ Gemini connected"
+                } else {
+                    "❌ HTTP ${resp.code}: ${resp.message}"
                 }
-                .post(body.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-            val response = client.newCall(request).execute()
-            val respBody = response.body?.string() ?: ""
-            if (response.isSuccessful) {
-                val json = org.json.JSONObject(respBody)
-                val reply = json.optJSONArray("choices")?.optJSONObject(0)
-                    ?.optJSONObject("message")?.optString("content", "") ?: ""
-                val preview = if (reply.length > 40) reply.take(40) + "..." else reply
-                "✅ ${model.modelName} replied: $preview"
             } else {
-                "❌ HTTP ${response.code}: ${respBody.take(80)}"
+                // Standard OpenAI-compatible chat completions test.
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val body = org.json.JSONObject().apply {
+                    put("model", model.modelId)
+                    put("stream", false)
+                    put("messages", org.json.JSONArray().apply {
+                        put(org.json.JSONObject().apply {
+                            put("role", "user")
+                            put("content", "ping")
+                        })
+                    })
+                }
+                val request = okhttp3.Request.Builder()
+                    .url(endpoint)
+                    .header("Content-Type", "application/json")
+                    .apply {
+                        when (authScheme) {
+                            ProviderEndpoints.AuthScheme.BEARER -> {
+                                if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                                    header("Authorization", "Bearer ${key.apiKey}")
+                                }
+                            }
+                            ProviderEndpoints.AuthScheme.X_API_KEY -> {
+                                if (key.apiKey.isNotEmpty()) {
+                                    header("x-api-key", key.apiKey)
+                                    header("anthropic-version", "2023-06-01")
+                                }
+                            }
+                            ProviderEndpoints.AuthScheme.NONE -> { /* no auth */ }
+                            ProviderEndpoints.AuthScheme.QUERY_PARAM -> { /* handled by URL */ }
+                        }
+                    }
+                    .post(body.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+                val response = client.newCall(request).execute()
+                val respBody = response.body?.string() ?: ""
+                if (response.isSuccessful) {
+                    val json = org.json.JSONObject(respBody)
+                    val reply = json.optJSONArray("choices")?.optJSONObject(0)
+                        ?.optJSONObject("message")?.optString("content", "") ?: ""
+                    val preview = if (reply.length > 40) reply.take(40) + "..." else reply
+                    if (reply.isNotEmpty()) "✅ ${model.modelName} replied: $preview"
+                    else "✅ Connected (HTTP ${response.code})"
+                } else {
+                    "❌ HTTP ${response.code}: ${respBody.take(80)}"
+                }
             }
         } catch (e: Exception) {
             "❌ ${e.javaClass.simpleName}: ${e.message ?: "unknown"}"
@@ -1020,9 +1053,13 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
     }
 
     // v3.3.2: Bindings dialog — opens when user taps "Providers" on a model card.
-    editingBindingsFor?.let { model ->
+    // v3.3.4: re-fetch the model from the models list on every recomposition
+    // so the dialog reflects binding changes (toggle/remove/add) immediately.
+    // Previously `editingBindingsFor` was a stale snapshot → changes didn't show.
+    editingBindingsFor?.let { snapshot ->
+        val freshModel = models.find { it.id == snapshot.id } ?: snapshot
         BindingsDialog(
-            model = model,
+            model = freshModel,
             allKeys = allKeys,
             onDismiss = { editingBindingsFor = null },
             onAddBinding = { apiKeyId ->
@@ -1033,21 +1070,21 @@ private fun SavedModelsTab(onToast: (String) -> Unit) {
                     providerName = key.providerName,
                     apiKeyId = key.id,
                 )
-                SavedModelsStore.addBinding(context, model.id, binding)
+                SavedModelsStore.addBinding(context, freshModel.id, binding)
                 models = SavedModelsStore.getAllModels()
                 onToast("Added binding: ${key.providerName}")
             },
             onRemoveBinding = { bindingId ->
-                SavedModelsStore.removeBinding(context, model.id, bindingId)
+                SavedModelsStore.removeBinding(context, freshModel.id, bindingId)
                 models = SavedModelsStore.getAllModels()
                 onToast("Removed binding")
             },
             onToggleBinding = { bindingId, enabled ->
-                SavedModelsStore.updateBinding(context, model.id, bindingId, enabled = enabled)
+                SavedModelsStore.updateBinding(context, freshModel.id, bindingId, enabled = enabled)
                 models = SavedModelsStore.getAllModels()
             },
             onReorderBinding = { bindingId, direction ->
-                SavedModelsStore.reorderBinding(context, model.id, bindingId, direction)
+                SavedModelsStore.reorderBinding(context, freshModel.id, bindingId, direction)
                 models = SavedModelsStore.getAllModels()
             },
         )
@@ -1620,8 +1657,11 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                 onAdd = {
                     // v3.3.0: prefer the first available key (if any) when saving —
                     // this auto-binds the model to a key that actually has access.
+                    // v3.3.4: if no key has this exact model, fall back to ANY saved
+                    // key (user can fix binding later via Saved Models → Manage).
                     val apiKeyId = keysWithModel.firstOrNull()?.id
                         ?: ApiKeyStore.getKey(model.providerId)?.id
+                        ?: ApiKeyStore.getAllKeys().firstOrNull()?.id
                     SavedModelsStore.addModel(context, SavedModelsStore.SavedModel(
                         modelId = model.id,
                         modelName = model.name,
@@ -1634,7 +1674,9 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                         outputPrice = model.outputPrice,
                         apiUrl = model.apiUrl,
                     ))
-                    onToast("Saved: ${model.name}")
+                    onToast("Saved: ${model.name}" +
+                        if (apiKeyId == null) " (no key bound — tap Manage to bind)"
+                        else "")
                 },
             )
         }
