@@ -2221,8 +2221,35 @@ $instructions
                     intent.setPackage("com.whatsapp")
                     intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                     context.startActivity(intent)
-                    delay(2000)
-                    ToolResult(true, "Opened WhatsApp chat with $phone" + (if (message != null) " (message pre-filled)" else ""))
+                    delay(2500)  // v3.3.10: wait for WhatsApp to load the chat
+                    // v3.3.10: if a message was pre-filled, auto-click the Send button.
+                    // This makes openWhatsAppChat a true 1-call send — the AI doesn't
+                    // need to follow up with clickByText("Send") manually.
+                    var sent = false
+                    if (message != null) {
+                        try {
+                            val a11y = com.ai.agent.accessibility.AgentAccessibilityService.getInstance()
+                            if (a11y != null) {
+                                // Try common Send button texts across WhatsApp versions.
+                                val sendTexts = listOf("Send", "SEND", "send", "➤", "Send message")
+                                for (txt in sendTexts) {
+                                    if (a11y.clickByText(txt)) { sent = true; break }
+                                }
+                                // If clickByText failed, try tapping the send button by position.
+                                // WhatsApp's send button is typically at the bottom-right.
+                                if (!sent) {
+                                    // Try clicking the send FAB via content description.
+                                    // (varies by WhatsApp version — sometimes "Send", sometimes an icon)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("ToolExecutor", "Auto-send failed: ${e.message}")
+                        }
+                    }
+                    val msg = if (sent) "Opened WhatsApp chat with $phone + auto-sent message ✓"
+                              else if (message != null) "Opened WhatsApp chat with $phone (message pre-filled — tap Send manually or call clickByText(\"Send\"))"
+                              else "Opened WhatsApp chat with $phone"
+                    ToolResult(true, msg)
                 } catch (e: Exception) {
                     ToolResult(false, "openWhatsAppChat($phone) failed: ${e.message}. WhatsApp may not be installed.")
                 }
