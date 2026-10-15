@@ -738,6 +738,17 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             val TASK_TIMEOUT_MS = 180_000L
             val STEP_TIMEOUT_MS = 30_000L
 
+            // v3.3.6: Smart Routing — pick the right model for this message
+            // based on tier (1=Fast/Cheap, 2=Default, 3=Advanced) + apply it
+            // to AIProvider so chatWithFailover uses the right bindings.
+            val pickedModel = com.ai.agent.llm.SmartRouting.pickModelForMessage(context, userMessage)
+            if (pickedModel != null) {
+                // v3.3.6: use applyModelForRouting (doesn't change the saved default,
+                // just writes the picked model's provider/endpoint/key to AIProvider).
+                com.ai.agent.llm.SavedModelsStore.applyModelForRouting(context, pickedModel.id)
+                Log.i(TAG, "SmartRouting: picked '${pickedModel.modelName}' for this message")
+            }
+
             ApiUsageTracker.startNewTask()
 
             while (iteration < MAX_ITERATIONS && !_state.value.stopRequested && !com.ai.agent.service.TaskStopReceiver.stopRequested) {

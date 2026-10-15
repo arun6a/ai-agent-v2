@@ -31,6 +31,9 @@ object AutoFallbackSettings {
     private const val KEY_AUTO_FALLBACK_KEYS = "auto_fallback_keys_v332"
     private const val KEY_AUTO_PICK_CHEAPEST = "auto_pick_cheapest_v332"
     private const val KEY_AUTO_FALLBACK_MODELS = "auto_fallback_models_v333"
+    // v3.3.6: tier-based routing model slots.
+    private const val KEY_FAST_MODEL = "fast_model_id_v336"
+    private const val KEY_ADVANCED_MODEL = "advanced_model_id_v336"
 
     /**
      * When the active binding fails, try the next enabled binding.
@@ -61,17 +64,49 @@ object AutoFallbackSettings {
     }
 
     /**
-     * v3.3.3 (placeholder — used by tier-based routing later):
-     * When the active MODEL fails entirely, fall back to a different model.
-     * Default: OFF.
+     * v3.3.6: When the active MODEL fails entirely (all bindings exhausted),
+     * fall back to a different saved model.
+     * Default: ON (so Sandbox going down → try Gemini Flash automatically).
      */
     fun isAutoFallbackModelsEnabled(context: Context): Boolean {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_AUTO_FALLBACK_MODELS, false)
+            .getBoolean(KEY_AUTO_FALLBACK_MODELS, true)
     }
 
     fun setAutoFallbackModelsEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_AUTO_FALLBACK_MODELS, enabled).apply()
+    }
+
+    // ===== v3.3.6: Tier-based routing model slots =====
+
+    /**
+     * The Fast/Cheap model for Tier 1 (greetings, simple questions).
+     * Returns null if not set → Tier 1 uses the Default model.
+     */
+    fun getFastModelId(context: Context): String? {
+        val id = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_FAST_MODEL, null)
+        return id?.takeIf { it.isNotEmpty() }
+    }
+
+    fun setFastModelId(context: Context, modelId: String?) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_FAST_MODEL, modelId ?: "").apply()
+    }
+
+    /**
+     * The Advanced model for Tier 3 (complex tasks).
+     * Returns null if not set → Tier 3 uses the Default model.
+     */
+    fun getAdvancedModelId(context: Context): String? {
+        val id = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_ADVANCED_MODEL, null)
+        return id?.takeIf { it.isNotEmpty() }
+    }
+
+    fun setAdvancedModelId(context: Context, modelId: String?) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_ADVANCED_MODEL, modelId ?: "").apply()
     }
 }

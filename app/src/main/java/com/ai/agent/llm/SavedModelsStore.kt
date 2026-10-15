@@ -460,6 +460,16 @@ object SavedModelsStore {
         return ProviderModelsStore.resolveActualModelId(context, binding.apiKeyId, model.modelId)
     }
 
+    /**
+     * v3.3.6: Apply a specific saved model to AIProvider WITHOUT changing the
+     * saved default. Used by SmartRouting to apply the tier-picked model
+     * (e.g. Fast/Cheap for "hi", Advanced for complex tasks) for one message,
+     * while keeping the user's configured default unchanged.
+     */
+    fun applyModelForRouting(context: Context, modelId: String) {
+        applyModelToProvider(context, modelId)
+    }
+
     @Synchronized
     fun setDefaultModel(context: Context, id: String) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

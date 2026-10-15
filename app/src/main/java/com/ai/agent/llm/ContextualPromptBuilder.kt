@@ -346,6 +346,27 @@ object ContextualPromptBuilder {
     }
 
     /**
+     * v3.3.6: Classify a user message into a tier for model routing.
+     *
+     *   Tier 1 → Fast/Cheap model (greetings, simple questions)
+     *   Tier 2 → Default model (matched tools — tap, launchApp, etc.)
+     *   Tier 3 → Advanced model (complex/unknown tasks — full prompt)
+     *
+     * The routing layer (SmartRouting) uses this to pick which saved model
+     * to use for the message.
+     */
+    fun getTier(userMessage: String): Int {
+        val msg = userMessage.lowercase().trim()
+        // Tier 1: greetings + no-tool messages.
+        if (isNoToolMessage(msg)) return 1
+        // Tier 2: contextual (matched tool groups).
+        val groups = getRelevantGroups(msg)
+        if (groups.isNotEmpty()) return 2
+        // Tier 3: full prompt (no keyword match — complex/unknown task).
+        return 3
+    }
+
+    /**
      * Check if message needs no tools.
      */
     private fun isNoToolMessage(msg: String): Boolean {
