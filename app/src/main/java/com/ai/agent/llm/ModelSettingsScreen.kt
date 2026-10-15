@@ -1517,7 +1517,10 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                 }
             }
         }
-        result.take(100)  // limit to 100 for performance
+        // v3.3.3: Removed the take(100) limit — LazyColumn virtualizes naturally
+        // and only renders visible items. When the user searches, the result set
+        // is already small. When no search, they should be able to scroll all models.
+        result
     }
 
     LazyColumn(
@@ -1555,7 +1558,7 @@ private fun ModelCatalogTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (
                     onClick = { selectedProvider = null },
                     label = { Text("All", fontSize = 10.sp) },
                 )
-                for (p in providers.take(20)) {
+                for (p in providers) {  // v3.3.3: show all providers (horizontal scroll handles overflow)
                     FilterChip(
                         selected = selectedProvider == p.id,
                         onClick = { selectedProvider = if (selectedProvider == p.id) null else p.id },
