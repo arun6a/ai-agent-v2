@@ -71,7 +71,6 @@ internal fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Stri
                     key = key,
                     onDelete = {
                         ApiKeyStore.deleteKey(context, key.id)
-                        // v3.3.0: drop this key's cached model list too.
                         ProviderModelsStore.invalidate(context, key.id)
                         keys = ApiKeyStore.getAllKeys()
                         onToast("Key deleted: ${key.providerName}")
@@ -80,6 +79,19 @@ internal fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Stri
                         scope.launch {
                             val result = testApiKeyConnection(key)
                             onToast(result)
+                        }
+                    },
+                    onTestCaching = {
+                        scope.launch {
+                            onToast("Testing caching on ${key.providerName}...")
+                            val result = com.ai.agent.llm.PromptCachingTester.test(context, key)
+                            // Save result to the key.
+                            com.ai.agent.llm.ApiKeyStore.setCachingSupport(context, key.id, result.supported)
+                            keys = com.ai.agent.llm.ApiKeyStore.getAllKeys()
+                            // Show result.
+                            val status = if (result.supported) "✅ Caching SUPPORTED" else "❌ No caching"
+                            val confidence = "(${(result.confidence * 100).toInt()}% confidence)"
+                            onToast("$status $confidence\n${result.evidence}")
                         }
                     },
                     onEdit = {
@@ -128,7 +140,13 @@ internal fun ApiKeysTab(scope: kotlinx.coroutines.CoroutineScope, onToast: (Stri
 }
 
 @Composable
-private fun ApiKeyCard(key: ApiKeyStore.ApiKey, onDelete: () -> Unit, onTest: () -> Unit, onEdit: () -> Unit) {
+private fun ApiKeyCard(
+    key: ApiKeyStore.ApiKey,
+    onDelete: () -> Unit,
+    onTest: () -> Unit,
+    onTestCaching: () -> Unit = {},
+    onEdit: () -> Unit,
+) {
     val custom = LocalCustomColors.current
     Row(
         modifier = Modifier.fillMaxWidth()
@@ -145,8 +163,17 @@ private fun ApiKeyCard(key: ApiKeyStore.ApiKey, onDelete: () -> Unit, onTest: ()
             if (key.baseUrl.isNotEmpty()) {
                 Text(key.baseUrl, color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 9.sp, maxLines = 1)
             }
+            // v3.6.3: Show caching support status.
+            key.supportsCaching?.let { cached ->
+                Text(
+                    if (cached) "⚡ Caching: supported" else "⚡ Caching: not supported",
+                    color = if (cached) custom.accent else custom.fg3,
+                    fontFamily = MonoFontFamily, fontSize = 8.sp,
+                )
+            }
         }
         TextButton(onClick = onTest) { Text("Test", fontSize = 11.sp) }
+        TextButton(onClick = onTestCaching) { Text("Cache", fontSize = 10.sp, color = custom.accent) }  // v3.6.3
         IconButton(onClick = onEdit) { Icon(Icons.Outlined.Edit, contentDescription = "Edit", tint = custom.fg3, modifier = Modifier.size(16.dp)) }
         IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = custom.fg3, modifier = Modifier.size(16.dp)) }
     }

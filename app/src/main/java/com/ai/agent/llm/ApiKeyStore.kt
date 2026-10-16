@@ -30,6 +30,7 @@ object ApiKeyStore {
         val alias: String = "",      // user-friendly name
         val baseUrl: String = "",    // custom base URL (for custom providers)
         val isVerified: Boolean = false,
+        val supportsCaching: Boolean? = null,  // v3.6.3: null=untested, true/false=tested
     )
 
     private var keys: MutableList<ApiKey> = mutableListOf()
@@ -54,6 +55,8 @@ object ApiKeyStore {
                         alias = o.optString("alias"),
                         baseUrl = o.optString("baseUrl"),
                         isVerified = o.optBoolean("isVerified"),
+                        supportsCaching = if (o.has("supportsCaching") && !o.isNull("supportsCaching"))
+                            o.optBoolean("supportsCaching") else null,
                     ))
                 }
             }
@@ -92,6 +95,7 @@ object ApiKeyStore {
                     put("alias", k.alias)
                     put("baseUrl", k.baseUrl)
                     put("isVerified", k.isVerified)
+                    put("supportsCaching", k.supportsCaching ?: JSONObject.NULL)
                 })
             }
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -123,6 +127,26 @@ object ApiKeyStore {
             keys.add(key)
         }
         save(context)
+    }
+
+    /**
+     * v3.6.3: Set the caching support flag on a key (after running PromptCachingTester).
+     */
+    @Synchronized
+    fun setCachingSupport(context: Context, keyId: String, supported: Boolean) {
+        val idx = keys.indexOfFirst { it.id == keyId }
+        if (idx >= 0) {
+            keys[idx] = keys[idx].copy(supportsCaching = supported)
+            save(context)
+        }
+    }
+
+    /**
+     * v3.6.3: Get the caching support flag for a key.
+     * Returns null if untested, true/false if tested.
+     */
+    fun getCachingSupport(keyId: String): Boolean? {
+        return keys.find { it.id == keyId }?.supportsCaching
     }
 
     @Synchronized

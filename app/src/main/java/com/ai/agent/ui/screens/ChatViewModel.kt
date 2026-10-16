@@ -829,6 +829,18 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             // v2.2.2: Reset browser method lock for this new task
             lockedBrowserMethod = null
 
+            // v3.6.3: Check if the active key supports prompt caching.
+            // If so, mid-loop modifications go into conversation (not systemPrompt)
+            // so the system prompt stays stable for provider-side caching.
+            val activeKeyId = com.ai.agent.llm.SavedModelsStore.getDefaultModel(context)
+                ?.activeBindings()?.firstOrNull()?.apiKeyId
+            val cachingEnabled = activeKeyId?.let {
+                com.ai.agent.llm.ApiKeyStore.getCachingSupport(it) == true
+            } ?: false
+            if (cachingEnabled) {
+                Log.i(TAG, "Prompt caching ENABLED — system prompt will stay stable mid-loop")
+            }
+
             // v2.0.9 Task 93: Per-task + per-step timeout guards.
             //   • TASK_TIMEOUT_MS (3 min) — overall wall-clock budget for a
             //     single user message. Prevents pathological loops from
@@ -934,12 +946,17 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         if (unknownTools.isNotEmpty()) {
                             Log.w(TAG, "AI called unknown tools: ${unknownTools.map { it.name }} — expanding to full prompt")
                             val fullPrompt = DynamicPromptBuilder.buildPrompt(context, "")
-                            val allMemory = database.getAllMemory()
-                            val memStr = if (allMemory.isEmpty()) "No memories stored yet."
-                            else allMemory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
-                            systemPrompt = "$fullPrompt\n\n## What I Remember About the User\n$memStr"
-                            // Re-call with full prompt + send ALL tools (toolFilter=null)
-                            val retryResponse = llmClient.chat(conversation.toString(), systemPrompt, null)
+                            // v3.6.3: if caching enabled, inject into conversation not systemPrompt.
+                            val retryResponse = if (cachingEnabled) {
+                                conversation.append("\n\n[EXPANDED PROMPT]: Using full prompt with all tools.")
+                                llmClient.chat(conversation.toString(), systemPrompt, null)
+                            } else {
+                                val allMemory = database.getAllMemory()
+                                val memStr = if (allMemory.isEmpty()) "No memories stored yet."
+                                else allMemory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
+                                systemPrompt = "$fullPrompt\n\n## What I Remember About the User\n$memStr"
+                                llmClient.chat(conversation.toString(), systemPrompt, null)
+                            }
                             val retryResults = executeTimed(retryResponse.toolCalls)
                             val retrySummary = StringBuilder("Step $iteration (fallback): ${retryResponse.reply}")
                             retryResults.forEachIndexed { i, dr ->
@@ -1053,7 +1070,13 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                                 val group = com.ai.agent.llm.ContextualPromptBuilder.findGroupForTool(call.name)
                                 if (group != null) {
                                     Log.i(TAG, "Adding group '${group.name}' for tool '${call.name}'")
-                                    systemPrompt = com.ai.agent.llm.ContextualPromptBuilder.buildExpandedPrompt(userMessage, group) + "\n\n## What I Remember About the User\n$memoryStr"
+                                    // v3.6.3: if caching enabled, don't modify systemPrompt —
+                                    // inject into conversation instead.
+                                    if (cachingEnabled) {
+                                        conversation.append("\n\n[EXPANDED]: Added ${group.name} tools. You can now use ${call.name}.")
+                                    } else {
+                                        systemPrompt = com.ai.agent.llm.ContextualPromptBuilder.buildExpandedPrompt(userMessage, group) + "\n\n## What I Remember About the User\n$memoryStr"
+                                    }
                                     // v3.2.9: also expand the tool filter so the next LLM call
                                     // actually exposes the new tool via function-calling.
                                     val currentFilter = contextualToolFilter
