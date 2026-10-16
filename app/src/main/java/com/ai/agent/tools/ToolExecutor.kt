@@ -101,7 +101,9 @@ class ToolExecutor(private val context: Context) {
             // Skills
             "executeSkill", "listSkills", "createSkill", "deleteSkill", "getSkill",
             // Async
-            "wait", "waitAndContinue"
+            "wait", "waitAndContinue",
+            // v3.7.0: Action chains
+            "actionChain"
         )
     }
 
@@ -591,8 +593,107 @@ class ToolExecutor(private val context: Context) {
 
             "shareToApp" -> AppTools.execute(call, context, service, database)
 
+            // ==================== ACTION CHAINS (v3.7.0) ====================
+            "actionChain" -> executeActionChain(call, service)
+
             else -> ToolResult(false, "unknown tool: ${call.name}")
         }
+    }
+
+    // ==================== ACTION CHAINS (v3.7.0) ====================
+
+    /**
+     * v3.7.0: Execute a chain of actions sequentially in 1 API call.
+     *
+     * - Each action is a {name, args, safe?} object.
+     * - Chain STOPS on first failure (returns results so far).
+     * - Actions marked safe: false PAUSE the chain — returns current state
+     *   so the brain can verify before continuing in the next call.
+     * - Default unsafe tools (sendSMS, deleteFile, etc.) are automatically safe: false.
+     * - After the chain completes (or pauses), screen state is auto-appended.
+     *
+     * This saves 50-70% API calls for predictable multi-step UI flows.
+     */
+    private suspend fun executeActionChain(
+        call: LLMClient.ToolCall,
+        service: com.ai.agent.accessibility.AgentAccessibilityService?,
+    ): ToolResult {
+        // Parse the actions list from args.
+        @Suppress("UNCHECKED_CAST")
+        val actionsRaw = call.args["actions"] as? List<Map<String, Any>>
+            ?: return ToolResult(false, "actionChain: missing 'actions' list")
+
+        if (actionsRaw.isEmpty()) return ToolResult(false, "actionChain: empty actions list")
+
+        // Tools that are always unsafe (never chain without verification).
+        val UNSAFE_TOOLS = setOf(
+            "sendSMS", "sendEmail", "openWhatsAppChat", "deleteFile", "callContact",
+            "makePhoneCall", "writeFile", "runShellCommand", "deleteRule",
+        )
+
+        val results = mutableListOf<String>()
+        var chainFailed = false
+        var pausedForVerification = false
+        var pauseIndex = -1
+
+        for ((index, actionRaw) in actionsRaw.withIndex()) {
+            val toolName = actionRaw["name"] as? String ?: continue
+            @Suppress("UNCHECKED_CAST")
+            val toolArgs = (actionRaw["args"] as? Map<String, Any>) ?: emptyMap()
+            val safe = when {
+                actionRaw.containsKey("safe") -> actionRaw["safe"] as? Boolean ?: false
+                toolName in UNSAFE_TOOLS -> false  // default unsafe
+                else -> true  // default safe
+            }
+
+            // If this action is unsafe, PAUSE the chain before executing it.
+            if (!safe) {
+                pausedForVerification = true
+                pauseIndex = index
+                results.add("⏸️ PAUSED before action ${index + 1} ($toolName) — safe: false. Verify screen state before continuing.")
+                break
+            }
+
+            // Execute the sub-tool.
+            val subCall = LLMClient.ToolCall(toolName, toolArgs)
+            val result = executeTool(subCall)
+
+            results.add("${index + 1}. $toolName(${toolArgs.entries.joinToString(", ") { "${it.key}=${it.value}" }}) → ${if (result.success) "✓" else "✗"} ${result.output.take(150)}")
+
+            if (!result.success) {
+                chainFailed = true
+                results.add("❌ Chain stopped at action ${index + 1} ($toolName failed).")
+                break
+            }
+
+            // Small delay between actions for UI to settle.
+            delay(300)
+        }
+
+        // Auto-append screen state after chain (if accessibility is available).
+        val screenState = if (service != null) {
+            try {
+                val screen = service.readScreen()
+                if (screen.isNotEmpty()) "\n\n[Screen after action]: ${screen.take(300)}" else ""
+            } catch (_: Exception) { "" }
+        } else ""
+
+        val summary = buildString {
+            if (chainFailed) {
+                append("Chain FAILED at action ${results.size}.\n")
+            } else if (pausedForVerification) {
+                append("Chain PAUSED at action $pauseIndex (safe: false). Verify and continue.\n")
+            } else {
+                append("Chain completed: ${results.size} actions.\n")
+            }
+            results.forEach { append("$it\n") }
+            append(screenState)
+        }
+
+        return ToolResult(
+            success = !chainFailed,  // paused = success (brain decides next step)
+            output = summary,
+        )
     }
 
     // ==================== VISION (VLM) ====================

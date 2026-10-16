@@ -449,11 +449,20 @@ If the user asks what you can do, mention: control phone apps, browse web, set r
         }
 
         sb.append("## Rules\n")
-        sb.append("1. BATCH read-only tools. NEVER batch action tools.\n")
+        // v3.7.0: Updated to allow action chains (was "NEVER batch action tools")
+        sb.append("1. BATCH read-only tools freely. Use actionChain() for sequential actions when UI is predictable.\n")
         sb.append("2. Keep replies SHORT (1-2 sentences)\n")
         sb.append("3. After tool results, decide next step. Don't repeat successful tools.\n")
         sb.append("4. If a tool fails, try a different approach.\n")
         sb.append("5. recallSimilar(request) at task START. remember(\"workflow_X\",\"steps\") on success.\n")
+        sb.append("\n## Action Chains (compact)\n")
+        sb.append("actionChain({\"actions\": [{\"name\":\"tap\",\"args\":{...},\"safe\":true}, ...]})\n")
+        sb.append("- Executes ALL actions in 1 call. Stops on first failure.\n")
+        sb.append("- safe: false → pauses chain, you verify before continuing.\n")
+        sb.append("- safe: false for: Send, Delete, Call, Confirm buttons.\n")
+        sb.append("- safe: true for: Navigation, Selection, Typing, Scrolling.\n")
+        sb.append("- When in doubt: safe: false.\n")
+        sb.append("- Don't chain after launchApp (screen might not be loaded).\n")
 
         return sb.toString()
     }

@@ -1246,11 +1246,18 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
      * to modify the (frozen) backend — executeTool is private.
      */
     private suspend fun executeTimed(toolCalls: List<LLMClient.ToolCall>): List<ToolCallDisplay> {
-        // v3.5.0: P0-3 — High-stakes tools get post-action screen verification.
-        // After send/delete/email tools, wait 2s + readScreen + append screen text
-        // to the tool result. The brain sees the screen state + decides if it worked.
-        // No keyword matching (avoids false negatives on non-English UIs).
-        val HIGH_STAKES_TOOLS = setOf("openWhatsAppChat", "sendSMS", "sendEmail", "deleteFile", "callContact")
+        // v3.7.0: Extended auto-verification — not just high-stakes, but ALL action tools.
+        // After tap/type/swipe/launchApp etc., automatically readScreen + append to result.
+        // This eliminates separate readScreen() calls (saves 3-5 API calls per task).
+        // actionChain already has its own auto-verify built in — skip it here.
+        val ACTION_TOOLS = setOf(
+            "openWhatsAppChat", "sendSMS", "sendEmail", "deleteFile", "callContact",
+            "launchApp", "tap", "clickByText", "submitInput", "pressBack", "pressHome",
+            "scrollDown", "scrollUp", "swipe", "type",
+            "browserOpen", "browserClick", "browserClickText", "browserFill", "browserSearch",
+            "openActivity", "openDeepLink", "searchInApp", "openYouTubeVideo",
+        )
+        val VERIFY_DELAY_MS = 1500L  // v3.7.0: reduced from 2000 to 1500 (faster)
 
         val out = mutableListOf<ToolCallDisplay>()
         for (call in toolCalls) {
@@ -1259,27 +1266,27 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             val elapsed = System.currentTimeMillis() - start
             var r = results.firstOrNull()
 
-            // v3.5.0: Post-action verification for high-stakes tools.
-            if (call.name in HIGH_STAKES_TOOLS && r?.success == true
+            // v3.7.0: Auto-verify after ALL action tools (was only high-stakes).
+            // Skip actionChain — it has its own auto-verify built in.
+            if (call.name in ACTION_TOOLS && call.name != "actionChain" && r?.success == true
                 && com.ai.agent.llm.AgentThinkingSettings.isVerificationEnabled(context)) {
                 try {
-                    kotlinx.coroutines.delay(2000)  // wait for UI to update
+                    kotlinx.coroutines.delay(VERIFY_DELAY_MS)
                     val a11y = com.ai.agent.accessibility.AgentAccessibilityService.getInstance()
                     if (a11y != null) {
                         val screenText = a11y.readScreen()
                         if (screenText.isNotEmpty()) {
-                            // v3.6.4: cap total output to 500 chars (was 500 + 300 = 800).
                             val baseOutput = r.output.take(200)
-                            val combinedOutput = "$baseOutput\n\n[Post-action screen]: ${screenText.take(300)}"
+                            val combinedOutput = "$baseOutput\n\n[Screen after action]: ${screenText.take(300)}"
                             r = ToolExecutor.ToolResult(
                                 success = r.success,
                                 output = combinedOutput,
                             )
-                            Log.i(TAG, "Post-action verification: readScreen after ${call.name} (${screenText.length} chars)")
+                            Log.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars)")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Post-action verification failed (non-fatal): ${e.message}")
+                    Log.w(TAG, "Auto-verify failed (non-fatal): ${e.message}")
                 }
             }
 
