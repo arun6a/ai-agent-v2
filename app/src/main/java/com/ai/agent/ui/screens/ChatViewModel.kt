@@ -612,9 +612,9 @@ class ChatViewModel(
             }
 
             // v3.4.2: Phase 3 — auto-recall relevant knowledge docs.
+            // v3.5.0: now respects the Knowledge Auto-Recall toggle.
             // Only for messages > 20 chars (skip "hi", "thanks", etc.).
-            // AI can still call recallKnowledge() manually for deeper search.
-            if (userMessage.length > 20) {
+            if (userMessage.length > 20 && com.ai.agent.llm.AgentThinkingSettings.isKnowledgeAutoRecallEnabled(context)) {
                 try {
                     val knowledgeHits = database.recallKnowledge(userMessage, limit = 3)
                     val relevantHits = knowledgeHits.filter { it.third > 0.10f }.toMutableList()
@@ -821,10 +821,29 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             // to AIProvider so chatWithFailover uses the right bindings.
             val pickedModel = com.ai.agent.llm.SmartRouting.pickModelForMessage(context, userMessage)
             if (pickedModel != null) {
-                // v3.3.6: use applyModelForRouting (doesn't change the saved default,
-                // just writes the picked model's provider/endpoint/key to AIProvider).
                 com.ai.agent.llm.SavedModelsStore.applyModelForRouting(context, pickedModel.id)
                 Log.i(TAG, "SmartRouting: picked '${pickedModel.modelName}' for this message")
+            }
+
+            // v3.5.0: P0-2 — Planning step for complex tasks.
+            // For Tier 3 tasks with long user messages (>50 chars), make one extra
+            // LLM call to break the task into steps. The plan is advisory — the
+            // brain can adapt if reality differs.
+            if (com.ai.agent.llm.AgentThinkingSettings.isPlanningEnabled(context)) {
+                val tier = com.ai.agent.llm.ContextualPromptBuilder.getTier(userMessage)
+                if (tier == 3 && userMessage.length > 50) {
+                    try {
+                        Log.i(TAG, "Planning: generating plan for complex task (tier=$tier, len=${userMessage.length})")
+                        val planPrompt = "Break this task into 3-7 ordered steps. Reply with ONLY the steps, one per line, numbered. Task: $userMessage"
+                        val planResponse = llmClient.chat(planPrompt, "You are a task planning assistant. Be concise.")
+                        if (planResponse.reply.isNotBlank()) {
+                            conversation.append("[PLAN]:\n${planResponse.reply.take(500)}\n\n")
+                            Log.i(TAG, "Plan generated: ${planResponse.reply.take(100)}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Planning failed (non-fatal): ${e.message}")
+                    }
+                }
             }
 
             ApiUsageTracker.startNewTask()
@@ -846,6 +865,20 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         isExecuting = false,
                         apiCallCount = ApiUsageTracker.getTaskCalls(),
                     )
+                }
+
+                // v3.5.0: P0-1 — Periodic reflection every 5 iterations.
+                // Injects a short "are you making progress?" check into the conversation.
+                // The brain reads this as part of the conversation history + can switch
+                // approach if it's stuck.
+                if (com.ai.agent.llm.AgentThinkingSettings.isReflectionEnabled(context)
+                    && iteration > 1 && iteration % 5 == 0) {
+                    conversation.append(
+                        "\n\n[REFLECTION CHECK — step $iteration]: " +
+                        "Are you making progress toward the goal? " +
+                        "If stuck, switch approach NOW. Don't repeat the same action."
+                    )
+                    Log.i(TAG, "Reflection check injected at iteration $iteration")
                 }
 
                 // ---- Per-step timeout (30 seconds) ----
@@ -906,8 +939,10 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     if (llmResponse.toolCalls.isEmpty()) {
                         finalReply = llmResponse.reply.ifBlank { "Done." }
 
-                        // Always learn — save successful workflow for future use.
-                        if (iteration > 1 && workLog.isNotEmpty()) {
+                        // v3.5.0: Always learn — save successful workflow for future use.
+                        // Now respects the alwaysLearn toggle (was a dead switch before).
+                        if (iteration > 1 && workLog.isNotEmpty()
+                            && com.ai.agent.llm.AgentThinkingSettings.isAlwaysLearnEnabled(context)) {
                             try {
                                 val workflowKey = "workflow_${
                                     userMessage.take(40)
@@ -956,15 +991,17 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             )
                             // Note: stuck-state speak is intentional (not auto-reply), so it ignores ttsEnabled.
 
-                            // Always learn — even from failure, save what NOT to do.
-                            try {
-                                val failKey = "avoid_${call.name}_${userMessage.take(30).replace(" ", "_")}"
-                                database.remember(
-                                    failKey,
-                                    "Tried $signature $count times — FAILED. Use alternatives: ${getStrategyAlternatives(call.name)}"
-                                )
-                                Log.i(TAG, "Saved failure lesson: $failKey")
-                            } catch (_: Exception) {
+                            // v3.5.0: Always learn — save failure lesson. Respects toggle.
+                            if (com.ai.agent.llm.AgentThinkingSettings.isAlwaysLearnEnabled(context)) {
+                                try {
+                                    val failKey = "avoid_${call.name}_${userMessage.take(30).replace(" ", "_")}"
+                                    database.remember(
+                                        failKey,
+                                        "Tried $signature $count times — FAILED. Use alternatives: ${getStrategyAlternatives(call.name)}"
+                                    )
+                                    Log.i(TAG, "Saved failure lesson: $failKey")
+                                } catch (_: Exception) {
+                                }
                             }
                             stuckSignature = signature
                             break
@@ -1153,12 +1190,40 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
      * to modify the (frozen) backend — executeTool is private.
      */
     private suspend fun executeTimed(toolCalls: List<LLMClient.ToolCall>): List<ToolCallDisplay> {
+        // v3.5.0: P0-3 — High-stakes tools get post-action screen verification.
+        // After send/delete/email tools, wait 2s + readScreen + append screen text
+        // to the tool result. The brain sees the screen state + decides if it worked.
+        // No keyword matching (avoids false negatives on non-English UIs).
+        val HIGH_STAKES_TOOLS = setOf("openWhatsAppChat", "sendSMS", "sendEmail", "deleteFile", "callContact")
+
         val out = mutableListOf<ToolCallDisplay>()
         for (call in toolCalls) {
             val start = System.currentTimeMillis()
             val results = toolExecutor.executeTools(listOf(call))
             val elapsed = System.currentTimeMillis() - start
-            val r = results.firstOrNull()
+            var r = results.firstOrNull()
+
+            // v3.5.0: Post-action verification for high-stakes tools.
+            if (call.name in HIGH_STAKES_TOOLS && r?.success == true
+                && com.ai.agent.llm.AgentThinkingSettings.isVerificationEnabled(context)) {
+                try {
+                    kotlinx.coroutines.delay(2000)  // wait for UI to update
+                    val a11y = com.ai.agent.accessibility.AgentAccessibilityService.getInstance()
+                    if (a11y != null) {
+                        val screenText = a11y.readScreen()
+                        if (screenText.isNotEmpty()) {
+                            r = ToolExecutor.ToolResult(
+                                success = r.success,
+                                output = r.output + "\n\n[Post-action screen]: ${screenText.take(300)}"
+                            )
+                            Log.i(TAG, "Post-action verification: readScreen after ${call.name} (${screenText.length} chars)")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Post-action verification failed (non-fatal): ${e.message}")
+                }
+            }
+
             out.add(
                 ToolCallDisplay(
                     name = call.name,

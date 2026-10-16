@@ -143,9 +143,8 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
     var browserMode by remember { mutableStateOf(AIProvider.getBrowserMode(context)) }
     var searchMethod by remember { mutableStateOf(AIProvider.getSearchMethod(context)) }
-    var visionMode by remember { mutableStateOf(AIProvider.getVisionMode(context)) }  // v2.2.3
-    var dynamicPrompt by remember { mutableStateOf(promptMode == "dynamic") }
-    var alwaysLearn by remember { mutableStateOf(true) }
+    var visionMode by remember { mutableStateOf(AIProvider.getVisionMode(context)) }
+    // v3.5.0: alwaysLearn, dynamicPrompt, contextualPrompts moved to Brain Behavior page.
     // v2.0.7: Overlay toggle — persists via SharedPreferences("ai_agent_prefs","overlay_enabled")
     val prefs = remember { context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE) }
     var overlayEnabled by remember { mutableStateOf(prefs.getBoolean("overlay_enabled", true)) }
@@ -161,73 +160,14 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
         item {
             SectionHeader(
                 title = "Settings",
-                subtitle = "AI behavior · search · learning",
+                subtitle = "Device settings · search · appearance",
             )
         }
 
-        item {
-            SettingsGroup(title = "PROMPT MODE") {
-                SelectorRow(
-                    label = "Prompt Mode",
-                    options = listOf("smart", "dynamic", "balanced", "fast", "custom"),
-                    selected = promptMode,
-                    onSelect = {
-                        promptMode = it
-                        AIProvider.setPromptMode(context, it)
-                        if (it == "dynamic") dynamicPrompt = true
-                        toast = "Prompt mode: $it"
-                    },
-                )
-                // v2.0.9 Task 95: Open the full-screen System Prompt editor
-                // (Custom edit + Smart / Balanced / Fast / Default read-only views).
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(custom.surface2, RoundedCornerShape(8.dp))
-                        .border(1.dp, custom.border, RoundedCornerShape(8.dp))
-                        .clickable {
-                            onOpenSystemPromptEditor()
-                        }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Edit System Prompt",
-                            color = m3.onSurface,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Text(
-                            text = "Open the prompt editor (custom + built-in views)",
-                            color = custom.fg3,
-                            fontSize = 11.sp,
-                            lineHeight = 14.sp,
-                        )
-                    }
-                    Text(
-                        text = "Open →",
-                        color = custom.accent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-            }
-        }
-        item {
-            SettingsGroup(title = "BROWSER MODE") {
-                SelectorRow(
-                    label = "Browser Mode",
-                    options = listOf("auto", "in_app", "chrome"),  // v2.3.0: "auto" uses embedded WebView
-                    selected = browserMode,
-                    onSelect = {
-                        browserMode = it
-                        AIProvider.setBrowserMode(context, it)
-                        toast = "Browser mode: $it"
-                    },
-                )
-            }
-        }
+        // v3.5.0: AI behavior toggles (prompt mode, browser mode, vision mode,
+        // contextual prompts, always learn, auto-fallback, etc.) moved to
+        // AI Settings → Brain Behavior. This page now only has device settings.
+
         item {
             SettingsGroup(title = "SEARCH METHOD") {
                 SelectorRow(
@@ -242,62 +182,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 )
             }
         }
-        // v2.2.3: Vision Mode — controls how AI reads the screen
-        item {
-            SettingsGroup(title = "VISION MODE") {
-                SelectorRow(
-                    label = "Screen Reading",
-                    options = listOf("auto", "mlkit", "vlm"),
-                    selected = visionMode,
-                    onSelect = {
-                        visionMode = it
-                        AIProvider.setVisionMode(context, it)
-                        toast = "Vision mode: $it"
-                    },
-                )
-            }
-        }
-        item {
-            SettingsGroup(title = "BEHAVIOR") {
-                ToggleRow(
-                    label = "Dynamic Prompt",
-                    desc = "Auto-select relevant tools per task (saves tokens)",
-                    checked = dynamicPrompt,
-                    onCheck = {
-                        dynamicPrompt = it
-                        if (it && promptMode != "dynamic") {
-                            promptMode = "dynamic"
-                            AIProvider.setPromptMode(context, "dynamic")
-                        } else if (!it && promptMode == "dynamic") {
-                            promptMode = "smart"
-                            AIProvider.setPromptMode(context, "smart")
-                        }
-                        toast = "Dynamic prompt: $it"
-                    },
-                )
-                // v3.0.8: Contextual Prompts toggle (replaces Prompt Caching + Dynamic Prompt)
-                var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
-                ToggleRow(
-                    label = "Contextual Prompts",
-                    desc = "Select relevant tool groups per task (85% token savings). 'Hi' → tiny prompt, research → web tools only",
-                    checked = contextualPrompts,
-                    onCheck = {
-                        contextualPrompts = it
-                        AIProvider.setContextualPromptsEnabled(context, it)
-                        toast = "Contextual prompts: $it"
-                    },
-                )
-                ToggleRow(
-                    label = "Always Learn",
-                    desc = "Save successful workflows + failure lessons to memory",
-                    checked = alwaysLearn,
-                    onCheck = {
-                        alwaysLearn = it
-                        toast = "Always learn: $it"
-                    },
-                )
-            }
-        }
+        // v3.5.0: VISION MODE + BEHAVIOR groups removed — moved to Brain Behavior page.
         // v2.0.7: Floating overlay toggle — lets user enable/disable the floating
         // button without uninstalling or revoking overlay permission.
         item {

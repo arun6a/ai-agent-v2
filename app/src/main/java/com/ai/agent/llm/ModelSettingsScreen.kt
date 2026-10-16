@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.ai.agent.llm.settings.AdvancedConfigPage
 import com.ai.agent.llm.settings.ApiKeysTab
 import com.ai.agent.llm.settings.AudioConfigPage
+import com.ai.agent.llm.settings.BrainBehaviorPage
 import com.ai.agent.llm.settings.FutureSectionsPage
 import com.ai.agent.llm.settings.LlmConfigPage
 import com.ai.agent.llm.settings.ModelCatalogTab
@@ -76,7 +77,7 @@ fun ModelSettingsScreen(
                 4 -> VisionConfigPage()
                 5 -> AudioConfigPage()
                 6 -> FutureSectionsPage()
-                7 -> AdvancedConfigPage()
+                7 -> BrainBehaviorPage(onToast = { toast = it })  // v3.5.0: replaced Advanced with Brain Behavior
                 8 -> SmartRoutingPage(onToast = { toast = it })  // v3.3.6
             }
         }
@@ -93,7 +94,7 @@ fun ModelSettingsScreen(
 private fun getSectionTitle(section: Int): String = when (section) {
     0 -> "API Keys"; 1 -> "Saved Models"; 2 -> "Model Catalog"
     3 -> "LLM Configuration"; 4 -> "Vision"; 5 -> "Audio"
-    6 -> "Coming Soon"; 7 -> "Advanced"; 8 -> "Smart Routing"; else -> "AI Settings"
+    6 -> "Coming Soon"; 7 -> "Brain Behavior"; 8 -> "Smart Routing"; else -> "AI Settings"
 }
 
 @Composable
@@ -115,7 +116,7 @@ private fun AiSettingsSectionList(onSectionClick: (Int) -> Unit) {
         item { SectionCard("👁️", "Vision", "Screen reading model + mode") { onSectionClick(4) } }
         item { SectionCard("🔊", "Audio", "TTS + voice input") { onSectionClick(5) } }
         item { SectionCard("🚀", "Coming Soon", "Image gen, video, coding") { onSectionClick(6) } }
-        item { SectionCard("🔧", "Advanced", "Provider endpoint + prompt mode") { onSectionClick(7) } }
+        item { SectionCard("🧠", "Brain Behavior", "How the AI thinks, plans, and learns") { onSectionClick(7) } }  // v3.5.0
         item { SectionCard("🧠", "Smart Routing", "Tier-based model selection + auto-fallback") { onSectionClick(8) } }  // v3.3.6
     }
 }
