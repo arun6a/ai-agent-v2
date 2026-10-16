@@ -84,6 +84,7 @@ class AgentHttpServer(
                 "/scrollUp" -> handleSimpleAction("scrollUp") { it.scrollUp() }
                 "/submitInput" -> handleSimpleAction("submitInput") { it.submitInput() }
                 "/launchApp" -> handleLaunchApp(params)
+                "/chat" -> handleChat(params)
                 else -> "unknown endpoint: $uri"
             }
             newFixedLengthResponse(Response.Status.OK, "text/plain", result)
@@ -191,5 +192,29 @@ class AgentHttpServer(
         } catch (e: Exception) {
             "launch error: ${e.message}"
         }
+    }
+
+    /**
+     * v3.7.1: /chat endpoint — sends a message to the brain via broadcast intent.
+     * The ChatViewModel listens for this intent + calls sendMessage().
+     *
+     * Usage: GET /chat?message=hi
+     * Returns: {"status":"queued","message":"hi"}
+     *
+     * The brain processes the message asynchronously. Poll /screen to see the response.
+     */
+    private fun handleChat(params: Map<String, String>): String {
+        val message = params["message"] ?: return """{"error":"missing message param"}"""
+        if (message.isBlank()) return """{"error":"empty message"}"""
+
+        // Send broadcast intent — ChatViewModel listens for it.
+        val intent = Intent("com.ai.agent.REMOTE_CHAT").apply {
+            putExtra("message", message)
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(intent)
+
+        Log.i(TAG, "Remote chat message queued: $message")
+        return """{"status":"queued","message":"$message"}"""
     }
 }
