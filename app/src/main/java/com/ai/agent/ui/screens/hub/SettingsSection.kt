@@ -372,12 +372,11 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             }
         }
         // v3.5.0: VISION MODE + BEHAVIOR groups removed — moved to Brain Behavior page.
-        // v2.0.7: Floating overlay toggle — lets user enable/disable the floating
-        // button without uninstalling or revoking overlay permission.
+        // v3.5.2: Floating overlay — keep only the permission grant button.
+        // The overlay toggle/pipeline will be added in a future version.
         item {
-            SettingsGroup(title = "FLOATING OVERLAY") {
+            SettingsGroup(title = "OVERLAY PERMISSION") {
                 if (!overlayPermGranted) {
-                    // Permission missing — show a "Grant overlay permission" row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -417,22 +416,15 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                         Text(text = "Open →", color = custom.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
                 } else {
-                    ToggleRow(
-                        label = "Floating Overlay Button",
-                        desc = "Show the floating Aira button on top of other apps",
-                        checked = overlayEnabled,
-                        onCheck = { enabled ->
-                            overlayEnabled = enabled
-                            prefs.edit().putBoolean("overlay_enabled", enabled).apply()
-                            if (enabled) {
-                                com.ai.agent.service.OverlayManager.setEnabled(true, context)
-                                toast = "Overlay enabled — relaunch app to show"
-                            } else {
-                                com.ai.agent.service.OverlayManager.setEnabled(false, context)
-                                toast = "Overlay disabled"
-                            }
-                        },
-                    )
+                    // Permission granted — show simple status.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("✓", color = custom.accent, fontSize = 12.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Overlay permission granted", color = m3.onSurface, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -447,9 +439,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 )
             }
         }
-        item {
-            AboutCard()
-        }
+        // v3.5.2: AboutCard removed — not needed in Settings.
     }
 
     LaunchedEffect(toast) {
