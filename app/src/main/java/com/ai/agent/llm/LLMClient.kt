@@ -396,23 +396,25 @@ class LLMClient(private val context: Context) {
             if (providerId == "zai" || providerId == "zai_direct") {
                 put("thinking", JSONObject().put("type", "disabled"))
             }
-            // For providers that support native function calling, use it.
-            // This is MUCH more reliable than asking the LLM to write JSON in the reply.
-            // The LLM returns tool_calls as a structured field, not as text.
-            if (providerId in setOf("groq", "openrouter", "together", "custom", "openai",
-                "cerebras", "mistral", "deepinfra", "fireworks", "zai_direct", "apikeys_in", "cline")) {
-                // v3.2.9: buildToolsArray(null)  → all tools (Tier 3 behavior, unchanged)
-                //         buildToolsArray([])    → no tools array at all (Tier 1 greeting)
-                //         buildToolsArray([...])  → only those tools (Tier 2 contextual)
-                val tools = buildToolsArray(toolFilter)
-                if (tools.length() > 0) {
-                    put("tools", tools)
-                    put("tool_choice", "auto")
-                }
-                // Some providers (Groq, OpenRouter) support response_format for stricter output
-                if (providerId == "groq") {
-                    put("response_format", JSONObject().put("type", "json_object"))
-                }
+            // v3.6.4: REMOVED tools array — was sending 4,750 tokens of junk
+            // descriptions on Tier 3 (95 tools × ~50 tokens each, all with the
+            // same generic "Execute the X tool on the Android phone" description
+            // + empty parameters). The system prompt already has full tool
+            // descriptions — the brain replies with JSON {"reply":"","tool_calls":[]}
+            // and parseResponse() handles it. This saves ~22% of prompt tokens
+            // on every Tier 3 call.
+            //
+            // The old code was:
+            //   if (providerId in setOf(...)) {
+            //       val tools = buildToolsArray(toolFilter)
+            //       if (tools.length() > 0) { put("tools", tools); put("tool_choice", "auto") }
+            //   }
+            //
+            // If tool-calling reliability degrades, re-enable by uncommenting the
+            // block above. But test first — the JSON reply path has been working
+            // reliably since v3.0.0.
+            if (providerId == "groq") {
+                put("response_format", JSONObject().put("type", "json_object"))
             }
         }
 

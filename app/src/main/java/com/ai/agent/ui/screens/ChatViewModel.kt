@@ -669,14 +669,21 @@ class ChatViewModel(
             // v2.3.3: Inject enabled app profiles into the system prompt so the AI
             // knows which apps are installed + how to interact with each (shortcut tools, tips).
             // v3.0.8: Only inject if NOT using contextual prompt (contextual already has app shortcuts)
-            if (!contextualEnabled) {
-                try {
-                    val appsPrompt = com.ai.agent.llm.AppProfileManager.getActiveAppsPromptSection(context)
-                    if (appsPrompt.isNotBlank()) {
-                        systemPrompt += "\n\n$appsPrompt"
+            // v3.6.4: Also skip on Tier 3 — system_prompt_smart.txt already has extensive app
+            // packages + known activities + app-specific UI tips. App profiles are redundant.
+            if (!contextualEnabled && !isTier1) {
+                // v3.6.4: Only inject for Tier 2 (contextual disabled + not greeting).
+                // Tier 3 (full prompt) already has all app info in smart.txt.
+                val tier = com.ai.agent.llm.ContextualPromptBuilder.getTier(userMessage)
+                if (tier == 2) {
+                    try {
+                        val appsPrompt = com.ai.agent.llm.AppProfileManager.getActiveAppsPromptSection(context)
+                        if (appsPrompt.isNotBlank()) {
+                            systemPrompt += "\n\n$appsPrompt"
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "App profile injection failed: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "App profile injection failed: ${e.message}")
                 }
             }
 
@@ -969,7 +976,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             retryResults.forEachIndexed { i, dr ->
                                 val call = retryResponse.toolCalls[i]
                                 conversation.append("Tool: ${call.name}(${argsStr(call.args)})\n")
-                                conversation.append("Result: ${dr.output}\n\n")
+                                // v3.6.4: BUG FIX — fallback path was NOT truncating tool results.
+                                // Main path uses dr.output.take(500) but fallback used full output.
+                                conversation.append("Result: ${dr.output.take(500)}\n\n")
                             }
                             conversation.append("\nBased on these results, decide the next step.")
                             _state.update { it.copy(apiCallCount = callCount) }
@@ -1259,9 +1268,12 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     if (a11y != null) {
                         val screenText = a11y.readScreen()
                         if (screenText.isNotEmpty()) {
+                            // v3.6.4: cap total output to 500 chars (was 500 + 300 = 800).
+                            val baseOutput = r.output.take(200)
+                            val combinedOutput = "$baseOutput\n\n[Post-action screen]: ${screenText.take(300)}"
                             r = ToolExecutor.ToolResult(
                                 success = r.success,
-                                output = r.output + "\n\n[Post-action screen]: ${screenText.take(300)}"
+                                output = combinedOutput,
                             )
                             Log.i(TAG, "Post-action verification: readScreen after ${call.name} (${screenText.length} chars)")
                         }
