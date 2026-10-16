@@ -13,7 +13,7 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
 
     companion object {
         private const val DB_NAME = "ai_agent.db"
-        private const val DB_VERSION = 4  // v2.2.0: added chat_sessions table + session_id col
+        private const val DB_VERSION = 5  // v3.4.0: added FTS5 search tables for memory + knowledge
 
         // Conversations table
         const val TABLE_CONVERSATIONS = "conversations"
@@ -119,6 +119,90 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 $COL_TIMESTAMP INTEGER
             )
         """.trimIndent())
+
+        // v3.4.0: FTS5 full-text search tables for memory + knowledge.
+        // BM25 ranking + porter stemming (handles "wakes" → "wake", etc.).
+        createFts5Tables(db)
+    }
+
+    /**
+     * v3.4.0: Create FTS5 virtual tables + triggers to keep them in sync with
+     * the memory and knowledge tables. Called from onCreate() and onUpgrade().
+     */
+    private fun createFts5Tables(db: SQLiteDatabase) {
+        try {
+            // === Memory FTS5 ===
+            // content='memory' means FTS5 is linked to the memory table via rowid.
+            // porter tokenizer: English stemming (wakes → wake, running → run)
+            // unicode61: handles non-English characters (Hindi, etc.)
+            db.execSQL("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+                    key, value,
+                    content='memory', content_rowid='rowid',
+                    tokenize='porter unicode61'
+                )
+            """.trimIndent())
+            // Triggers: keep FTS5 in sync automatically.
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS memory_fts_ai AFTER INSERT ON $TABLE_MEMORY BEGIN
+                    INSERT INTO memory_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+                END
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS memory_fts_ad AFTER DELETE ON $TABLE_MEMORY BEGIN
+                    INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES('delete', old.rowid, old.key, old.value);
+                END
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS memory_fts_au AFTER UPDATE ON $TABLE_MEMORY BEGIN
+                    INSERT INTO memory_fts(memory_fts, rowid, key, value) VALUES('delete', old.rowid, old.key, old.value);
+                    INSERT INTO memory_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+                END
+            """.trimIndent())
+
+            // === Knowledge FTS5 ===
+            db.execSQL("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
+                    name, content,
+                    content='knowledge', content_rowid='rowid',
+                    tokenize='porter unicode61'
+                )
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS knowledge_fts_ai AFTER INSERT ON $TABLE_KNOWLEDGE BEGIN
+                    INSERT INTO knowledge_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
+                END
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS knowledge_fts_ad AFTER DELETE ON $TABLE_KNOWLEDGE BEGIN
+                    INSERT INTO knowledge_fts(knowledge_fts, rowid, name, content) VALUES('delete', old.rowid, old.name, old.content);
+                END
+            """.trimIndent())
+            db.execSQL("""
+                CREATE TRIGGER IF NOT EXISTS knowledge_fts_au AFTER UPDATE ON $TABLE_KNOWLEDGE BEGIN
+                    INSERT INTO knowledge_fts(knowledge_fts, rowid, name, content) VALUES('delete', old.rowid, old.name, old.content);
+                    INSERT INTO knowledge_fts(rowid, name, content) VALUES (new.rowid, new.name, new.content);
+                END
+            """.trimIndent())
+
+            android.util.Log.i("AgentDatabase", "FTS5 tables + triggers created")
+        } catch (e: Exception) {
+            android.util.Log.e("AgentDatabase", "Failed to create FTS5 tables (may not be supported): ${e.message}")
+        }
+    }
+
+    /**
+     * v3.4.0: Backfill FTS5 index from existing memory/knowledge rows.
+     * Called during onUpgrade() when migrating to DB version 5.
+     */
+    private fun backfillFts5(db: SQLiteDatabase) {
+        try {
+            db.execSQL("INSERT INTO memory_fts(rowid, key, value) SELECT rowid, key, value FROM memory")
+            db.execSQL("INSERT INTO knowledge_fts(rowid, name, content) SELECT rowid, name, content FROM knowledge")
+            android.util.Log.i("AgentDatabase", "FTS5 backfill complete")
+        } catch (e: Exception) {
+            android.util.Log.w("AgentDatabase", "FTS5 backfill (may already have data): ${e.message}")
+        }
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -184,6 +268,12 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 android.util.Log.e("AgentDatabase", "Failed to create chat_sessions table", e)
             }
         }
+        if (oldVersion < 5) {
+            // v3.4.0: FTS5 full-text search for memory + knowledge.
+            android.util.Log.i("AgentDatabase", "Upgrading DB to v5 — adding FTS5 tables...")
+            createFts5Tables(db)
+            backfillFts5(db)
+        }
     }
 
     // === Knowledge (v6.0.0) ===
@@ -216,7 +306,38 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
         return result
     }
 
+    /**
+     * v3.4.0: Knowledge recall using FTS5 BM25 ranking.
+     * Falls back to Jaccard if FTS5 is not available.
+     */
     fun recallKnowledge(query: String, limit: Int = 5): List<Triple<String, String, Float>> {
+        // v3.4.0: Try FTS5 first.
+        val ftsQuery = buildFts5Query(query)
+        if (ftsQuery.isNotEmpty()) {
+            try {
+                val cursor = readableDatabase.rawQuery(
+                    "SELECT k.name, k.content, bm25(knowledge_fts) as score " +
+                    "FROM knowledge_fts JOIN knowledge k ON k.rowid = knowledge_fts.rowid " +
+                    "WHERE knowledge_fts MATCH ? " +
+                    "ORDER BY score LIMIT ?",
+                    arrayOf(ftsQuery, limit.toString())
+                )
+                val results = mutableListOf<Triple<String, String, Float>>()
+                cursor.use {
+                    while (it.moveToNext()) {
+                        val name = it.getString(0) ?: ""
+                        val content = it.getString(1) ?: ""
+                        val rawScore = it.getFloat(2)
+                        val normalized = (1f / (1f + kotlin.math.abs(rawScore) / 10f)).coerceIn(0f, 1f)
+                        results.add(Triple(name, content, normalized))
+                    }
+                }
+                if (results.isNotEmpty()) return results
+            } catch (e: Exception) {
+                android.util.Log.w("AgentDatabase", "FTS5 knowledge search failed, falling back: ${e.message}")
+            }
+        }
+        // Fallback: old Jaccard.
         val all = getAllKnowledge()
         if (all.isEmpty()) return emptyList()
         val queryWords = query.lowercase()
@@ -454,11 +575,67 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
      * Uses simple word overlap similarity (TF-IDF inspired).
      * Returns list of (key, value, similarityScore) sorted by most similar first.
      */
+    /**
+     * v3.4.0: Semantic recall using FTS5 BM25 ranking.
+     *
+     * Replaces the old Jaccard word-overlap approach which failed when query
+     * words didn't match memory words exactly (e.g. "what time do I wake up"
+     * wouldn't find "I wake up at 6am").
+     *
+     * FTS5 does porter stemming (wakes → wake) + BM25 ranking (relevance score).
+     * Falls back to Jaccard if FTS5 is not available (old SQLite versions).
+     *
+     * Returns list of (key, value, score) sorted by most similar first.
+     * Score is 0..1 where 1 = perfect match, 0 = no match.
+     */
     fun recallSimilar(query: String, limit: Int = 5): List<Triple<String, String, Float>> {
+        // v3.4.0: Try FTS5 first — much better than Jaccard.
+        val ftsQuery = buildFts5Query(query)
+        if (ftsQuery.isNotEmpty()) {
+            try {
+                val cursor = readableDatabase.rawQuery(
+                    "SELECT m.key, m.value, bm25(memory_fts) as score " +
+                    "FROM memory_fts JOIN memory m ON m.rowid = memory_fts.rowid " +
+                    "WHERE memory_fts MATCH ? " +
+                    "ORDER BY score LIMIT ?",
+                    arrayOf(ftsQuery, limit.toString())
+                )
+                val results = mutableListOf<Triple<String, String, Float>>()
+                cursor.use {
+                    while (it.moveToNext()) {
+                        val key = it.getString(0) ?: ""
+                        val value = it.getString(1) ?: ""
+                        // bm25 returns NEGATIVE scores (more negative = better).
+                        // Convert to 0..1: 1/(1+abs(score)) so 0.0=best, 1.0=worst.
+                        // Actually bm25 is negative, so abs() gives us a positive number
+                        // where smaller = better match. We want higher = better for API compat.
+                        val rawScore = it.getFloat(2)
+                        // Normalize: abs(raw) gives 0..inf. 1/(1+abs) gives 1..0.
+                        // But bm25 of -5 (good match) → 1/(1+5) = 0.167 (low).
+                        // Better: use 1/(1+abs(raw)/10) so -5 → 1/(1+0.5) = 0.67 (high).
+                        val normalized = (1f / (1f + kotlin.math.abs(rawScore) / 10f)).coerceIn(0f, 1f)
+                        results.add(Triple(key, value, normalized))
+                    }
+                }
+                if (results.isNotEmpty()) {
+                    android.util.Log.i("AgentDatabase", "FTS5 recallSimilar('$query'): ${results.size} hits")
+                    return results
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("AgentDatabase", "FTS5 search failed, falling back to Jaccard: ${e.message}")
+            }
+        }
+        // Fallback: old Jaccard word-overlap (for old SQLite without FTS5).
+        return recallSimilarJaccard(query, limit)
+    }
+
+    /**
+     * v3.4.0: Old Jaccard word-overlap recall — kept as fallback for old SQLite.
+     */
+    private fun recallSimilarJaccard(query: String, limit: Int = 5): List<Triple<String, String, Float>> {
         val allMemory = getAllMemory()
         if (allMemory.isEmpty()) return emptyList()
 
-        // Tokenize query into words (lowercase, remove punctuation)
         val queryWords = query.lowercase()
             .replace(Regex("[^a-z0-9\\s]"), " ")
             .split(Regex("\\s+"))
@@ -467,7 +644,6 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
 
         if (queryWords.isEmpty()) return emptyList()
 
-        // Score each memory by word overlap
         val scored = allMemory.map { (key, value) ->
             val combinedText = "$key $value".lowercase()
             val memoryWords = combinedText
@@ -476,7 +652,6 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                 .filter { it.length > 2 }
                 .toSet()
 
-            // Jaccard similarity: intersection / union
             val intersection = queryWords.intersect(memoryWords).size
             val union = queryWords.union(memoryWords).size
             val score = if (union > 0) intersection.toFloat() / union else 0f
@@ -484,12 +659,24 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
             Triple(key, value, score)
         }
 
-        // Filter: only return memories with some overlap (score > 0)
-        // Sort by score descending
         return scored
             .filter { it.third > 0 }
             .sortedByDescending { it.third }
             .take(limit)
+    }
+
+    /**
+     * v3.4.0: Build an FTS5 MATCH query string from a natural-language query.
+     * Sanitizes the input, splits into words, and joins with OR.
+     * "what time do I wake up" → "what OR time OR wake OR up"
+     */
+    private fun buildFts5Query(query: String): String {
+        return query.lowercase()
+            .replace(Regex("[^a-z0-9\\s]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.length > 2 }  // skip short words (the, a, is, etc.)
+            .joinToString(" OR ")
+            .trim()
     }
 
     /**

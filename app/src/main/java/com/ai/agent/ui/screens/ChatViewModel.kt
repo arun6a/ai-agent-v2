@@ -563,12 +563,74 @@ class ChatViewModel(
                 DynamicPromptBuilder.buildPrompt(context, userMessage)
             }
             val memory = database.getAllMemory()
+            // v3.4.1: Separate regular memories from avoid_* failure lessons.
+            // Regular memories: top 10 user facts (not avoid_ or workflow_ keys).
+            // Failure lessons: loaded separately + injected in their own section.
+            val regularMemories = memory.entries
+                .filter { !it.key.startsWith("avoid_") && !it.key.startsWith("workflow_") }
+                .take(10)
             val memoryStr = if (memory.isEmpty()) {
                 "No memories stored yet."
+            } else if (regularMemories.isEmpty()) {
+                "(only failure lessons stored — see below)"
             } else {
-                memory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
+                regularMemories.joinToString("\n") { "- ${it.key}: ${it.value}" }
             }
             var systemPrompt = "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
+
+            // v3.4.1: Phase 2 — inject past failure lessons for THIS task type.
+            // The avoid_* keys are saved when a tool gets stuck (line ~883).
+            // Load them directly (not via FTS5) since there are usually <20 total.
+            try {
+                val allAvoid = memory.entries
+                    .filter { it.key.startsWith("avoid_") }
+                    .take(5)
+                if (allAvoid.isNotEmpty()) {
+                    // Filter by word overlap with the current task.
+                    val taskWords = userMessage.lowercase()
+                        .replace(Regex("[^a-z0-9\\s]"), " ")
+                        .split(Regex("\\s+"))
+                        .filter { it.length > 2 }
+                        .toSet()
+                    val relevantFailures = allAvoid.filter { (_, value) ->
+                        val failWords = value.lowercase()
+                            .replace(Regex("[^a-z0-9\\s]"), " ")
+                            .split(Regex("\\s+"))
+                            .filter { it.length > 2 }
+                            .toSet()
+                        taskWords.intersect(failWords).isNotEmpty()
+                    }.take(3)
+                    if (relevantFailures.isNotEmpty()) {
+                        systemPrompt += "\n\n## Lessons From Past Tasks (avoid these)\n"
+                        relevantFailures.forEach { (_, value) ->
+                            systemPrompt += "- $value\n"
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failure recall failed: ${e.message}")
+            }
+
+            // v3.4.2: Phase 3 — auto-recall relevant knowledge docs.
+            // Only for messages > 20 chars (skip "hi", "thanks", etc.).
+            // AI can still call recallKnowledge() manually for deeper search.
+            if (userMessage.length > 20) {
+                try {
+                    val knowledgeHits = database.recallKnowledge(userMessage, limit = 3)
+                    if (knowledgeHits.isNotEmpty()) {
+                        val relevantHits = knowledgeHits.filter { it.third > 0.01f }
+                        if (relevantHits.isNotEmpty()) {
+                            systemPrompt += "\n\n## Relevant Knowledge (auto-recalled)\n"
+                            relevantHits.forEach { (name, content, _) ->
+                                systemPrompt += "### $name\n${content.take(500)}...\n\n"
+                            }
+                            systemPrompt += "Use recallKnowledge(query) for deeper search if needed."
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Knowledge auto-recall failed: ${e.message}")
+                }
+            }
 
             // v2.3.3: Inject enabled app profiles into the system prompt so the AI
             // knows which apps are installed + how to interact with each (shortcut tools, tips).
