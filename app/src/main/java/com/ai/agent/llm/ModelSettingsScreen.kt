@@ -77,8 +77,7 @@ fun ModelSettingsScreen(
                 4 -> VisionConfigPage()
                 5 -> AudioConfigPage()
                 6 -> FutureSectionsPage()
-                7 -> BrainBehaviorPage(onToast = { toast = it })  // v3.5.0: replaced Advanced with Brain Behavior
-                8 -> SmartRoutingPage(onToast = { toast = it })  // v3.3.6
+                // v3.5.1: sections 7 (Brain Behavior) + 8 (Smart Routing) moved to Hub → Settings
             }
         }
     }
@@ -94,7 +93,7 @@ fun ModelSettingsScreen(
 private fun getSectionTitle(section: Int): String = when (section) {
     0 -> "API Keys"; 1 -> "Saved Models"; 2 -> "Model Catalog"
     3 -> "LLM Configuration"; 4 -> "Vision"; 5 -> "Audio"
-    6 -> "Coming Soon"; 7 -> "Brain Behavior"; 8 -> "Smart Routing"; else -> "AI Settings"
+    6 -> "Coming Soon"; else -> "AI Configuration"
 }
 
 @Composable
@@ -105,7 +104,7 @@ private fun AiSettingsSectionList(onSectionClick: (Int) -> Unit) {
     val catalogLoaded = ModelsDevRepository.isLoaded()
 
     LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Text("AI Settings", color = custom.fg2, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        item { Text("AI Configuration", color = custom.fg2, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         item { Text("Manage models, API keys, and capabilities", color = custom.fg3, fontSize = 11.sp) }
         item { Spacer(Modifier.height(8.dp)) }
         item { SectionCard("🔑", "API Keys", "$keyCount key${if (keyCount != 1) "s" else ""} saved") { onSectionClick(0) } }
@@ -116,7 +115,6 @@ private fun AiSettingsSectionList(onSectionClick: (Int) -> Unit) {
         item { SectionCard("👁️", "Vision", "Screen reading model + mode") { onSectionClick(4) } }
         item { SectionCard("🔊", "Audio", "TTS + voice input") { onSectionClick(5) } }
         item { SectionCard("🚀", "Coming Soon", "Image gen, video, coding") { onSectionClick(6) } }
-        item { SectionCard("🧠", "Brain Behavior", "How the AI thinks, plans, and learns") { onSectionClick(7) } }  // v3.5.0
-        item { SectionCard("🧠", "Smart Routing", "Tier-based model selection + auto-fallback") { onSectionClick(8) } }  // v3.3.6
+        // v3.5.1: Brain Behavior + Smart Routing moved to Hub → Settings
     }
 }

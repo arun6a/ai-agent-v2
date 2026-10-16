@@ -107,9 +107,15 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.ai.agent.llm.AIProvider
+import com.ai.agent.llm.AgentThinkingSettings
 import com.ai.agent.llm.ApiUsageTracker
 import com.ai.agent.llm.AppProfileManager
+import com.ai.agent.llm.AutoFallbackSettings
 import com.ai.agent.llm.ModelSettingsScreen
+import com.ai.agent.llm.SavedModelsStore
+import com.ai.agent.llm.ApiKeyStore
+import com.ai.agent.llm.BindingHealthStore
+import com.ai.agent.llm.ModelCapability
 import com.ai.agent.skills.SkillManager
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
@@ -144,7 +150,22 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     var browserMode by remember { mutableStateOf(AIProvider.getBrowserMode(context)) }
     var searchMethod by remember { mutableStateOf(AIProvider.getSearchMethod(context)) }
     var visionMode by remember { mutableStateOf(AIProvider.getVisionMode(context)) }
-    // v3.5.0: alwaysLearn, dynamicPrompt, contextualPrompts moved to Brain Behavior page.
+    // v3.5.1: AI behavior toggles now live here (merged from BrainBehaviorPage + SmartRoutingPage)
+    var reflection by remember { mutableStateOf(AgentThinkingSettings.isReflectionEnabled(context)) }
+    var planning by remember { mutableStateOf(AgentThinkingSettings.isPlanningEnabled(context)) }
+    var verification by remember { mutableStateOf(AgentThinkingSettings.isVerificationEnabled(context)) }
+    var alwaysLearn by remember { mutableStateOf(AgentThinkingSettings.isAlwaysLearnEnabled(context)) }
+    var knowledgeAutoRecall by remember { mutableStateOf(AgentThinkingSettings.isKnowledgeAutoRecallEnabled(context)) }
+    var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
+    var autoFallbackKeys by remember { mutableStateOf(AutoFallbackSettings.isEnabled(context)) }
+    var autoFallbackModels by remember { mutableStateOf(AutoFallbackSettings.isAutoFallbackModelsEnabled(context)) }
+    var autoPickCheapest by remember { mutableStateOf(AutoFallbackSettings.isAutoPickCheapestEnabled(context)) }
+    // v3.5.1: model slots + health from SmartRoutingPage
+    val allModels = remember { SavedModelsStore.getAllModels() }
+    val defaultModel = remember { SavedModelsStore.getDefaultModel(context) }
+    var fastModelId by remember { mutableStateOf(AutoFallbackSettings.getFastModelId(context)) }
+    var advancedModelId by remember { mutableStateOf(AutoFallbackSettings.getAdvancedModelId(context)) }
+    var healthRefresh by remember { mutableStateOf(0) }
     // v2.0.7: Overlay toggle — persists via SharedPreferences("ai_agent_prefs","overlay_enabled")
     val prefs = remember { context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE) }
     var overlayEnabled by remember { mutableStateOf(prefs.getBoolean("overlay_enabled", true)) }
@@ -160,13 +181,181 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
         item {
             SectionHeader(
                 title = "Settings",
-                subtitle = "Device settings · search · appearance",
+                subtitle = "All controls in one place",
             )
         }
 
-        // v3.5.0: AI behavior toggles (prompt mode, browser mode, vision mode,
-        // contextual prompts, always learn, auto-fallback, etc.) moved to
-        // AI Settings → Brain Behavior. This page now only has device settings.
+        // v3.5.1: AI BEHAVIOR sections (merged from BrainBehaviorPage + SmartRoutingPage)
+
+        // ===== MODEL SLOTS =====
+        item {
+            SettingsGroup(title = "MODEL SLOTS") {
+                ModelSlotRow("Fast/Cheap (Tier 1)", allModels, fastModelId, defaultModel?.id) { id ->
+                    fastModelId = id
+                    AutoFallbackSettings.setFastModelId(context, id)
+                    toast = "Fast/Cheap model set"
+                }
+                ModelSlotRow("Default (Tier 2)", allModels, defaultModel?.id, defaultModel?.id) { id ->
+                    SavedModelsStore.setDefaultModel(context, id)
+                    toast = "Default model set"
+                }
+                ModelSlotRow("Advanced (Tier 3)", allModels, advancedModelId, defaultModel?.id) { id ->
+                    advancedModelId = id
+                    AutoFallbackSettings.setAdvancedModelId(context, id)
+                    toast = "Advanced model set"
+                }
+            }
+        }
+
+        // ===== THINKING =====
+        item {
+            SettingsGroup(title = "THINKING") {
+                AiToggleRow("Periodic Reflection",
+                    "Every 5 steps, brain asks 'am I making progress?' If stuck, switches approach.",
+                    reflection) { reflection = it; AgentThinkingSettings.setReflectionEnabled(context, it); toast = "Periodic reflection: $it" }
+                AiToggleRow("Task Planning",
+                    "For complex tasks, brain creates a step-by-step plan before starting. Adds 2-3s. Plan is advisory — brain adapts if reality differs.",
+                    planning) { planning = it; AgentThinkingSettings.setPlanningEnabled(context, it); toast = "Task planning: $it" }
+                AiToggleRow("Post-Action Verification",
+                    "After send/delete/email, brain reads screen to confirm it worked.",
+                    verification) { verification = it; AgentThinkingSettings.setVerificationEnabled(context, it); toast = "Post-action verification: $it" }
+            }
+        }
+
+        // ===== LEARNING =====
+        item {
+            SettingsGroup(title = "LEARNING") {
+                AiToggleRow("Always Learn",
+                    "Saves successful workflows + failure lessons to memory for future tasks.",
+                    alwaysLearn) { alwaysLearn = it; AgentThinkingSettings.setAlwaysLearnEnabled(context, it); toast = "Always learn: $it" }
+                AiToggleRow("Knowledge Auto-Recall",
+                    "Brain proactively searches saved docs when you ask questions. Turn OFF to save tokens.",
+                    knowledgeAutoRecall) { knowledgeAutoRecall = it; AgentThinkingSettings.setKnowledgeAutoRecallEnabled(context, it); toast = "Knowledge auto-recall: $it" }
+            }
+        }
+
+        // ===== PROMPT =====
+        item {
+            SettingsGroup(title = "PROMPT") {
+                AiToggleRow("Contextual Prompts",
+                    "Only shows brain tools relevant to the current task. Saves 85% of API tokens.",
+                    contextualPrompts) { contextualPrompts = it; AIProvider.setContextualPromptsEnabled(context, it); toast = "Contextual prompts: $it" }
+                SelectorRow(
+                    label = "Prompt Mode",
+                    options = listOf("smart", "balanced", "fast", "custom"),
+                    selected = promptMode,
+                    onSelect = { promptMode = it; AIProvider.setPromptMode(context, it); toast = "Prompt mode: $it" },
+                )
+            }
+        }
+
+        // ===== VISION =====
+        item {
+            SettingsGroup(title = "VISION") {
+                SelectorRow(
+                    label = "Vision Mode",
+                    options = listOf("auto", "mlkit", "vlm"),
+                    selected = visionMode,
+                    onSelect = { visionMode = it; AIProvider.setVisionMode(context, it); toast = "Vision mode: $it" },
+                )
+            }
+        }
+
+        // ===== ROUTING & FAILOVER =====
+        item {
+            SettingsGroup(title = "ROUTING & FAILOVER") {
+                AiToggleRow("Auto-Fallback Bindings",
+                    "If one API key fails, try next key for same model.",
+                    autoFallbackKeys) { autoFallbackKeys = it; AutoFallbackSettings.setEnabled(context, it); toast = "Auto-fallback bindings: $it" }
+                AiToggleRow("Auto-Fallback Models",
+                    "If all keys for current model fail, switch to different saved model.",
+                    autoFallbackModels) { autoFallbackModels = it; AutoFallbackSettings.setAutoFallbackModelsEnabled(context, it); toast = "Auto-fallback models: $it" }
+                AiToggleRow("Auto-Pick Cheapest",
+                    "Pick cheapest healthy key instead of priority order. OFF = brain uses your priority order.",
+                    autoPickCheapest) { autoPickCheapest = it; AutoFallbackSettings.setAutoPickCheapestEnabled(context, it); toast = "Auto-pick cheapest: $it" }
+            }
+        }
+
+        // ===== BROWSER =====
+        item {
+            SettingsGroup(title = "BROWSER") {
+                SelectorRow(
+                    label = "Browser Mode",
+                    options = listOf("auto", "in_app", "chrome"),
+                    selected = browserMode,
+                    onSelect = { browserMode = it; AIProvider.setBrowserMode(context, it); toast = "Browser mode: $it" },
+                )
+            }
+        }
+
+        // ===== BINDING HEALTH =====
+        item {
+            SettingsGroup(title = "BINDING HEALTH") {
+                val allBindings = remember(healthRefresh, allModels) {
+                    allModels.flatMap { model ->
+                        model.activeBindings().map { binding ->
+                            Triple(model, binding, BindingHealthStore.get(binding.id))
+                        }
+                    }
+                }
+                if (allBindings.isEmpty()) {
+                    Text("No bindings yet. Add API keys + save models first.",
+                        color = custom.fg3, fontSize = 10.sp)
+                } else {
+                    allBindings.forEach { (model, binding, health) ->
+                        val key = ApiKeyStore.getAllKeys().find { it.id == binding.apiKeyId }
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (!binding.enabled) "✗" else if (health.isHealthy) "✓" else "⚠",
+                                color = if (!binding.enabled) custom.fg3 else if (health.isHealthy) custom.accent else custom.fg3,
+                                fontSize = 11.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${model.modelName} → ${binding.providerName}",
+                                    color = m3.onSurface, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                if (health.totalCalls > 0) {
+                                    Text("${health.totalSuccesses}/${health.totalCalls} success",
+                                        color = custom.fg3, fontSize = 8.sp, fontFamily = MonoFontFamily)
+                                } else if (!binding.enabled) {
+                                    Text("DISABLED", color = custom.fg3, fontSize = 8.sp)
+                                } else if (!health.isHealthy) {
+                                    Text("UNHEALTHY (${health.consecutiveFailures} failures)",
+                                        color = custom.fg3, fontSize = 8.sp)
+                                } else {
+                                    Text("No calls yet", color = custom.fg3, fontSize = 8.sp)
+                                }
+                            }
+                        }
+                    }
+                    TextButton(onClick = {
+                        BindingHealthStore.resetAll(context); healthRefresh++
+                        toast = "All health records cleared"
+                    }) { Text("Reset All Health", fontSize = 9.sp, color = custom.fg3) }
+                }
+            }
+        }
+
+        // ===== RESET DEFAULTS =====
+        item {
+            TextButton(onClick = {
+                AgentThinkingSettings.resetToDefaults(context)
+                AutoFallbackSettings.setEnabled(context, true)
+                AutoFallbackSettings.setAutoFallbackModelsEnabled(context, true)
+                AutoFallbackSettings.setAutoPickCheapestEnabled(context, false)
+                AIProvider.setContextualPromptsEnabled(context, true)
+                AIProvider.setPromptMode(context, "smart")
+                AIProvider.setVisionMode(context, "auto")
+                AIProvider.setBrowserMode(context, "auto")
+                reflection = true; planning = true; verification = true
+                alwaysLearn = true; knowledgeAutoRecall = true
+                contextualPrompts = true; promptMode = "smart"; visionMode = "auto"
+                autoFallbackKeys = true; autoFallbackModels = true; autoPickCheapest = false
+                browserMode = "auto"
+                toast = "Reset to recommended defaults ✓"
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text("Reset to recommended defaults", color = custom.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
 
         item {
             SettingsGroup(title = "SEARCH METHOD") {
@@ -509,5 +698,75 @@ private fun AboutRow(label: String, value: String) {
             fontFamily = MonoFontFamily,
             fontSize = 10.sp,
         )
+    }
+}
+
+// v3.5.1: AI toggle row — title + one-line description + Switch
+@Composable
+private fun AiToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheck: (Boolean) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = m3.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(description, color = custom.fg3, fontSize = 9.sp, lineHeight = 12.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheck,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = androidx.compose.ui.graphics.Color.White,
+                checkedTrackColor = custom.accent,
+            ),
+        )
+    }
+}
+
+// v3.5.1: Model slot row — shows a label + a model picker (radio list of saved models)
+@Composable
+private fun ModelSlotRow(
+    label: String,
+    models: List<SavedModelsStore.SavedModel>,
+    selectedId: String?,
+    defaultId: String?,
+    onSelect: (String) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(label, color = m3.onSurface, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        if (models.isEmpty()) {
+            Text("No saved models. Add from Model Catalog first.",
+                color = custom.fg3, fontSize = 9.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+        } else {
+            models.take(5).forEach { model ->
+                val isSelected = model.id == selectedId
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { onSelect(model.id) }
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (isSelected) "●" else "○",
+                        color = if (isSelected) custom.accent else custom.fg3, fontSize = 10.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(model.modelName,
+                        color = if (isSelected) m3.onSurface else custom.fg3,
+                        fontSize = 10.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                    if (model.id == defaultId) {
+                        Text(" DEFAULT", color = custom.accent, fontSize = 7.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }

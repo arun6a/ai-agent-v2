@@ -363,7 +363,7 @@ object AIProvider {
     // "bing" → Bing search via HTTP
     // "google_app" → Opens Google Search app directly via Intent (v2.2.2 NEW)
     private const val KEY_SEARCH_METHOD = "search_method"
-    val DEFAULT_SEARCH_METHOD = "duckduckgo"
+    val DEFAULT_SEARCH_METHOD = "google"  // v3.5.1: changed from duckduckgo to google
 
     fun getSearchMethod(context: Context): String {
         return getPrefs(context).getString(KEY_SEARCH_METHOD, DEFAULT_SEARCH_METHOD) ?: DEFAULT_SEARCH_METHOD
