@@ -75,9 +75,18 @@ class LLMClient(private val context: Context) {
         // Retry up to 3 times with increasing delay
         for (attempt in 1..3) {
             try {
+                // v3.6.2: compute max_tokens based on tool filter (tier proxy).
+                // Tier 1 (empty filter = no tools) → 100 tokens (short reply)
+                // Tier 2 (non-empty filter = contextual tools) → 500 tokens
+                // Tier 3 (null filter = all tools) → 2000 tokens
+                val maxTokens = when {
+                    toolFilter != null && toolFilter.isEmpty() -> 100
+                    toolFilter != null -> 500
+                    else -> 2000
+                }
                 val requestBody = when (provider.id) {
                     "gemini" -> buildGeminiRequest(model, userMessage, systemPrompt)
-                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter)
+                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, maxTokens)
                 }
 
                 // For Gemini, construct the full URL with model + API key
@@ -366,6 +375,7 @@ class LLMClient(private val context: Context) {
         systemPrompt: String,
         providerId: String,
         toolFilter: List<String>? = null,
+        maxTokens: Int = 2000,  // v3.6.2: per-tier max completion tokens
     ): String {
         val messages = JSONArray()
         messages.put(JSONObject().apply {
@@ -380,6 +390,8 @@ class LLMClient(private val context: Context) {
         val body = JSONObject().apply {
             put("model", model)
             put("messages", messages)
+            // v3.6.2: max_tokens per tier — stops brain from rambling on simple tasks.
+            put("max_tokens", maxTokens)
             // Z.ai (both proxy and direct) uses "thinking" param
             if (providerId == "zai" || providerId == "zai_direct") {
                 put("thinking", JSONObject().put("type", "disabled"))

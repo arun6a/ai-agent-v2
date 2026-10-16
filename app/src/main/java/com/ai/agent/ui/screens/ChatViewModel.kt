@@ -562,19 +562,37 @@ class ChatViewModel(
             } else {
                 DynamicPromptBuilder.buildPrompt(context, userMessage)
             }
-            val memory = database.getAllMemory()
-            // v3.4.1: Separate regular memories from avoid_* failure lessons.
-            // Regular memories: top 10 user facts (not avoid_ or workflow_ keys).
-            // Failure lessons: loaded separately + injected in their own section.
-            val regularMemories = memory.entries
-                .filter { !it.key.startsWith("avoid_") && !it.key.startsWith("workflow_") }
-                .take(10)
-            val memoryStr = if (memory.isEmpty()) {
+            // v3.6.2: Use FTS5 recallSimilar to find the 10 most RELEVANT memories
+            // for the current task, instead of taking the first 10 alphabetically.
+            val allMemory = database.getAllMemory()
+            val memoryStr = if (allMemory.isEmpty()) {
                 "No memories stored yet."
-            } else if (regularMemories.isEmpty()) {
-                "(only failure lessons stored — see below)"
             } else {
-                regularMemories.joinToString("\n") { "- ${it.key}: ${it.value}" }
+                // v3.4.1: Separate regular memories from avoid_* failure lessons.
+                val regularMemories = allMemory.entries
+                    .filter { !it.key.startsWith("avoid_") && !it.key.startsWith("workflow_") }
+                if (regularMemories.isEmpty()) {
+                    "(only failure lessons stored — see below)"
+                } else if (userMessage.length > 10) {
+                    // v3.6.2: use FTS5 to find relevant memories for this task.
+                    try {
+                        val similar = database.recallSimilar(userMessage, limit = 10)
+                        if (similar.isNotEmpty()) {
+                            // Filter out avoid_ and workflow_ keys (those go in separate sections).
+                            similar.filter { !it.first.startsWith("avoid_") && !it.first.startsWith("workflow_") }
+                                .joinToString("\n") { "- ${it.first}: ${it.second}" }
+                        } else {
+                            // FTS5 returned nothing — fall back to first 10.
+                            regularMemories.take(10).joinToString("\n") { "- ${it.key}: ${it.value}" }
+                        }
+                    } catch (_: Exception) {
+                        // FTS5 failed — fall back to first 10.
+                        regularMemories.take(10).joinToString("\n") { "- ${it.key}: ${it.value}" }
+                    }
+                } else {
+                    // Short message — just use first 10 (no point in FTS5 search).
+                    regularMemories.take(10).joinToString("\n") { "- ${it.key}: ${it.value}" }
+                }
             }
             var systemPrompt = "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
 
@@ -582,7 +600,7 @@ class ChatViewModel(
             // The avoid_* keys are saved when a tool gets stuck (line ~883).
             // Load them directly (not via FTS5) since there are usually <20 total.
             try {
-                val allAvoid = memory.entries
+                val allAvoid = allMemory.entries
                     .filter { it.key.startsWith("avoid_") }
                     .take(5)
                 if (allAvoid.isNotEmpty()) {
@@ -762,6 +780,14 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     Log.w(TAG, "Skill injection failed: ${e.message}")
                 }
             }
+
+            // v3.6.2: Per-iteration instruction moved here (was repeated every step).
+            // This saves ~50 tokens per iteration × every step.
+            systemPrompt += "\n\n## Agent Loop Instructions\n" +
+                "After receiving tool results, decide the next step. " +
+                "If the task is complete, reply with just the final message and no tool_calls. " +
+                "If a step failed, try a DIFFERENT approach (don't repeat the same action). " +
+                "If you need to verify, call readScreen()."
 
             // === 2. Build the conversation: recent history + user message ===
             // v2.2.0 Issue 113b — scope history to the CURRENT session only,
@@ -1049,10 +1075,11 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         val argsStr = argsStr(call.args)
                         toolSummary.append("\n• ${call.name}($argsStr) → ${if (dr.success) "✓" else "✗"}")
                         if (!dr.success) {
-                            toolSummary.append(" ${dr.output}")
+                            toolSummary.append(" ${dr.output.take(200)}")  // v3.6.2: truncate error in summary
                         }
                         resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
-                        resultsForLLM.append("Result: ${dr.output}\n\n")
+                        // v3.6.2: truncate tool results to 500 chars to slow conversation growth.
+                        resultsForLLM.append("Result: ${dr.output.take(500)}\n\n")
                     }
 
                     if (iteration == 1) {
@@ -1069,12 +1096,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     // Append results to conversation for the next LLM call.
                     conversation.append("\n\n[Tool results from step $iteration]:")
                     conversation.append(resultsForLLM)
-                    conversation.append(
-                        "\nBased on these results, decide the next step. " +
-                            "If the task is complete, reply with just the final message and no tool_calls. " +
-                            "If a step failed, try a DIFFERENT approach (don't repeat the same action). " +
-                            "If you need to verify, call readScreen()."
-                    )
+                    // v3.6.2: removed per-iteration instruction (was ~50 tokens repeated
+                    // every step). This instruction is now in the system prompt once.
+                    conversation.append("\n")  // minimal separator
 
                     // Trim old history to prevent conversation from growing too long.
                     if (conversation.length > MAX_CONVERSATION_CHARS) {
