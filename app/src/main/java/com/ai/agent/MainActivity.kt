@@ -63,8 +63,11 @@ class MainActivity : ComponentActivity() {
         startAgentService()                                 // Task 56
         startHttpServer()                                   // Task 57
         startRuleEngine()                                   // Task 58
-        showOverlay()                                       // Task 61
-        checkCriticalPermissions()                          // Task 60
+        // v3.5.4: Overlay pipeline disabled — will be re-added in a future version.
+        // showOverlay()                                       // Task 61
+        // v3.5.4: Permission requests disabled on launch — will be handled by the
+        // redesigned Permissions page. No more popups on app start.
+        // checkCriticalPermissions()                          // Task 60
 
         // Load the persisted theme mode (System / Light / Dark).
         ThemeManager.init(this)

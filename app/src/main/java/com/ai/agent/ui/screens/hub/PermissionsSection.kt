@@ -119,13 +119,18 @@ private val ALL_PERMISSIONS = listOf(
     ),
 
     // === OPTIONAL (12) ===
+    // v3.5.4: On Android 13+ (API 33+), READ_EXTERNAL_STORAGE does nothing.
+    // Use READ_MEDIA_IMAGES/VIDEO/AUDIO instead. On older Android, use the legacy one.
     PermEntry(
-        id = Manifest.permission.READ_EXTERNAL_STORAGE,
-        title = "Read External Storage",
+        id = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
+                "android.permission.READ_MEDIA_IMAGES"
+             else Manifest.permission.READ_EXTERNAL_STORAGE,
+        title = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
+                "Read Media (Images)" else "Read External Storage",
         tier = PermissionTier.OPTIONAL,
         type = PermType.RUNTIME,
-        why = "Read files from storage.",
-        tools = listOf("readFile", "listFiles", "readAttachment"),
+        why = "Read files, photos, and documents from storage.",
+        tools = listOf("readFile", "listFiles", "readAttachment", "takePhoto gallery access"),
     ),
     PermEntry(
         id = Manifest.permission.MANAGE_EXTERNAL_STORAGE,
@@ -134,14 +139,6 @@ private val ALL_PERMISSIONS = listOf(
         type = PermType.ALL_FILES,
         why = "Full file management anywhere on device.",
         tools = listOf("writeFile", "copyFile", "moveFile", "deleteFile"),
-    ),
-    PermEntry(
-        id = "android.permission.READ_MEDIA_IMAGES",
-        title = "Read Media (Images)",
-        tier = PermissionTier.OPTIONAL,
-        type = PermType.RUNTIME,
-        why = "Access photo gallery.",
-        tools = listOf("takePhoto gallery access"),
     ),
     PermEntry(
         id = Manifest.permission.RECORD_AUDIO,
