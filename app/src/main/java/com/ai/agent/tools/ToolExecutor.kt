@@ -105,6 +105,26 @@ class ToolExecutor(private val context: Context) {
         )
     }
 
+    // v3.6.0: Tool → required permission mapping for auto-detection.
+    // When a tool fails because its permission is missing, the user gets a toast.
+    val TOOL_PERMISSIONS: Map<String, List<String>> = mapOf(
+        "takePhoto" to listOf(android.Manifest.permission.CAMERA),
+        "sendSMS" to listOf(android.Manifest.permission.SEND_SMS),
+        "readContacts" to listOf(android.Manifest.permission.READ_CONTACTS),
+        "searchContacts" to listOf(android.Manifest.permission.READ_CONTACTS),
+        "callContact" to listOf(android.Manifest.permission.CALL_PHONE),
+        "makePhoneCall" to listOf(android.Manifest.permission.CALL_PHONE),
+        "getCurrentLocation" to listOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
+        "getWeather" to listOf(android.Manifest.permission.ACCESS_FINE_LOCATION),
+        "readFile" to listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE),
+        "listFiles" to listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE),
+        "writeFile" to listOf(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+        "sendEmail" to listOf(android.Manifest.permission.READ_CONTACTS),
+        "replyToNotification" to listOf("__notification_listener__"),
+        // readScreen, tap, clickByText, etc. need accessibility — but they already
+        // check service != null + return early. No extra check needed here.
+    )
+
     private val database = AgentDatabase(context)
 
     /**
@@ -173,6 +193,40 @@ class ToolExecutor(private val context: Context) {
         } else {
             waitForAccessibilityService()
                 ?: return ToolResult(false, "Accessibility service is not enabled. Open Settings → Accessibility → AI Agent → toggle ON. (This tool requires accessibility to control the screen.)")
+        }
+
+        // v3.6.0: Auto-detect missing permissions for specific tools.
+        // If a tool needs a permission that isn't granted, return an error
+        // with a helpful message instead of failing silently.
+        val requiredPerms = TOOL_PERMISSIONS[call.name]
+        if (requiredPerms != null) {
+            for (perm in requiredPerms) {
+                val granted = when (perm) {
+                    "__notification_listener__" -> {
+                        val expected = "${context.packageName}/com.ai.agent.rules.NotificationListener"
+                        val enabled = android.provider.Settings.Secure.getString(
+                            context.contentResolver, "enabled_notification_listeners"
+                        ) ?: ""
+                        enabled.contains(expected)
+                    }
+                    else -> androidx.core.content.ContextCompat.checkSelfPermission(context, perm) ==
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                }
+                if (!granted) {
+                    val friendlyName = when {
+                        perm.contains("CAMERA") -> "Camera"
+                        perm.contains("SMS") -> "Send SMS"
+                        perm.contains("CONTACTS") -> "Read Contacts"
+                        perm.contains("CALL_PHONE") -> "Call Phone"
+                        perm.contains("LOCATION") -> "Location"
+                        perm.contains("STORAGE") -> "Storage"
+                        perm == "__notification_listener__" -> "Notification Listener"
+                        else -> perm
+                    }
+                    return ToolResult(false,
+                        "Permission missing: $friendlyName. Open Hub → Permissions to grant it.")
+                }
+            }
         }
 
         // service is guaranteed non-null for accessibility tools (we returned early above if null)
