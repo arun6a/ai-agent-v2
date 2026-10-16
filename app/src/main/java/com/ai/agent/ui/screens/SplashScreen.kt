@@ -71,15 +71,10 @@ fun SplashScreen(
         showTitle = true
         delay(1500)
 
-        // v2.0.3: Use a "has_completed_onboarding" SharedPreferences flag
-        // to track true first-run. Previously we relied on `isConfigured()`
-        // which returns true for the default "zai" proxy (no API key needed),
-        // so onboarding NEVER triggered. Now it triggers once, until the user
-        // finishes onboarding (regardless of provider choice).
-        val prefs = context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE)
-        val hasCompletedOnboarding = prefs.getBoolean("has_completed_onboarding", false)
-        val needsOnboarding = !hasCompletedOnboarding
-        onFinished(needsOnboarding)
+        // v3.5.3: Onboarding flow temporarily disabled — will be redesigned with
+        // a new permission page + getting started flow. For now, always go to chat.
+        // The onboarding code (OnboardingScreen.kt) is kept for reference.
+        onFinished(false)  // false = skip onboarding, go straight to chat
     }
 
     Box(
