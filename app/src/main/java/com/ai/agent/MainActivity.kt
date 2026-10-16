@@ -61,7 +61,8 @@ class MainActivity : ComponentActivity() {
         // show the floating overlay button; finally verify permissions.
         createAppFolders()                                  // Task 59
         startAgentService()                                 // Task 56
-        startHttpServer()                                   // Task 57
+        // v3.7.2: Remote HTTP server (AgentHttpServer) removed — in-app Logs
+        // section replaces remote testing. See Hub → Logs.
         startRuleEngine()                                   // Task 58
         // v3.5.4: Overlay pipeline disabled — will be re-added in a future version.
         // showOverlay()                                       // Task 61
@@ -130,20 +131,9 @@ class MainActivity : ComponentActivity() {
     }
 
     // -------------------------------------------------------------------------
-    // Task 57: Start the mini HTTP server (port 8080) for remote screen
-    // control. The server exposes /tap, /swipe, /type, /screen, /screenshot,
-    // /pressBack, /pressHome, /pressEnter, /scrollDown, /scrollUp,
-    // /submitInput, /launchApp — all used by the chat agent loop + external
-    // MCP-style integrations.
+    // v3.7.2: AgentHttpServer (Task 57) removed — remote testing via HTTP is
+    // no longer practical. In-app Logs section (Hub → Logs) replaces it.
     // -------------------------------------------------------------------------
-    private fun startHttpServer() {
-        try {
-            com.ai.agent.service.AgentHttpServer.start(this)
-            Log.i(TAG, "AgentHttpServer started on port 8080")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start AgentHttpServer", e)
-        }
-    }
 
     // -------------------------------------------------------------------------
     // Task 58: Schedule all time-based rules via AlarmManager.

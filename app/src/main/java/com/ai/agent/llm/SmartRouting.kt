@@ -2,6 +2,7 @@ package com.ai.agent.llm
 
 import android.content.Context
 import android.util.Log
+import com.ai.agent.util.LogCapture
 
 /**
  * v3.3.6: SmartRouting — picks the right saved model for a user message
@@ -51,6 +52,7 @@ object SmartRouting {
             else -> default
         }
 
+        LogCapture.i(TAG, "Tier $tier → picked '${picked?.modelName ?: "none"}'")
         Log.i(TAG, "Tier $tier → picked '${picked?.modelName ?: "none"}'")
         return picked
     }
@@ -142,6 +144,7 @@ object SmartRouting {
         }
         // Filter out the primary itself (don't retry it).
         val filtered = chain.filter { it.id != primary.id }
+        LogCapture.i(TAG, "Fallback chain for '${primary.modelName}': ${filtered.map { it.modelName }}")
         Log.i(TAG, "Fallback chain for '${primary.modelName}': ${filtered.map { it.modelName }}")
         return filtered
     }

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Psychology
@@ -49,6 +50,7 @@ import com.ai.agent.ui.screens.hub.FilesSection
 import com.ai.agent.ui.screens.hub.HistorySection
 import com.ai.agent.ui.screens.hub.HubFooter
 import com.ai.agent.ui.screens.hub.KnowledgeSection
+import com.ai.agent.ui.screens.hub.LogsSection
 import com.ai.agent.ui.screens.hub.MemorySection
 import com.ai.agent.ui.screens.hub.PermissionsSection
 import com.ai.agent.ui.screens.hub.RulesSection
@@ -105,6 +107,7 @@ enum class HubSection(val label: String, val icon: ImageVector, val count: Strin
     AI_SETTINGS("AI Settings", Icons.Outlined.SmartToy),
     USAGE("Usage", Icons.Outlined.BarChart, "live"),
     PERMISSIONS("Permissions", Icons.Outlined.Verified, "14"),
+    LOGS("Logs", Icons.Outlined.Description),
     SETTINGS("Settings", Icons.Outlined.Settings),
 }
 
@@ -167,7 +170,7 @@ fun HubScreen(
                 }
             }
             Text(
-                text = "SECTIONS · 13",
+                text = "SECTIONS · 12",
                 color = custom.fg3,
                 fontFamily = MonoFontFamily,
                 fontSize = 10.sp,
@@ -216,6 +219,7 @@ fun HubScreen(
                     HubSection.AI_SETTINGS -> AiSettingsSection(onOpenProviderSettings = onOpenProviderSettings)
                     HubSection.USAGE -> UsageSection()
                     HubSection.PERMISSIONS -> PermissionsSection()
+                    HubSection.LOGS -> LogsSection()
                     HubSection.SETTINGS -> SettingsSection(onOpenSystemPromptEditor = onOpenSystemPromptEditor)
                 }
             }
@@ -230,7 +234,7 @@ fun HubScreen(
 // open the Hub directly on the Settings section).
 // ---------------------------------------------------------------------------
 
-enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, SETTINGS
+enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, LOGS, SETTINGS
     ;
     fun toHubSection(): HubSection = when (this) {
         HubSectionArg.HISTORY -> HubSection.HISTORY
@@ -243,6 +247,7 @@ enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FIL
         HubSectionArg.AI_SETTINGS -> HubSection.AI_SETTINGS
         HubSectionArg.USAGE -> HubSection.USAGE
         HubSectionArg.PERMISSIONS -> HubSection.PERMISSIONS
+        HubSectionArg.LOGS -> HubSection.LOGS
         HubSectionArg.SETTINGS -> HubSection.SETTINGS
     }
 }

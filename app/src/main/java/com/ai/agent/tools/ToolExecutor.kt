@@ -34,6 +34,7 @@ import com.ai.agent.tools.categories.ScreenTools
 import com.ai.agent.tools.categories.SkillTools
 import com.ai.agent.tools.categories.VisionTools
 import com.ai.agent.tools.categories.WebTools
+import com.ai.agent.util.LogCapture
 
 /**
  * Executes tool calls from the LLM.
@@ -138,7 +139,8 @@ class ToolExecutor(private val context: Context) {
         for (call in toolCalls) {
             val result = executeTool(call)
             results.add(result)
-            Log.d(TAG, "${call.name}(${call.args}) → ${result.success}: ${result.output.take(100)}")
+            val status = if (result.success) "✓" else "✗"
+            LogCapture.i(TAG, "tool: ${call.name}(${call.args.entries.joinToString(", ") { "${it.key}=${it.value}" }}) → $status ${result.output.take(80)}")
         }
         return results
     }
@@ -625,6 +627,8 @@ class ToolExecutor(private val context: Context) {
 
         if (actionsRaw.isEmpty()) return ToolResult(false, "actionChain: empty actions list")
 
+        LogCapture.i(TAG, "actionChain started (${actionsRaw.size} actions: ${actionsRaw.joinToString(", ") { (it["name"] as? String) ?: "?" }})")
+
         // Tools that are always unsafe (never chain without verification).
         val UNSAFE_TOOLS = setOf(
             "sendSMS", "sendEmail", "openWhatsAppChat", "deleteFile", "callContact",
@@ -650,6 +654,7 @@ class ToolExecutor(private val context: Context) {
             if (!safe) {
                 pausedForVerification = true
                 pauseIndex = index
+                LogCapture.w(TAG, "actionChain PAUSED at action ${index + 1}/$toolName — safe:false (verify before continuing)")
                 results.add("⏸️ PAUSED before action ${index + 1} ($toolName) — safe: false. Verify screen state before continuing.")
                 break
             }
@@ -658,10 +663,13 @@ class ToolExecutor(private val context: Context) {
             val subCall = LLMClient.ToolCall(toolName, toolArgs)
             val result = executeTool(subCall)
 
-            results.add("${index + 1}. $toolName(${toolArgs.entries.joinToString(", ") { "${it.key}=${it.value}" }}) → ${if (result.success) "✓" else "✗"} ${result.output.take(150)}")
+            val status = if (result.success) "✓" else "✗"
+            LogCapture.i(TAG, "actionChain ${index + 1}/${actionsRaw.size}: $toolName(${toolArgs.entries.joinToString(", ") { "${it.key}=${it.value}" }}) → $status")
+            results.add("${index + 1}. $toolName(${toolArgs.entries.joinToString(", ") { "${it.key}=${it.value}" }}) → $status ${result.output.take(150)}")
 
             if (!result.success) {
                 chainFailed = true
+                LogCapture.e(TAG, "actionChain FAILED at action ${index + 1} ($toolName): ${result.output.take(100)}")
                 results.add("❌ Chain stopped at action ${index + 1} ($toolName failed).")
                 break
             }
@@ -693,7 +701,15 @@ class ToolExecutor(private val context: Context) {
         return ToolResult(
             success = !chainFailed,  // paused = success (brain decides next step)
             output = summary,
-        )
+        ).also {
+            if (chainFailed) {
+                LogCapture.e(TAG, "actionChain ended: FAILED (${results.size} actions done)")
+            } else if (pausedForVerification) {
+                LogCapture.w(TAG, "actionChain ended: PAUSED at $pauseIndex (${results.size} actions done)")
+            } else {
+                LogCapture.i(TAG, "actionChain ended: completed (${results.size} actions)")
+            }
+        }
     }
 
     // ==================== VISION (VLM) ====================

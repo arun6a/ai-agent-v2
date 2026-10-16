@@ -14,6 +14,7 @@ import com.ai.agent.llm.DynamicPromptBuilder
 import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
+import com.ai.agent.util.LogCapture
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -541,6 +542,7 @@ class ChatViewModel(
     // ---- the agent loop (ported from v1 MainActivity.runAgentLoop) ----
 
     private suspend fun runAgentLoop(userMessage: String) {
+        LogCapture.i(TAG, "===== Agent loop started: ${userMessage.take(80)} =====")
         val workLog = StringBuilder()
         try {
             // v3.0.8: Contextual Prompts — select relevant tool groups based on user message
@@ -557,7 +559,7 @@ class ChatViewModel(
             } else false
             val basePrompt = if (contextualEnabled) {
                 val cp = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
-                Log.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(cp)} tokens, tools=${contextualToolFilter?.size ?: "all"}")
+                LogCapture.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(cp)} tokens, tools=${contextualToolFilter?.size ?: "all"}")
                 cp
             } else {
                 DynamicPromptBuilder.buildPrompt(context, userMessage)
@@ -845,7 +847,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 com.ai.agent.llm.ApiKeyStore.getCachingSupport(it) == true
             } ?: false
             if (cachingEnabled) {
-                Log.i(TAG, "Prompt caching ENABLED — system prompt will stay stable mid-loop")
+                LogCapture.i(TAG, "Prompt caching ENABLED — system prompt will stay stable mid-loop")
             }
 
             // v2.0.9 Task 93: Per-task + per-step timeout guards.
@@ -867,7 +869,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             val pickedModel = com.ai.agent.llm.SmartRouting.pickModelForMessage(context, userMessage)
             if (pickedModel != null) {
                 com.ai.agent.llm.SavedModelsStore.applyModelForRouting(context, pickedModel.id)
-                Log.i(TAG, "SmartRouting: picked '${pickedModel.modelName}' for this message")
+                LogCapture.i(TAG, "SmartRouting: picked '${pickedModel.modelName}' for this message")
             }
 
             // v3.5.0: P0-2 — Planning step for complex tasks.
@@ -878,12 +880,12 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 val tier = com.ai.agent.llm.ContextualPromptBuilder.getTier(userMessage)
                 if (tier == 3 && userMessage.length > 50) {
                     try {
-                        Log.i(TAG, "Planning: generating plan for complex task (tier=$tier, len=${userMessage.length})")
+                        LogCapture.i(TAG, "Planning: generating plan for complex task (tier=$tier, len=${userMessage.length})")
                         val planPrompt = "Break this task into 3-7 ordered steps. Reply with ONLY the steps, one per line, numbered. Task: $userMessage"
                         val planResponse = llmClient.chat(planPrompt, "You are a task planning assistant. Be concise.")
                         if (planResponse.reply.isNotBlank()) {
                             conversation.append("[PLAN]:\n${planResponse.reply.take(500)}\n\n")
-                            Log.i(TAG, "Plan generated: ${planResponse.reply.take(100)}")
+                            LogCapture.i(TAG, "Plan generated: ${planResponse.reply.take(100)}")
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Planning failed (non-fatal): ${e.message}")
@@ -898,11 +900,12 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 if (System.currentTimeMillis() - taskStartTime > TASK_TIMEOUT_MS) {
                     finalReply = "⏰ Task timed out after 3 minutes. Here's what I accomplished:\n$workLog"
                     _state.update { it.copy(error = "Task timeout") }
-                    Log.w(TAG, "Task timed out after ${TASK_TIMEOUT_MS}ms — breaking loop")
+                    LogCapture.w(TAG, "Task timed out after ${TASK_TIMEOUT_MS}ms — breaking loop")
                     break
                 }
 
                 iteration++
+                LogCapture.i(TAG, "----- Iteration $iteration started (API calls: ${ApiUsageTracker.getTaskCalls()}) -----")
                 _state.update {
                     it.copy(
                         currentIteration = iteration,
@@ -923,7 +926,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         "Are you making progress toward the goal? " +
                         "If stuck, switch approach NOW. Don't repeat the same action."
                     )
-                    Log.i(TAG, "Reflection check injected at iteration $iteration")
+                    LogCapture.i(TAG, "Reflection check injected at iteration $iteration")
                 }
 
                 // ---- Per-step timeout (30 seconds) ----
@@ -1002,10 +1005,11 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                                         .replace(Regex("[^a-zA-Z0-9_]"), "")
                                 }"
                                 database.remember(workflowKey, workLog.toString().take(500))
-                                Log.i(TAG, "Saved workflow: $workflowKey (${workLog.length} chars)")
+                                LogCapture.i(TAG, "Saved workflow: $workflowKey (${workLog.length} chars)")
                             } catch (_: Exception) {
                             }
                         }
+                        LogCapture.i(TAG, "✓ No tool calls → task complete after $iteration iterations (${ApiUsageTracker.getTaskCalls()} API calls)")
                         return@withTimeoutOrNull false // task complete, break loop
                     }
 
@@ -1151,7 +1155,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     null -> {
                         // Step timed out — surface a message and let the next
                         // iteration try a (hopefully) faster path.
-                        Log.w(TAG, "Step $iteration timed out after ${STEP_TIMEOUT_MS}ms")
+                        LogCapture.w(TAG, "Step $iteration timed out after ${STEP_TIMEOUT_MS}ms")
                         addAiStepMessage(
                             "⏱️ Step $iteration timed out after 30s — retrying with a simpler approach.",
                             emptyList(),
@@ -1217,7 +1221,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             }
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Agent loop failed", e)
+            LogCapture.e(TAG, "Agent loop failed: ${e.message ?: e::class.simpleName}")
             val msg = "Error: ${e.message ?: e::class.simpleName}"
             _state.update { it.copy(error = msg, isThinking = false, isExecuting = false) }
             addAiFinalMessage(msg, MessageStatus.ERROR)
@@ -1282,7 +1286,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                                 success = r.success,
                                 output = combinedOutput,
                             )
-                            Log.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars)")
+                            LogCapture.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars)")
                         }
                     }
                 } catch (e: Exception) {

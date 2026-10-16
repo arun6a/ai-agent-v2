@@ -2,6 +2,7 @@ package com.ai.agent.llm
 
 import android.content.Context
 import android.util.Log
+import com.ai.agent.util.LogCapture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -61,7 +62,7 @@ class LLMClient(private val context: Context) {
         val endpoint = AIProvider.getEndpoint(context)
         val model = AIProvider.getModel(context)
 
-        Log.i("LLMClient", "Provider: ${provider.id}, Model: $model, Endpoint: $endpoint, tools=${toolFilter?.size ?: "all"}")
+        LogCapture.i("LLMClient", "Provider: ${provider.id}, Model: $model, Endpoint: $endpoint, tools=${toolFilter?.size ?: "all"}")
 
         if (provider.needsApiKey && apiKey.isEmpty()) {
             return@withContext LLMResponse(
@@ -146,7 +147,7 @@ class LLMClient(private val context: Context) {
                             responseBody.contains("exhausted", ignoreCase = true)
                     val waitMs = if (isDaily) {
                         // Daily quota exhausted — no point retrying, return error immediately.
-                        Log.w("LLMClient", "Daily quota exhausted (429) — not retrying")
+                        LogCapture.w("LLMClient", "Daily quota exhausted (429) — not retrying")
                         lastError = "Daily quota exhausted. Try a different provider or wait until tomorrow."
                         return@withContext LLMResponse(
                             "⚠️ Daily quota exhausted for ${provider.name}.\n\n" +
@@ -160,7 +161,7 @@ class LLMClient(private val context: Context) {
                         // Per-minute limit — wait longer between retries (Gemini free tier = 15/min).
                         attempt * 8000L  // 8s, 16s, 24s
                     }
-                    Log.w("LLMClient", "Rate limited (429) ${if (isDaily) "[daily]" else "[per-minute]"}, waiting ${waitMs}ms before retry $attempt/3")
+                    LogCapture.w("LLMClient", "Rate limited (429) ${if (isDaily) "[daily]" else "[per-minute]"}, waiting ${waitMs}ms before retry $attempt/3")
                     lastError = "Rate limited (429). ${if (isDaily) "Daily quota exhausted." else "Per-minute limit — waiting..."}"
                     if (!isDaily) {
                         Thread.sleep(waitMs)
@@ -170,7 +171,7 @@ class LLMClient(private val context: Context) {
 
                 // v2.1.1: Handle Cline 402 (insufficient credits) + other payment-required errors.
                 if (response.code == 402) {
-                    Log.w("LLMClient", "Payment required (402): $responseBody")
+                    LogCapture.w("LLMClient", "Payment required (402): $responseBody")
                     return@withContext LLMResponse(
                         "⚠️ Insufficient credits on ${provider.name}.\n\n" +
                                 responseBody.take(300).let {
@@ -186,12 +187,12 @@ class LLMClient(private val context: Context) {
                     // v2.1.2: Strip HTML from error body (was showing raw HTML to user).
                     val cleanedBody = cleanErrorBody(responseBody)
                     val code = response.code
-                    Log.e("LLMClient", "API error $code: ${cleanedBody.take(200)}")
+                    LogCapture.e("LLMClient", "API error $code: ${cleanedBody.take(200)}")
 
                     // 502/503/504 = provider server down/overloaded. Retry with longer wait.
                     if (code in setOf(500, 502, 503, 504)) {
                         val waitMs = attempt * 4000L  // 4s, 8s, 12s
-                        Log.w("LLMClient", "Server error $code (attempt $attempt/3), waiting ${waitMs}ms")
+                        LogCapture.w("LLMClient", "Server error $code (attempt $attempt/3), waiting ${waitMs}ms")
                         lastError = "Server error $code"
                         if (attempt < 3) {
                             Thread.sleep(waitMs)
@@ -302,7 +303,7 @@ class LLMClient(private val context: Context) {
             triedBindings.add(binding.id)
             // Apply this binding to AIProvider (so chat() uses it).
             SavedModelsStore.applyBindingForFailover(context, pickedModel.id, binding.id)
-            Log.i("LLMClient", "Failover: trying binding ${binding.providerName} (#${binding.priority}) for ${pickedModel.modelName}")
+            LogCapture.i("LLMClient", "Failover: trying binding ${binding.providerName} (#${binding.priority}) for ${pickedModel.modelName}")
             val resp = chat(userMessage, systemPrompt, toolFilter)
             if (resp.reply.isNotEmpty() && !isPermanentFailure(resp)) {
                 // Success — record + return.
@@ -312,14 +313,14 @@ class LLMClient(private val context: Context) {
             // Permanent failure — record + try next.
             BindingHealthStore.recordFailure(binding.id, resp.reply.take(100), context)
             lastResp = resp
-            Log.w("LLMClient", "Binding ${binding.providerName} failed: ${resp.reply.take(80)}")
+            LogCapture.w("LLMClient", "Binding ${binding.providerName} failed: ${resp.reply.take(80)}")
         }
         // v3.3.7: All bindings of the picked model failed — try cross-model fallback.
         // This is the missing piece for "Sandbox goes down → try Gemini Flash".
         if (AutoFallbackSettings.isAutoFallbackModelsEnabled(context)) {
             val fallbackChain = SmartRouting.pickFallbackChain(context, pickedModel)
             for (fallbackModel in fallbackChain) {
-                Log.i("LLMClient", "Cross-model failover: trying '${fallbackModel.modelName}'")
+                LogCapture.i("LLMClient", "Cross-model failover: trying '${fallbackModel.modelName}'")
                 SavedModelsStore.applyModelForRouting(context, fallbackModel.id)
                 val fallbackBindings = fallbackModel.activeBindings()
                 for (binding in fallbackBindings) {

@@ -129,28 +129,6 @@ fun ChatScreen(
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // v3.7.1: Listen for remote chat messages from the HTTP server (/chat endpoint).
-    // When AgentHttpServer receives GET /chat?message=X, it broadcasts an intent.
-    // This receiver picks it up + calls sendMessage on the ViewModel.
-    val remoteChatReceiver = remember {
-        object : android.content.BroadcastReceiver() {
-            override fun onReceive(ctx: android.content.Context?, intent: android.content.Intent?) {
-                val msg = intent?.getStringExtra("message") ?: return
-                Log.i("ChatScreen", "Remote chat message received: $msg")
-                viewModel.sendMessage(msg)
-            }
-        }
-    }
-    DisposableEffect(Unit) {
-        val filter = android.content.IntentFilter("com.ai.agent.REMOTE_CHAT")
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(remoteChatReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
-        } else {
-            context.registerReceiver(remoteChatReceiver, filter)
-        }
-        onDispose { context.unregisterReceiver(remoteChatReceiver) }
-    }
-
     // v2.2.0 Issue 113e — Load the session id passed from navigation.
     LaunchedEffect(pendingSessionId) {
         if (pendingSessionId != null && pendingSessionId != 0L) {
