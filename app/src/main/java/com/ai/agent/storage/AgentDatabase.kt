@@ -328,7 +328,7 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                         val name = it.getString(0) ?: ""
                         val content = it.getString(1) ?: ""
                         val rawScore = it.getFloat(2)
-                        val normalized = (1f / (1f + kotlin.math.abs(rawScore) / 10f)).coerceIn(0f, 1f)
+                        val normalized = (kotlin.math.abs(rawScore) / 10f).coerceIn(0f, 1f)
                         results.add(Triple(name, content, normalized))
                     }
                 }
@@ -613,7 +613,7 @@ class AgentDatabase(context: Context) : SQLiteOpenHelper(context, DB_NAME, null,
                         // Normalize: abs(raw) gives 0..inf. 1/(1+abs) gives 1..0.
                         // But bm25 of -5 (good match) → 1/(1+5) = 0.167 (low).
                         // Better: use 1/(1+abs(raw)/10) so -5 → 1/(1+0.5) = 0.67 (high).
-                        val normalized = (1f / (1f + kotlin.math.abs(rawScore) / 10f)).coerceIn(0f, 1f)
+                        val normalized = (kotlin.math.abs(rawScore) / 10f).coerceIn(0f, 1f)
                         results.add(Triple(key, value, normalized))
                     }
                 }

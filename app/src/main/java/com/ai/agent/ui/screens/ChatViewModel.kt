@@ -617,15 +617,31 @@ class ChatViewModel(
             if (userMessage.length > 20) {
                 try {
                     val knowledgeHits = database.recallKnowledge(userMessage, limit = 3)
-                    if (knowledgeHits.isNotEmpty()) {
-                        val relevantHits = knowledgeHits.filter { it.third > 0.01f }
-                        if (relevantHits.isNotEmpty()) {
-                            systemPrompt += "\n\n## Relevant Knowledge (auto-recalled)\n"
-                            relevantHits.forEach { (name, content, _) ->
-                                systemPrompt += "### $name\n${content.take(500)}...\n\n"
-                            }
-                            systemPrompt += "Use recallKnowledge(query) for deeper search if needed."
+                    val relevantHits = knowledgeHits.filter { it.third > 0.10f }.toMutableList()
+
+                    // v3.4.1: Name-based check — if the user message contains a
+                    // knowledge doc's name (or first word of it), inject it even
+                    // if FTS5 score is low. Catches "what's in the Q4 report?"
+                    // when the doc is named "Q4 Report".
+                    val allKnowledge = database.getAllKnowledge()
+                    val msgLower = userMessage.lowercase()
+                    for ((name, content, _) in allKnowledge) {
+                        // Check if any significant word from the doc name appears in the message.
+                        val nameWords = name.lowercase()
+                            .split(Regex("\\W+"))
+                            .filter { it.length > 2 }
+                        val matched = nameWords.any { word -> msgLower.contains(word) }
+                        if (matched && relevantHits.none { it.first == name }) {
+                            relevantHits.add(Triple(name, content, 0.5f))  // synthetic score
                         }
+                    }
+
+                    if (relevantHits.isNotEmpty()) {
+                        systemPrompt += "\n\n## Relevant Knowledge (auto-recalled)\n"
+                        relevantHits.take(3).forEach { (name, content, _) ->
+                            systemPrompt += "### $name\n${content.take(500)}...\n\n"
+                        }
+                        systemPrompt += "Use recallKnowledge(query) for deeper search if needed."
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Knowledge auto-recall failed: ${e.message}")
