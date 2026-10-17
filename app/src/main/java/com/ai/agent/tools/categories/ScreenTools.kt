@@ -37,8 +37,15 @@ object ScreenTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "tap" -> {
-                val x = (call.args["x"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing x")
-                val y = (call.args["y"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing y")
+                // v3.7.3: If the brain passes target=, redirect to clickByText.
+                // The brain sometimes guesses tap(target="Search") — this makes it work
+                // instead of failing with "missing x". Works for ALL apps.
+                val target = call.args["target"] as? String
+                if (target != null) {
+                    return ToolExecutor.ToolResult(service!!.clickByText(target), "tap→clickByText($target)")
+                }
+                val x = (call.args["x"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing x. Pass {x, y} for coordinates OR {target: \"text\"} to click by text.")
+                val y = (call.args["y"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing y. Pass {x, y} for coordinates OR {target: \"text\"} to click by text.")
                 ToolExecutor.ToolResult(service!!.tap(x, y), "tap($x, $y)")
             }
             "clickByText" -> {

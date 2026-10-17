@@ -434,34 +434,10 @@ class LLMClient(private val context: Context) {
      * empty array (no tools at all — Tier 1 greeting case).
      */
     private fun buildToolsArray(filter: List<String>? = null): JSONArray {
-        val tools = JSONArray()
-        // When the caller passes an empty filter, return an empty array —
-        // the LLM should just reply with text, no tool_calls.
-        if (filter != null && filter.isEmpty()) {
-            return tools
-        }
-        val toolNames = com.ai.agent.tools.ToolExecutor.getAvailableToolNames()
-        for (name in toolNames) {
-            // v3.2.9: apply the contextual filter when one is provided.
-            if (filter != null && name !in filter) continue
-
-            val parameters = JSONObject()
-                .put("type", "object")
-                .put("properties", JSONObject())
-                .put("additionalProperties", true)
-
-            val function = JSONObject()
-                .put("name", name)
-                .put("description", "Execute the $name tool on the Android phone")
-                .put("parameters", parameters)
-
-            val tool = JSONObject()
-                .put("type", "function")
-                .put("function", function)
-
-            tools.put(tool)
-        }
-        return tools
+        // v3.7.3: Use real parameter schemas from ToolSchemas (was empty {} before).
+        // The brain can now SEE what parameters each tool needs instead of guessing.
+        // Covers all 130 tools — see ToolSchemas.kt for the full registry.
+        return com.ai.agent.llm.ToolSchemas.buildToolsArray(filter)
     }
 
     /**

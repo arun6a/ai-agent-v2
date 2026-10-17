@@ -86,7 +86,7 @@ class ToolExecutor(private val context: Context) {
             "readContacts", "searchContacts",
             "getCalendarEvents", "createCalendarEvent", "setAlarm", "setTimer",
             "sendSMS", "callContact", "getCallLog", "sendEmail",
-            "openDialer", "makePhoneCall", "composeEmail",
+            "makePhoneCall", "composeEmail",
             // Files
             "listFiles", "readFile", "writeFile", "copyFile", "moveFile", "deleteFile", "createDirectory",
             "listAttachments", "readAttachment", "sendAttachmentTo",
