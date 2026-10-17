@@ -207,8 +207,24 @@ class AgentAccessibilityService : AccessibilityService() {
 
     fun clickByText(text: String): Boolean {
         val root = rootInActiveWindow ?: return false
+        // 1. Exact match
         findNodeByText(root, text)?.let { return performClick(it) }
+        // 2. Contains match (full text)
         findNodeContainingText(root, text)?.let { return performClick(it) }
+        // v3.8.1: 3. Try shorter substrings — YouTube splits titles across nodes
+        // e.g., brain passes "BLACKPINK - 'Pink Venom' M/V" but a11y has "Pink Venom" in one node
+        if (text.length > 10) {
+            // Try the first 20 chars
+            val short = text.take(20)
+            findNodeContainingText(root, short)?.let { return performClick(it) }
+            // Try words after " - " (common in YouTube titles: "Artist - Song")
+            val parts = text.split(" - ", " | ", " — ")
+            for (part in parts) {
+                if (part.length >= 5) {
+                    findNodeContainingText(root, part)?.let { return performClick(it) }
+                }
+            }
+        }
         return false
     }
 

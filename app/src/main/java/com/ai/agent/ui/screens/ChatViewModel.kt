@@ -851,6 +851,8 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
 
             // === 3. Loop state ===
             val toolCallHistory = mutableListOf<String>()
+            // v3.8.1: Track unique tools that FAILED — if 3 different approaches fail, STOP.
+            val failedApproachTools = mutableSetOf<String>()
             var finalReply = ""
             var iteration = 0
 
@@ -1047,17 +1049,20 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         val count = toolCallHistory.count { it == signature }
 
                         // v2.3.7: Strategy switching — after 1 failure, inject alternatives into the conversation.
+                        // v3.8.1: Made more forceful — suggests readScreenStructured, different tools, re-planning.
                         // Give the AI a chance to switch strategy BEFORE hitting the MAX_REPEATED_TOOLS stop.
                         if (count == 1) {
                             val alternatives = getStrategyAlternatives(call.name)
-                            if (alternatives.isNotEmpty()) {
-                                conversation.append(
-                                    "\n\n⚠️ STRATEGY SWITCH: You just tried \"$signature\" and it may not be working. " +
-                                        "If it fails again, you MUST try a DIFFERENT approach:\n$alternatives\n" +
-                                        "Do NOT repeat the same tool with the same args. Switch strategy NOW."
-                                )
-                                Log.i(TAG, "Strategy switch injected for $signature (attempt 1 — early warning)")
-                            }
+                            conversation.append(
+                                "\n\n⚠️ STRATEGY SWITCH REQUIRED: \"$signature\" failed once. " +
+                                    "Do NOT repeat it with the same args. You have 2 options:\n" +
+                                    "1. Use a DIFFERENT TOOL:\n$alternatives\n" +
+                                    "2. RE-PLAN: call readScreenStructured() to see the actual screen state, " +
+                                    "then choose a different approach based on what you see.\n\n" +
+                                    "If this approach fails again, I will count it as a 2nd failure. " +
+                                    "After 3 different approaches fail, I will STOP the task."
+                            )
+                            LogCapture.w(TAG, "Strategy switch injected for $signature (attempt 1 — must switch now)")
                         }
 
                         if (count >= MAX_REPEATED_TOOLS) {
@@ -1136,10 +1141,32 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         toolSummary.append("\n• ${call.name}($argsStr) → ${if (dr.success) "✓" else "✗"}")
                         if (!dr.success) {
                             toolSummary.append(" ${dr.output.take(200)}")  // v3.6.2: truncate error in summary
+                            // v3.8.1: Track unique FAILED tools for the 3-approach cap.
+                            // Skip read-only verification tools (readScreen, readScreenStructured, wait) —
+                            // they don't count as "approaches" since they're for gathering info, not acting.
+                            val isVerificationTool = call.name in setOf("readScreen", "readScreenStructured", "wait", "waitAndContinue")
+                            if (!isVerificationTool) {
+                                failedApproachTools.add(call.name)
+                            }
                         }
                         resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
                         // v3.6.2: truncate tool results to 500 chars to slow conversation growth.
                         resultsForLLM.append("Result: ${dr.output.take(500)}\n\n")
+                    }
+
+                    // v3.8.1: 3-different-approach cap.
+                    // If 3 unique action tools failed, STOP — the task isn't solvable with current approaches.
+                    if (failedApproachTools.size >= 3) {
+                        finalReply = "I tried 3 different approaches and none worked:\n" +
+                            "  1. ${failedApproachTools.elementAt(0)}\n" +
+                            "  2. ${failedApproachTools.elementAt(1)}\n" +
+                            "  3. ${failedApproachTools.elementAt(2)}\n\n" +
+                            "The screen might be in an unexpected state, or this task needs a different strategy.\n\n" +
+                            "What I tried:\n$workLog\n\n" +
+                            "Suggestions: check the screen manually, or describe what you see to me so I can help differently."
+                        LogCapture.w(TAG, "3-different-approach cap reached: $failedApproachTools — stopping task")
+                        addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
+                        return@withTimeoutOrNull false // stop the loop
                     }
 
                     if (iteration == 1) {

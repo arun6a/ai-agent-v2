@@ -369,8 +369,21 @@ object ContextualPromptBuilder {
     /**
      * Check if message needs no tools.
      */
+    /**
+     * v3.8.1: Check if a message needs no tools (Tier 1 — greetings, simple replies).
+     *
+     * Uses exact match or word-boundary matching (not startsWith).
+     * v3.8.0 bug: 'now play ar rahman...' matched 'no' (startsWith) → Tier 1 → no tools.
+     * Fixed: now requires the pattern to be the ENTIRE message OR followed by a word boundary.
+     */
     private fun isNoToolMessage(msg: String): Boolean {
-        return NO_TOOL_PATTERNS.any { msg == it || msg.startsWith(it) }
+        return NO_TOOL_PATTERNS.any { pattern ->
+            msg == pattern ||
+            msg.startsWith(pattern + " ") ||  // "hi there" matches "hi"
+            msg.startsWith(pattern + "!") ||
+            msg.startsWith(pattern + ".") ||
+            msg.startsWith(pattern + "?")
+        }
     }
 
     /**
