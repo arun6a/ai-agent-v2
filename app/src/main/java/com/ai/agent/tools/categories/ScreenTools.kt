@@ -38,14 +38,17 @@ object ScreenTools {
         return when (call.name) {
             "tap" -> {
                 // v3.7.3: If the brain passes target=, redirect to clickByText.
-                // The brain sometimes guesses tap(target="Search") — this makes it work
-                // instead of failing with "missing x". Works for ALL apps.
                 val target = call.args["target"] as? String
                 if (target != null) {
                     return ToolExecutor.ToolResult(service!!.clickByText(target), "tap→clickByText($target)")
                 }
                 val x = (call.args["x"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing x. Pass {x, y} for coordinates OR {target: \"text\"} to click by text.")
                 val y = (call.args["y"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing y. Pass {x, y} for coordinates OR {target: \"text\"} to click by text.")
+                // v3.7.7: Reject out-of-bounds taps — screen is 1080x2400.
+                // The brain sometimes hallucinates coords like tap(2248, 1411) which are impossible.
+                if (x > 1080 || y > 2400 || x < 0 || y < 0) {
+                    return ToolExecutor.ToolResult(false, "tap($x, $y) is OUT OF BOUNDS — screen is 1080x2400. Call readScreenStructured() to get real element bounds, then tap the center: x=(left+right)/2, y=(top+bottom)/2.")
+                }
                 ToolExecutor.ToolResult(service!!.tap(x, y), "tap($x, $y)")
             }
             "clickByText" -> {
