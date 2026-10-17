@@ -52,6 +52,7 @@ fun BrainBehaviorPage(onToast: (String) -> Unit) {
     var reflection by remember { mutableStateOf(AgentThinkingSettings.isReflectionEnabled(context)) }
     var planning by remember { mutableStateOf(AgentThinkingSettings.isPlanningEnabled(context)) }
     var verification by remember { mutableStateOf(AgentThinkingSettings.isVerificationEnabled(context)) }
+    var planThenAct by remember { mutableStateOf(AgentThinkingSettings.isPlanThenActEnabled(context)) }
 
     // Learning toggles
     var alwaysLearn by remember { mutableStateOf(AgentThinkingSettings.isAlwaysLearnEnabled(context)) }
@@ -102,6 +103,13 @@ fun BrainBehaviorPage(onToast: (String) -> Unit) {
             description = "After send/delete/email actions, brain reads screen to confirm it worked. Catches 'thought I sent but didn't' bugs.",
             checked = verification,
             onCheck = { verification = it; AgentThinkingSettings.setVerificationEnabled(context, it); onToast("Post-action verification: ${if (it) "ON" else "OFF"}") },
+            custom = custom,
+        )
+        BehaviorToggleCard(
+            title = "Plan-then-Act (v3.8.0)",
+            description = "On first response to a complex task, brain states its plan (2-3 lines), then starts executing step 1. Plan stays in history so it follows step-by-step. No extra API call. Turn ON when teaching new tasks — the saved skill captures the planned flow.",
+            checked = planThenAct,
+            onCheck = { planThenAct = it; AgentThinkingSettings.setPlanThenActEnabled(context, it); onToast("Plan-then-Act: ${if (it) "ON" else "OFF"}") },
             custom = custom,
         )
 

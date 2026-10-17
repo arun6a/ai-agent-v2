@@ -797,6 +797,23 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 }
             }
 
+            // v3.8.0: Plan-then-Act — when enabled, brain states its plan on the FIRST
+            // response to a complex task, then starts executing. The plan stays in
+            // conversation history so subsequent iterations follow it step-by-step.
+            // No extra API call — the plan is in the reply text of iteration 1.
+            // Default OFF (opt-in) — turn ON when teaching new tasks.
+            if (!isTier1 && com.ai.agent.llm.AgentThinkingSettings.isPlanThenActEnabled(context)) {
+                systemPrompt += "\n\n## Plan-then-Act (ENABLED)\n" +
+                    "On your FIRST response to a complex multi-step task, state your plan in 2-3 lines, then start executing step 1 in the SAME response.\n" +
+                    "Format: \"Plan: 1) ... 2) ... 3) ... Starting step 1: <tool call>\"\n" +
+                    "The plan stays in conversation history. Subsequent iterations: follow the plan in order. If reality differs from the plan, adapt — don't blindly follow a broken plan.\n" +
+                    "Example first response:\n" +
+                    "  reply: \"I'll play BLACKPINK on YouTube. Plan: 1) searchInApp 2) readScreenStructured 3) tap first video. Starting step 1.\"\n" +
+                    "  tool_calls: [{\"name\":\"searchInApp\",\"args\":{\"package\":\"com.google.android.youtube\",\"query\":\"BLACKPINK\"}}]\n" +
+                    "Simple tasks (greetings, single-tool) don't need a plan — just act."
+                LogCapture.i(TAG, "Plan-then-Act: enabled (brain will state plan on first response)")
+            }
+
             // v3.6.2: Per-iteration instruction moved here (was repeated every step).
             // This saves ~50 tokens per iteration × every step.
             systemPrompt += "\n\n## Agent Loop Instructions\n" +
