@@ -803,14 +803,18 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             // No extra API call — the plan is in the reply text of iteration 1.
             // Default OFF (opt-in) — turn ON when teaching new tasks.
             if (!isTier1 && com.ai.agent.llm.AgentThinkingSettings.isPlanThenActEnabled(context)) {
-                systemPrompt += "\n\n## Plan-then-Act (ENABLED)\n" +
-                    "On your FIRST response to a complex multi-step task, state your plan in 2-3 lines, then start executing step 1 in the SAME response.\n" +
-                    "Format: \"Plan: 1) ... 2) ... 3) ... Starting step 1: <tool call>\"\n" +
-                    "The plan stays in conversation history. Subsequent iterations: follow the plan in order. If reality differs from the plan, adapt — don't blindly follow a broken plan.\n" +
-                    "Example first response:\n" +
-                    "  reply: \"I'll play BLACKPINK on YouTube. Plan: 1) searchInApp 2) readScreenStructured 3) tap first video. Starting step 1.\"\n" +
-                    "  tool_calls: [{\"name\":\"searchInApp\",\"args\":{\"package\":\"com.google.android.youtube\",\"query\":\"BLACKPINK\"}}]\n" +
-                    "Simple tasks (greetings, single-tool) don't need a plan — just act."
+                systemPrompt += "\n\n## Plan-then-Act (MANDATORY — you MUST follow this)\n" +
+                    "On your FIRST response to a complex multi-step task, you MUST start your reply with \"Plan:\" followed by 2-4 numbered steps, then start executing step 1 in the SAME response.\n\n" +
+                    "REQUIRED FORMAT (do not deviate):\n" +
+                    "  reply: \"Plan: 1) <first step> 2) <second step> 3) <third step>. Starting step 1.\"\n" +
+                    "  tool_calls: [<step 1 tool call>]\n\n" +
+                    "RULES:\n" +
+                    "- Your reply MUST start with \"Plan:\". If it doesn't, the response is INVALID.\n" +
+                    "- State 2-4 steps max. Be concise.\n" +
+                    "- After stating the plan, include the tool_call for step 1 in the SAME response.\n" +
+                    "- The plan stays in conversation history. Subsequent iterations: follow the plan in order.\n" +
+                    "- If reality differs from the plan (tool fails, unexpected screen), adapt — update the plan in your reply.\n" +
+                    "- Simple tasks (greetings, single-tool like getBatteryLevel) don't need a plan — just act.\n"
                 LogCapture.i(TAG, "Plan-then-Act: enabled (brain will state plan on first response)")
             }
 
@@ -973,6 +977,12 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     // when the user just said "hi" or only needs a small tool group.
                     // v3.3.2: use chatWithFailover so multi-binding auto-failover works.
                     val llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, contextualToolFilter)
+
+                    // v3.8.6: Log the brain's reply text + tool calls so we can SEE what it said.
+                    // Without this, we only see tool calls in logs — can't tell if brain planned or not.
+                    val toolsCalled = if (llmResponse.toolCalls.isEmpty()) "(none)" else llmResponse.toolCalls.joinToString(", ") { "${it.name}(${it.args.entries.joinToString(", ") { "${it.key}=${it.value}" }})" }
+                    LogCapture.i(TAG, "brain reply: ${llmResponse.reply.take(200)}")
+                    LogCapture.i(TAG, "tool calls: $toolsCalled")
 
                     _state.update {
                         it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())
