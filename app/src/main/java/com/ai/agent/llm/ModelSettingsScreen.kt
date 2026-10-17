@@ -19,16 +19,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ai.agent.llm.settings.AdvancedConfigPage
 import com.ai.agent.llm.settings.ApiKeysTab
 import com.ai.agent.llm.settings.AudioConfigPage
-import com.ai.agent.llm.settings.BrainBehaviorPage
 import com.ai.agent.llm.settings.FutureSectionsPage
 import com.ai.agent.llm.settings.LlmConfigPage
 import com.ai.agent.llm.settings.ModelCatalogTab
 import com.ai.agent.llm.settings.SavedModelsTab
 import com.ai.agent.llm.settings.SectionCard
-import com.ai.agent.llm.settings.SmartRoutingPage
 import com.ai.agent.llm.settings.VisionConfigPage
 import com.ai.agent.ui.components.LocalCustomColors
 
