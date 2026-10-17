@@ -255,7 +255,7 @@ object ToolSchemas {
             map_of_open_deep_link()),
         Schema("openAppWithData", "Open an app with data (intent extras).",
             map_of_open_app_with_data()),
-        Schema("searchInApp", "Search inside an app (YouTube, Spotify, Instagram, Chrome). 1 call — opens search results. Does NOT tap a result. Use readScreenStructured + tap after.",
+        Schema("searchInApp", "Search inside an app (YouTube, Spotify, Instagram, Chrome). 1 call — opens the app + runs the search + shows results IN THE APP (not browser). Does NOT tap a result — follow up with readScreenStructured + tap to play/open a result.",
             map_of_search_in_app()),
         Schema("listAppActivities", "List all activities (screens) in an app.",
             mapOf("package" to Param("string", "App package name.", required = true))),

@@ -396,6 +396,14 @@ object ContextualPromptBuilder {
             Log.i(TAG, "Auto-included Screen group (app/browser/shortcut task detected)")
         }
 
+        // v3.7.4: If Shortcuts matched → also include Apps group
+        // (shortcut tasks like "play X on YouTube" often need launchApp to open the app
+        // first — without it the brain invents non-existent tools like open_youtube_app)
+        if (hasShortcuts && !hasApps) {
+            matched = matched + (TOOL_GROUPS.find { it.name == "Apps" }!!)
+            Log.i(TAG, "Auto-included Apps group (shortcut task detected — needs launchApp)")
+        }
+
         // v3.0.9: If Browser matched → also include Web group
         // (browser tasks often need webSearch to find URLs first)
         val hasWeb = matched.any { it.name == "Web" }
