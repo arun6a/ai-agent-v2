@@ -853,6 +853,10 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             val toolCallHistory = mutableListOf<String>()
             // v3.8.1: Track unique tools that FAILED — if 3 different approaches fail, STOP.
             val failedApproachTools = mutableSetOf<String>()
+            // v3.8.2: Track which tool signatures have FAILED in previous iterations.
+            // Strategy-switch warning only fires AFTER a tool has been tried and failed —
+            // not on first use (was confusing the brain before it even ran the tool).
+            val previouslyFailedSignatures = mutableSetOf<String>()
             var finalReply = ""
             var iteration = 0
 
@@ -1048,21 +1052,20 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         toolCallHistory.add(signature)
                         val count = toolCallHistory.count { it == signature }
 
-                        // v2.3.7: Strategy switching — after 1 failure, inject alternatives into the conversation.
-                        // v3.8.1: Made more forceful — suggests readScreenStructured, different tools, re-planning.
-                        // Give the AI a chance to switch strategy BEFORE hitting the MAX_REPEATED_TOOLS stop.
-                        if (count == 1) {
+                        // v3.8.2: Strategy switch ONLY fires if this signature FAILED in a previous iteration.
+                        // v3.8.1 bug: was firing on count==1 (before the tool even ran), confusing the brain.
+                        // Now: only inject the warning if the brain is RETRYING a tool that already failed.
+                        if (signature in previouslyFailedSignatures) {
                             val alternatives = getStrategyAlternatives(call.name)
                             conversation.append(
-                                "\n\n⚠️ STRATEGY SWITCH REQUIRED: \"$signature\" failed once. " +
+                                "\n\n⚠️ STRATEGY SWITCH REQUIRED: \"$signature\" failed before. " +
                                     "Do NOT repeat it with the same args. You have 2 options:\n" +
                                     "1. Use a DIFFERENT TOOL:\n$alternatives\n" +
                                     "2. RE-PLAN: call readScreenStructured() to see the actual screen state, " +
                                     "then choose a different approach based on what you see.\n\n" +
-                                    "If this approach fails again, I will count it as a 2nd failure. " +
                                     "After 3 different approaches fail, I will STOP the task."
                             )
-                            LogCapture.w(TAG, "Strategy switch injected for $signature (attempt 1 — must switch now)")
+                            LogCapture.w(TAG, "Strategy switch injected for $signature (previously failed — must switch now)")
                         }
 
                         if (count >= MAX_REPEATED_TOOLS) {
@@ -1139,25 +1142,28 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         val call = llmResponse.toolCalls[i]
                         val argsStr = argsStr(call.args)
                         toolSummary.append("\n• ${call.name}($argsStr) → ${if (dr.success) "✓" else "✗"}")
+                        // v3.8.2: Track the signature so strategy-switch fires on the NEXT retry.
+                        val sig = "${call.name}($argsStr)"
                         if (!dr.success) {
-                            toolSummary.append(" ${dr.output.take(200)}")  // v3.6.2: truncate error in summary
-                            // v3.8.1: Track unique FAILED tools for the 3-approach cap.
-                            // Skip read-only verification tools (readScreen, readScreenStructured, wait) —
-                            // they don't count as "approaches" since they're for gathering info, not acting.
-                            val isVerificationTool = call.name in setOf("readScreen", "readScreenStructured", "wait", "waitAndContinue")
-                            if (!isVerificationTool) {
-                                failedApproachTools.add(call.name)
-                            }
+                            toolSummary.append(" ${dr.output.take(200)}")
+                            previouslyFailedSignatures.add(sig)
+                        }
+                        // v3.8.2: Track unique ACTION tools TRIED (not just failed) for the 3-approach cap.
+                        // Tools that "succeed" but don't accomplish the goal still count as an approach tried.
+                        val isVerificationTool = call.name in setOf("readScreen", "readScreenStructured", "wait", "waitAndContinue")
+                        if (!isVerificationTool) {
+                            failedApproachTools.add(call.name)
                         }
                         resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
                         // v3.6.2: truncate tool results to 500 chars to slow conversation growth.
                         resultsForLLM.append("Result: ${dr.output.take(500)}\n\n")
                     }
 
-                    // v3.8.1: 3-different-approach cap.
-                    // If 3 unique action tools failed, STOP — the task isn't solvable with current approaches.
+                    // v3.8.2: 3-different-approach cap (counts tools TRIED, not just failed).
+                    // If 3 unique action tools were tried, STOP — the task isn't converging.
+                    // This catches "tools succeed but don't accomplish the goal" wandering.
                     if (failedApproachTools.size >= 3) {
-                        finalReply = "I tried 3 different approaches and none worked:\n" +
+                        finalReply = "I tried 3 different approaches and none accomplished the goal:\n" +
                             "  1. ${failedApproachTools.elementAt(0)}\n" +
                             "  2. ${failedApproachTools.elementAt(1)}\n" +
                             "  3. ${failedApproachTools.elementAt(2)}\n\n" +

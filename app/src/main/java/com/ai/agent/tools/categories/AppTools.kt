@@ -257,7 +257,15 @@ object AppTools {
                     searchIntent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                     context.startActivity(searchIntent)
                     delay(2000)
-                    ToolExecutor.ToolResult(true, "Searched '$query' in $pkg")
+                    // v3.8.2: Include a hint in the result so the brain knows what to do next.
+                    // Without this, the brain was opening Chrome/launchApp after searchInApp succeeded.
+                    val hint = when (pkg) {
+                        "com.google.android.youtube" -> " YouTube app is now OPEN with search results on screen. Do NOT open browser, openInChrome, openUrl, or launchApp. The results are already showing. Next step: readScreenStructured() to find a video result's bounds, then tap(center of bounds) to play it."
+                        "com.spotify.music" -> " Spotify is now OPEN with search results. Do NOT open browser. Next step: readScreen() to see what's playing."
+                        "com.instagram.android" -> " Instagram is now OPEN with the tag/search results. Do NOT open browser. Next step: readScreen() to see the results."
+                        else -> " App is now open. Do NOT open browser or launchApp again. Next step: readScreen() to see the current state."
+                    }
+                    ToolExecutor.ToolResult(true, "Searched '$query' in $pkg.$hint")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "searchInApp($pkg, $query) failed: ${e.message}")
                 }
@@ -312,8 +320,9 @@ object AppTools {
             }
 
             "openYouTubeVideo" -> {
-                val videoId = call.args["videoId"] as? String
-                    ?: return ToolExecutor.ToolResult(false, "missing videoId")
+                // v3.8.2: Accept both 'videoId' and 'id' params — brain sometimes guesses 'id'.
+                val videoId = (call.args["videoId"] as? String ?: call.args["id"] as? String)
+                    ?: return ToolExecutor.ToolResult(false, "missing videoId. Pass {videoId: \"<11-char ID>\"} or {id: \"<11-char ID>\"}.")
                 try {
                     val intent = android.content.Intent(android.content.Intent.ACTION_VIEW,
                         android.net.Uri.parse("vnd.youtube://video/$videoId"))
