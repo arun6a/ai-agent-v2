@@ -1352,25 +1352,28 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
 
             // v3.7.0: Auto-verify after ALL action tools (was only high-stakes).
             // Skip actionChain — it has its own auto-verify built in.
+            // v3.8.6: Use toolExecutor.readScreen (respects vision mode) instead of a11y.readScreen.
+            //         This fixes the "57 chars" bug — when VLM mode is ON, the brain now SEES the screen.
             if (call.name in ACTION_TOOLS && call.name != "actionChain" && r?.success == true
                 && com.ai.agent.llm.AgentThinkingSettings.isVerificationEnabled(context)) {
                 try {
                     kotlinx.coroutines.delay(VERIFY_DELAY_MS)
-                    val a11y = com.ai.agent.accessibility.AgentAccessibilityService.getInstance()
-                    if (a11y != null) {
-                        val screenText = a11y.readScreen()
-                        if (screenText.isNotEmpty()) {
-                            val baseOutput = r.output.take(200)
-                            val combinedOutput = "$baseOutput\n\n[Screen after action]: ${screenText.take(300)}"
-                            r = ToolExecutor.ToolResult(
-                                success = r.success,
-                                output = combinedOutput,
-                            )
-                            LogCapture.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars)")
-                        }
+                    // v3.8.6: Call readScreen through toolExecutor so it respects vision mode.
+                    // Was: a11y.readScreen() — only accessibility text, ignoring VLM mode.
+                    val readCall = LLMClient.ToolCall("readScreen", emptyMap())
+                    val readResults = toolExecutor.executeTools(listOf(readCall))
+                    val screenText = readResults.firstOrNull()?.output ?: ""
+                    if (screenText.isNotEmpty()) {
+                        val baseOutput = r.output.take(200)
+                        val combinedOutput = "$baseOutput\n\n[Screen after action]: ${screenText.take(500)}"
+                        r = ToolExecutor.ToolResult(
+                            success = r.success,
+                            output = combinedOutput,
+                        )
+                        LogCapture.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars)")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Auto-verify failed (non-fatal): ${e.message}")
+                    LogCapture.w(TAG, "Auto-verify failed (non-fatal): ${e.message}")
                 }
             }
 
