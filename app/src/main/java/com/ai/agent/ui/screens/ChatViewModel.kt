@@ -496,6 +496,16 @@ class ChatViewModel(
             .take(40)
             .trim('_')
             .ifBlank { "workflow_${System.currentTimeMillis()}" }
+        // v3.7.8: Extract keywords from the name + description so the skill
+        // auto-injects when the user sends a similar message. findRelevantSkills()
+        // filters by keywords — without this, saved skills would never trigger.
+        val keywordsSource = "$name $description"
+        val keywords = keywordsSource.lowercase()
+            .split(Regex("[\\s,.;:!?]+"))
+            .filter { it.length > 2 && it !in setOf("the", "and", "for", "with", "from", "this", "that") }
+            .distinct()
+            .take(8)
+            .joinToString(", ")
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val skillsDir = java.io.File(USER_SKILLS_DIR)
@@ -507,15 +517,20 @@ class ChatViewModel(
                     append("name: $safeName\n")
                     append("description: ${desc.replace("\"", "'").replace("\n", " ").take(160)}\n")
                     append("trigger: ${safeName.replace("_", " ")}\n")
+                    append("keywords: $keywords\n")
                     append("tools_used: []\n")
                     append("version: 1.0\n")
                     append("---\n\n")
                 }
-                val body = "# Workflow: $safeName\n\n" +
-                    "Captured from a successful agent run.\n\n" +
-                    "## Steps\n\n```\n$steps\n```\n"
+                val body = "# ${description.ifBlank { safeName.replace("_", " ").replaceFirstChar { it.uppercase() } }}\n\n" +
+                    "Follow these steps IN ORDER (captured from a previous successful run):\n\n" +
+                    "$steps\n\n" +
+                    "## CRITICAL RULES\n" +
+                    "- Follow these steps IN ORDER. Do not skip steps.\n" +
+                    "- Do not re-do steps that already succeeded (if the app is already open, don't launchApp again).\n" +
+                    "- If a step fails, try a different approach (don't repeat the same action).\n"
                 file.writeText(frontmatter + body)
-                Log.i(TAG, "Saved skill file: ${file.absolutePath}")
+                LogCapture.i(TAG, "Saved skill file: ${file.absolutePath} (keywords: $keywords)")
                 _state.update {
                     it.copy(
                         showSaveSkillPrompt = false,
@@ -523,7 +538,7 @@ class ChatViewModel(
                     )
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to save skill", e)
+                LogCapture.e(TAG, "Failed to save skill: ${e.message}")
                 _state.update {
                     it.copy(
                         showSaveSkillPrompt = false,

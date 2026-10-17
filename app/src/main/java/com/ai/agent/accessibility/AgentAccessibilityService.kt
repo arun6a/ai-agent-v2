@@ -121,7 +121,7 @@ class AgentAccessibilityService : AccessibilityService() {
         val sb = StringBuilder()
         sb.append("{\"app\":\"${root.packageName ?: "unknown"}\",\"elements\":[")
         val state = intArrayOf(0) // state[0] = element count
-        collectElements(root, sb, state, 15, 50)
+        collectElements(root, sb, state, 15, 100)
         sb.append("]}")
         return sb.toString()
     }
