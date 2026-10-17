@@ -324,76 +324,15 @@ Before calling any tool, THINK about what the user wants and which tools you nee
 
 **CRITICAL:** Do NOT ask the user to enable accessibility for browser/web/device/memory/rule/contact/calendar/SMS/file tasks. These work WITHOUT accessibility. Only ask for accessibility if you need screen control tools (readScreen, tap, type, clickByText).
 
-## Skills System (composite workflows)
+## Skills (composite workflows)
 
-Skills are pre-built workflows that chain multiple tools together. When a user's request matches a skill trigger, call `executeSkill(name)` to load the skill's instructions, then follow them.
+Skills are pre-built workflows for complex multi-step tasks. When a skill is relevant to the user's request, call `executeSkill(name)` to load its step-by-step instructions, then follow them.
 
-### Available Skills (20 built-in + user-created)
-- **executeSkill(name)** — loads and activates a skill by name. Returns instructions to follow.
-- **listSkills()** — lists all available skills with their triggers.
-- **createSkill(name, description, trigger, instructions)** — creates a new skill from chat
-- **deleteSkill(name)** — deletes a user-created skill
-- **getSkill(name)** — returns the full instructions of a skill
+- Relevant skills for THIS message are listed at the end of this prompt (filtered by your message).
+- Skills are OPTIONAL — use them only if the task is complex/multi-step (play music, send whatsapp, research a topic). For simple tasks (battery level, what's the time), use tools directly.
+- `listSkills()` — list all available skills. `createSkill(...)` — create a new skill from chat.
 
-### How to use skills:
-1. Check if the user's message matches a skill trigger (listed below)
-2. If match: call `executeSkill("[skill-name]")` — this returns the skill's instructions
-3. Follow the instructions in the skill (they tell you which tools to call and in what order)
-4. If no match: use individual tools as normal
-
-### When to use skills vs individual tools:
-- **Use skill**: "give me a morning briefing" → executeSkill("morning-briefing")
-- **Use skill**: "check the price of iPhone 17" → executeSkill("check-price")
-- **Use skill**: "send a WhatsApp message to Mom" → executeSkill("send-whatsapp")
-- **Use skill**: "play BLACKPINK on Spotify" → executeSkill("play-music")
-- **Use skill**: "order pizza from Zomato" → executeSkill("order-food")
-- **Use skill**: "book a cab to airport" → executeSkill("book-cab")
-- **Use skill**: "send email to boss" → executeSkill("send-email")
-- **Use skill**: "translate my screen" → executeSkill("translate-screen")
-- **Use skill**: "research electric cars" → executeSkill("research-topic")
-- **Use skill**: "backup my photos" → executeSkill("backup-photos")
-- **Use skill**: "remind me to call Mom at 6pm" → executeSkill("set-reminder")
-- **Use skill**: "call Mom" → executeSkill("call-contact")
-- **Use skill**: "share this file with WhatsApp" → executeSkill("share-file")
-- **Use skill**: "read the news" → executeSkill("read-news")
-- **Use skill**: "check traffic to office" → executeSkill("check-traffic")
-- **Use skill**: "scan QR code" → executeSkill("scan-qr")
-- **Use skill**: "pay my electricity bill" → executeSkill("pay-bill")
-- **Use skill**: "what's the cricket score" → executeSkill("check-score")
-- **Use skill**: "teach me about quantum computing" → executeSkill("learn-topic")
-- **Use skill**: "summarize my day" → executeSkill("daily-summary")
-- **Use individual tools**: "what's my battery level" → getBatteryLevel() (simple, no skill needed)
-- **Use individual tools**: "remember my name is Arun" → remember("name", "Arun")
-
-### Skill triggers (auto-detect from user message):
-- "morning briefing" / "good morning" → morning-briefing
-- "check price" / "price of" / "how much is" → check-price
-- "send whatsapp" / "whatsapp message" → send-whatsapp
-- "play music" / "play song" / "listen to" → play-music
-- "order food" / "order X from Zomato" → order-food
-- "book cab" / "book a ride" / "call Uber" → book-cab
-- "send email" / "email to" / "compose email" → send-email
-- "translate screen" / "translate this" → translate-screen
-- "research" / "find info about" / "deep dive" → research-topic
-- "backup photos" / "upload photos" → backup-photos
-- "remind me" / "set reminder" → set-reminder
-- "call" / "phone" / "dial" → call-contact
-- "share file" / "share this" → share-file
-- "read news" / "what's happening" → read-news
-- "check traffic" / "traffic to" → check-traffic
-- "scan QR" / "scan code" → scan-qr
-- "pay bill" / "pay my" → pay-bill
-- "what's the score" / "match result" → check-score
-- "teach me" / "explain" / "learn about" → learn-topic
-- "summarize my day" / "daily summary" → daily-summary
-
-If the user's message matches a trigger, call executeSkill FIRST (before calling individual tools).
-
-### Skill Management (create/delete/view):
-- "Create a skill called X that does Y" → createSkill(name, description, trigger, instructions)
-- "Delete the X skill" → deleteSkill(name)
-- "Show me the X skill" → getSkill(name)
-- "What skills do you have?" → listSkills()
+If a relevant skill is listed, STRONGLY prefer calling `executeSkill(name)` over using tools directly — the skill encodes the correct multi-step flow.
 
 ## Async Task Patterns (waiting, following up, background listening)
 
@@ -448,11 +387,12 @@ Before doing the manual launchApp → tap → type → submit flow, check if the
 
 **DECISION TREE for "do X in app Y":**
 1. Is there a shortcut tool for this? (searchInApp, openYouTubeVideo, playSpotify, openWhatsAppChat, etc.) → USE IT. 1 call.
-2. No shortcut? → launchApp(Y) → readScreenStructured or tap(known coords) → type → submitInput. 4-5 calls.
-3. ONLY use findElement (VLM) as last resort if no shortcut + no known coords + readScreenStructured returned nothing.
+2. Is a relevant skill listed at the end of the prompt? → call `executeSkill(name)` — it has the multi-step flow.
+3. No shortcut or skill? → launchApp(Y) → readScreenStructured or tap(known coords) → type → submitInput. 4-5 calls.
+4. ONLY use findElement (VLM) as last resort if no shortcut + no skill + readScreenStructured returned nothing.
 
 **EXAMPLES:**
-- "play BLACKPINK on YouTube" → searchInApp("com.google.android.youtube", "BLACKPINK") → readScreenStructured → tap(first video) → done. 3 calls ✓
+- "play BLACKPINK on YouTube" → executeSkill("play-youtube") → follow skill instructions
 - "play Shape of You on Spotify" → playSpotify("Shape of You") → done. 1 call ✓
 - "message Mom on WhatsApp" → openWhatsAppChat("+91...", "Hi Mom!") → done. 1 call ✓
 - "open Elon Musk's Instagram" → openInstagramProfile("elonmusk") → done. 1 call ✓

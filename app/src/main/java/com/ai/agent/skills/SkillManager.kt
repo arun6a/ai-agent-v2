@@ -42,6 +42,7 @@ class SkillManager(private val context: Context) {
         val description: String,
         val trigger: String,
         val triggers: List<String>,
+        val keywords: List<String>,
         val toolsUsed: List<String>,
         val version: String,
         val body: String,
@@ -139,6 +140,41 @@ class SkillManager(private val context: Context) {
         return sb.toString()
     }
 
+    /**
+     * v3.7.5: Filter skills by keyword matching (mirrors ContextualPromptBuilder tool filtering).
+     *
+     * Returns only skills whose keywords appear in the user message.
+     * This scales to any number of skills — the prompt only includes
+     * the 1-3 relevant skills, not all of them.
+     *
+     * If no skills match, returns empty list (brain uses tools directly).
+     */
+    fun findRelevantSkills(userMessage: String): List<Skill> {
+        if (skills.isEmpty()) return emptyList()
+        val msg = userMessage.lowercase().trim()
+        return skills.filter { skill ->
+            skill.keywords.any { keyword ->
+                msg.contains(keyword.lowercase())
+            }
+        }
+    }
+
+    /**
+     * v3.7.5: Build a concise prompt section listing ONLY the relevant skills.
+     * Each skill is 1 line: "- name: description".
+     * The brain decides whether to call executeSkill(name) — the system doesn't auto-inject.
+     */
+    fun generateRelevantSkillsSection(userMessage: String): String {
+        val relevant = findRelevantSkills(userMessage)
+        if (relevant.isEmpty()) return ""
+        val sb = StringBuilder("\n## Relevant Skills (call executeSkill(name) if useful)\n")
+        for (skill in relevant) {
+            sb.append("- ${skill.name}: ${skill.description}\n")
+        }
+        sb.append("\nSkills are optional — use them only if the task is complex/multi-step. For simple tasks, use tools directly.\n")
+        return sb.toString()
+    }
+
     fun getSkillBody(name: String): String? {
         val skill = getSkill(name) ?: return null
         return skill.body
@@ -158,16 +194,22 @@ class SkillManager(private val context: Context) {
         val trigger = parseYamlValue(frontmatter, "trigger") ?: ""
         val version = parseYamlValue(frontmatter, "version") ?: "1.0"
         val toolsUsedStr = parseYamlValue(frontmatter, "tools_used") ?: ""
+        // v3.7.5: keywords field — used for skill filtering (like tool group keywords)
+        val keywordsStr = parseYamlValue(frontmatter, "keywords") ?: ""
 
         val triggers = if (trigger.isNotEmpty()) {
             trigger.split("|").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        } else emptyList()
+
+        val keywords = if (keywordsStr.isNotEmpty()) {
+            keywordsStr.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         } else emptyList()
 
         val toolsUsed = if (toolsUsedStr.isNotEmpty()) {
             toolsUsedStr.trim('[', ']', ' ').split(",").map { it.trim() }.filter { it.isNotEmpty() }
         } else emptyList()
 
-        return Skill(name, description, trigger, triggers, toolsUsed, version, body, fileName)
+        return Skill(name, description, trigger, triggers, keywords, toolsUsed, version, body, fileName)
     }
 
     private fun findFrontmatterEnd(content: String): Int {

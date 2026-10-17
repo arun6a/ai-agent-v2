@@ -72,8 +72,8 @@ object ToolSchemas {
         Schema("takeScreenshotToGallery", "Take a screenshot and save it to the Pictures folder. No parameters."),
 
         // ==================== APPS (10) ====================
-        Schema("launchApp", "Launch an app by package name. Returns the screen content after 2.5s. ALWAYS read the returned screen — apps may resume to unexpected states (videos, Shorts).",
-            mapOf("package" to Param("string", "App package name (e.g., com.google.android.youtube).", required = true))),
+        Schema("launchApp", "Launch an app by package name (e.g., com.google.android.youtube). This is the ONLY tool for opening apps — there is no open_youtube_app or open_spotify_app tool. Returns screen content after 2.5s. ALWAYS read the returned screen — apps may resume to unexpected states (videos, Shorts).",
+            mapOf("package" to Param("string", "App package name (e.g., com.google.android.youtube, com.whatsapp, com.spotify.music).", required = true))),
         Schema("listInstalledApps", "List all installed apps with their package names. No parameters."),
         Schema("getAppInfo", "Get detailed info about an installed app (version, size, permissions).",
             mapOf("package" to Param("string", "App package name.", required = true))),
@@ -287,8 +287,8 @@ object ToolSchemas {
         Schema("takePhoto", "Take a photo with the camera. Needs CAMERA permission. No parameters."),
 
         // ==================== SKILLS (5) ====================
-        Schema("executeSkill", "Execute a pre-built skill (composite workflow). Loads the skill's instructions.",
-            mapOf("name" to Param("string", "Skill name (see listSkills).", required = true))),
+        Schema("executeSkill", "Load a skill's step-by-step instructions into context. Use this when the user's request is complex/multi-step AND a relevant skill is listed at the end of the system prompt. Returns the skill's instructions — read them, then call the tools they specify in order.",
+            mapOf("name" to Param("string", "Skill name (e.g., play-youtube). See 'Relevant Skills' section at end of prompt.", required = true))),
         Schema("listSkills", "List all available skills. No parameters."),
         Schema("createSkill", "Create a new skill (composite workflow).",
             map_of_create_skill()),

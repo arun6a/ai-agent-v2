@@ -764,29 +764,21 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 systemPrompt += "\n\n$visionGuide"
             }  // end if (!isTier1)
 
-            // v2.0.9: Inject available skills (so AI can executeSkill(name))
-            // AND check if the user's message matches a skill trigger — if so,
-            // auto-load that skill's body into the prompt. Mirrors v1 behavior.
-            // v3.2.9: skip the skills list for Tier 1 (greetings) — usually irrelevant.
+            // v3.7.5: Skills are now FILTERED by keyword (like tools), not auto-injected.
+            // The brain sees only the 1-3 relevant skills for this message,
+            // and decides whether to call executeSkill(name) on its own.
+            // This scales to any number of skills without prompt bloat.
             if (!isTier1) {
                 try {
                     val skillManager = com.ai.agent.skills.SkillManager(context)
                     skillManager.loadSkills()
-                    val skillsPrompt = skillManager.generatePromptSection()
-                    if (skillsPrompt.isNotBlank()) {
-                        systemPrompt += "\n\n$skillsPrompt"
-                    }
-                    // Auto-trigger: if user message matches a skill, inject the skill body
-                    val matched = skillManager.matchTrigger(userMessage)
-                    if (matched != null) {
-                        val body = skillManager.getSkillBody(matched.name)
-                        if (body != null) {
-                            systemPrompt += "\n\n## Skill Matched: ${matched.name}\n$body"
-                            Log.i(TAG, "Auto-triggered skill: ${matched.name}")
-                        }
+                    val relevantSkillsSection = skillManager.generateRelevantSkillsSection(userMessage)
+                    if (relevantSkillsSection.isNotBlank()) {
+                        systemPrompt += "\n\n$relevantSkillsSection"
+                        LogCapture.i(TAG, "Skills filtered: ${skillManager.findRelevantSkills(userMessage).map { it.name }}")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Skill injection failed: ${e.message}")
+                    LogCapture.w(TAG, "Skill section injection failed: ${e.message}")
                 }
             }
 
