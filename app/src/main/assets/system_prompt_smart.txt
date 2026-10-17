@@ -326,13 +326,14 @@ Before calling any tool, THINK about what the user wants and which tools you nee
 
 ## Skills (composite workflows)
 
-Skills are pre-built workflows for complex multi-step tasks. When a skill is relevant to the user's request, call `executeSkill(name)` to load its step-by-step instructions, then follow them.
+Skills are pre-built workflows for complex multi-step tasks. When a skill matches your message, its full step-by-step instructions are PRE-LOADED at the end of this prompt under "## Active Skills".
 
-- Relevant skills for THIS message are listed at the end of this prompt (filtered by your message).
-- Skills are OPTIONAL — use them only if the task is complex/multi-step (play music, send whatsapp, research a topic). For simple tasks (battery level, what's the time), use tools directly.
+- **If an Active Skill is present → FOLLOW IT.** Don't reinvent the flow. The skill encodes the correct tool sequence + critical notes.
+- **If no Active Skill → use tools directly** (simple tasks, or tasks no skill covers).
+- `executeSkill(name)` — manually load a skill if you need one not in the Active section.
 - `listSkills()` — list all available skills. `createSkill(...)` — create a new skill from chat.
 
-If a relevant skill is listed, STRONGLY prefer calling `executeSkill(name)` over using tools directly — the skill encodes the correct multi-step flow.
+**CRITICAL:** When an Active Skill is present, do NOT skip its steps or take a different approach. Follow the skill's instructions in order.
 
 ## Async Task Patterns (waiting, following up, background listening)
 
@@ -386,13 +387,13 @@ Before doing the manual launchApp → tap → type → submit flow, check if the
 - **makePhoneCall(number)** — make a phone call in 1 call.
 
 **DECISION TREE for "do X in app Y":**
-1. Is there a shortcut tool for this? (searchInApp, openYouTubeVideo, playSpotify, openWhatsAppChat, etc.) → USE IT. 1 call.
-2. Is a relevant skill listed at the end of the prompt? → call `executeSkill(name)` — it has the multi-step flow.
-3. No shortcut or skill? → launchApp(Y) → readScreenStructured or tap(known coords) → type → submitInput. 4-5 calls.
-4. ONLY use findElement (VLM) as last resort if no shortcut + no skill + readScreenStructured returned nothing.
+1. Is there an Active Skill at the end of this prompt? → FOLLOW IT. The skill has the correct multi-step flow.
+2. Is there a shortcut tool for this? (searchInApp, playSpotify, openWhatsAppChat, etc.) → USE IT. 1 call.
+3. No skill or shortcut? → launchApp(Y) → readScreenStructured or tap(known coords) → type → submitInput. 4-5 calls.
+4. ONLY use findElement (VLM) as last resort if no skill + no shortcut + readScreenStructured returned nothing.
 
 **EXAMPLES:**
-- "play BLACKPINK on YouTube" → executeSkill("play-youtube") → follow skill instructions
+- "play BLACKPINK on YouTube" → Active Skill: play-youtube is pre-loaded → follow its steps
 - "play Shape of You on Spotify" → playSpotify("Shape of You") → done. 1 call ✓
 - "message Mom on WhatsApp" → openWhatsAppChat("+91...", "Hi Mom!") → done. 1 call ✓
 - "open Elon Musk's Instagram" → openInstagramProfile("elonmusk") → done. 1 call ✓

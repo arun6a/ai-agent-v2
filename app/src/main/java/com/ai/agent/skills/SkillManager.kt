@@ -175,6 +175,31 @@ class SkillManager(private val context: Context) {
         return sb.toString()
     }
 
+    /**
+     * v3.7.6: Auto-inject the full skill body for relevant skills.
+     *
+     * Unlike v3.7.5 (which only listed skill names), this returns the COMPLETE
+     * skill instructions so the brain can follow them directly — no need to
+     * call executeSkill(name) first.
+     *
+     * Why: the brain was ignoring the skill listing and using tools directly.
+     * With the full body in context, the brain naturally follows the workflow.
+     *
+     * Keyword filtering ensures only 1-3 relevant skills get injected (not all),
+     * so the prompt stays lean even at 500+ skills.
+     */
+    fun generateRelevantSkillsInjection(userMessage: String): String {
+        val relevant = findRelevantSkills(userMessage)
+        if (relevant.isEmpty()) return ""
+        val sb = StringBuilder("\n## Active Skills (pre-loaded — follow these instructions)\n")
+        sb.append("These skills matched your message. Follow their step-by-step instructions instead of guessing a flow.\n\n")
+        for (skill in relevant) {
+            sb.append("### Skill: ${skill.name}\n")
+            sb.append("${skill.body}\n\n")
+        }
+        return sb.toString()
+    }
+
     fun getSkillBody(name: String): String? {
         val skill = getSkill(name) ?: return null
         return skill.body

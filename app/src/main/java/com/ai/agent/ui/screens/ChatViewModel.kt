@@ -764,21 +764,21 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 systemPrompt += "\n\n$visionGuide"
             }  // end if (!isTier1)
 
-            // v3.7.5: Skills are now FILTERED by keyword (like tools), not auto-injected.
-            // The brain sees only the 1-3 relevant skills for this message,
-            // and decides whether to call executeSkill(name) on its own.
-            // This scales to any number of skills without prompt bloat.
+            // v3.7.6: Auto-inject the FULL skill body for relevant skills.
+            // v3.7.5 only listed skill names — the brain ignored them and used tools directly.
+            // Now the complete step-by-step instructions are in context → brain follows them naturally.
+            // Keyword filtering ensures only 1-3 relevant skills get injected (scales to 500+ skills).
             if (!isTier1) {
                 try {
                     val skillManager = com.ai.agent.skills.SkillManager(context)
                     skillManager.loadSkills()
-                    val relevantSkillsSection = skillManager.generateRelevantSkillsSection(userMessage)
-                    if (relevantSkillsSection.isNotBlank()) {
-                        systemPrompt += "\n\n$relevantSkillsSection"
-                        LogCapture.i(TAG, "Skills filtered: ${skillManager.findRelevantSkills(userMessage).map { it.name }}")
+                    val skillInjection = skillManager.generateRelevantSkillsInjection(userMessage)
+                    if (skillInjection.isNotBlank()) {
+                        systemPrompt += "\n\n$skillInjection"
+                        LogCapture.i(TAG, "Skills auto-injected: ${skillManager.findRelevantSkills(userMessage).map { it.name }}")
                     }
                 } catch (e: Exception) {
-                    LogCapture.w(TAG, "Skill section injection failed: ${e.message}")
+                    LogCapture.w(TAG, "Skill injection failed: ${e.message}")
                 }
             }
 
