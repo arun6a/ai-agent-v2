@@ -1148,10 +1148,23 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             toolSummary.append(" ${dr.output.take(200)}")
                             previouslyFailedSignatures.add(sig)
                         }
-                        // v3.8.2: Track unique ACTION tools TRIED (not just failed) for the 3-approach cap.
-                        // Tools that "succeed" but don't accomplish the goal still count as an approach tried.
+                        // v3.8.3: Track unique ACTION tools for the approach cap.
+                        // Exclude SETUP tools (launchApp, searchInApp, openUrl, openInChrome, etc.)
+                        // — these are sequential workflow steps, not "approaches."
+                        // Only count tools that attempt to accomplish the GOAL (click/play/tap a result):
+                        //   tap, clickByText, findElement, submitInput, type, swipe, scrollDown, etc.
                         val isVerificationTool = call.name in setOf("readScreen", "readScreenStructured", "wait", "waitAndContinue")
-                        if (!isVerificationTool) {
+                        val isSetupTool = call.name in setOf(
+                            "launchApp", "searchInApp", "openUrl", "openInChrome", "openActivity",
+                            "openDeepLink", "openAppWithData", "listInstalledApps", "listAppActivities",
+                            "getAppInfo", "forceStopApp", "openSettings", "listFiles", "readFile",
+                            "readContacts", "searchContacts", "getCalendarEvents", "getBatteryLevel",
+                            "getCurrentTime", "getNetworkInfo", "getDeviceInfo", "getCurrentLocation",
+                            "getWeather", "getVolume", "getBluetoothState", "pingHost", "recall",
+                            "recallAll", "recallSimilar", "searchMemory", "listSkills", "getSkill",
+                            "executeSkill", "remember",
+                        )
+                        if (!isVerificationTool && !isSetupTool) {
                             failedApproachTools.add(call.name)
                         }
                         resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
