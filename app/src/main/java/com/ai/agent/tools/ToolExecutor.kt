@@ -257,7 +257,24 @@ class ToolExecutor(private val context: Context) {
                         } else {
                             Log.i(TAG, "readScreen: VLM mode — calling VLM directly (${visionModel.modelName})")
                             val vlmResult = VisionTools.analyzeScreenWithVLM(context, service!!, "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
-                            ToolResult(true, "Screen text (VLM): $vlmResult")
+                            // v3.8.7: Fallback chain when VLM fails — give the brain something to work with.
+                            if (vlmResult.isBlank() || vlmResult.contains("Failed to capture screenshot")) {
+                                LogCapture.w(TAG, "VLM screenshot failed — falling back to readScreenStructured + a11y")
+                                // Try readScreenStructured first (gives bounds for tapping)
+                                val structured = try { service!!.readScreenStructured() } catch (e: Exception) { "" }
+                                val a11yText = try { service!!.readScreen() } catch (e: Exception) { "" }
+                                if (structured.isNotBlank() && structured != "{\"error\":\"screen is null\"}") {
+                                    LogCapture.i(TAG, "VLM fallback: readScreenStructured (${structured.length} chars)")
+                                    ToolResult(true, "Screen structure (VLM failed, a11y fallback): $structured")
+                                } else if (a11yText.isNotBlank()) {
+                                    LogCapture.i(TAG, "VLM fallback: a11y text (${a11yText.length} chars)")
+                                    ToolResult(true, "Screen text (a11y fallback, VLM failed): $a11yText")
+                                } else {
+                                    ToolResult(true, "Screen is empty or unreadable. The app may be loading or the screen is blank.")
+                                }
+                            } else {
+                                ToolResult(true, "Screen text (VLM): $vlmResult")
+                            }
                         }
                     }
                     "mlkit" -> {
