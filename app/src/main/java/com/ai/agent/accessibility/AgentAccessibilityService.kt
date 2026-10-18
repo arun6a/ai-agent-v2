@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.provider.Settings
 import android.util.Log
+import com.ai.agent.util.LogCapture
 import android.view.accessibility.AccessibilityNodeInfo
 
 class AgentAccessibilityService : AccessibilityService() {
@@ -394,6 +395,7 @@ class AgentAccessibilityService : AccessibilityService() {
                         "onFailure" -> {
                             val errorCode = args[0] as Int
                             Log.e(TAG, "Screenshot failed: error $errorCode")
+                            LogCapture.e(TAG, "Screenshot capture FAILED: error code $errorCode (1=unsupported, 2=invalid surface, 3=no display)")
                             callback(null)
                         }
                     }
@@ -404,6 +406,7 @@ class AgentAccessibilityService : AccessibilityService() {
             cbMethod.invoke(this, executor, callbackObj)
         } catch (e: Exception) {
             Log.e(TAG, "takeScreenshot error", e)
+            LogCapture.e(TAG, "takeScreenshot exception: ${e.message}")
             callback(null)
         }
     }
