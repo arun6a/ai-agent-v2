@@ -104,7 +104,9 @@ class ToolExecutor(private val context: Context) {
             // Async
             "wait", "waitAndContinue",
             // v3.7.0: Action chains
-            "actionChain"
+            "actionChain",
+            // v3.9.6: Completion tool
+            "complete"
         )
     }
 
@@ -613,6 +615,17 @@ class ToolExecutor(private val context: Context) {
 
             // ==================== ACTION CHAINS (v3.7.0) ====================
             "actionChain" -> executeActionChain(call, service)
+
+            // ==================== COMPLETION (v3.9.6) ====================
+            "complete" -> {
+                // v3.9.6: Forces brain to verify success before stopping.
+                // The brain MUST call this tool to signal task completion.
+                // Returns TASK_COMPLETE signal that ChatViewModel checks to stop the loop.
+                val success = call.args["success"] as? Boolean ?: false
+                val reason = call.args["reason"] as? String ?: "No reason given"
+                LogCapture.i(TAG, "complete(success=$success, reason=$reason)")
+                ToolResult(true, "TASK_COMPLETE:$success:$reason")
+            }
 
             else -> ToolResult(false, "unknown tool: ${call.name}")
         }

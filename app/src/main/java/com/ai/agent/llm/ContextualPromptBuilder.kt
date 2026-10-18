@@ -32,6 +32,8 @@ object ContextualPromptBuilder {
         "getBatteryLevel()" to "get battery percentage",
         "remember(key, value)" to "save to memory",
         "recall(key)" to "recall from memory",
+        // v3.9.6: complete tool — ALWAYS available so brain can signal task completion
+        "complete(success, reason)" to "call when task is DONE. Verify via readScreen first. success=true/false + reason why.",
     )
 
     private val TOOL_GROUPS = listOf(

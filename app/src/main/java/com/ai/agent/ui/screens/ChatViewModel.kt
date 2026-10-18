@@ -797,26 +797,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 }
             }
 
-            // v3.8.0: Plan-then-Act — when enabled, brain states its plan on the FIRST
-            // response to a complex task, then starts executing. The plan stays in
-            // conversation history so subsequent iterations follow it step-by-step.
-            // No extra API call — the plan is in the reply text of iteration 1.
-            // Default OFF (opt-in) — turn ON when teaching new tasks.
-            if (!isTier1 && com.ai.agent.llm.AgentThinkingSettings.isPlanThenActEnabled(context)) {
-                systemPrompt += "\n\n## Plan-then-Act (MANDATORY — you MUST follow this)\n" +
-                    "On your FIRST response to a complex multi-step task, you MUST start your reply with \"Plan:\" followed by 2-4 numbered steps, then start executing step 1 in the SAME response.\n\n" +
-                    "REQUIRED FORMAT (do not deviate):\n" +
-                    "  reply: \"Plan: 1) <first step> 2) <second step> 3) <third step>. Starting step 1.\"\n" +
-                    "  tool_calls: [<step 1 tool call>]\n\n" +
-                    "RULES:\n" +
-                    "- Your reply MUST start with \"Plan:\". If it doesn't, the response is INVALID.\n" +
-                    "- State 2-4 steps max. Be concise.\n" +
-                    "- After stating the plan, include the tool_call for step 1 in the SAME response.\n" +
-                    "- The plan stays in conversation history. Subsequent iterations: follow the plan in order.\n" +
-                    "- If reality differs from the plan (tool fails, unexpected screen), adapt — update the plan in your reply.\n" +
-                    "- Simple tasks (greetings, single-tool like getBatteryLevel) don't need a plan — just act.\n"
-                LogCapture.i(TAG, "Plan-then-Act: enabled (brain will state plan on first response)")
-            }
+            // v3.9.6: Plan-then-Act REMOVED — replaced by complete tool + action history.
+            // The brain naturally plans in its reply. Action history keeps it on track.
+            // The complete tool forces verification before stopping.
 
             // v3.8.13: Inject the ACTUAL screen resolution so the brain knows the coordinate space.
             // Was hardcoded 1080x2400 — but tablets have different resolutions (2880x1800, etc.).
@@ -873,6 +856,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             val previouslyFailedSignatures = mutableSetOf<String>()
             var finalReply = ""
             var iteration = 0
+
+            // v3.9.6: Memory buffer — extracted from <memory> tags, injected next iteration.
+            var memoryBuffer = ""
 
             // v3.8.8: Enforced Plan Tracking + Re-planning
             // The brain states a plan on iteration 1 (Plan-then-Act). We PARSE it,
@@ -1003,42 +989,33 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     val activePrompt = systemPrompt  // already contextual from above
                     // v3.2.9: pass the contextual tool filter so we don't ship all 95 tools
                     // when the user just said "hi" or only needs a small tool group.
-                    // v3.9.5: TWO-PHASE APPROACH — forces reasoning before acting.
-                    // thinking:enabled doesn't work when tools are present (model shortcuts to tool call).
-                    // Fix: Phase 1 = think WITHOUT tools → Phase 2 = act WITH tools.
-                    // Only for iteration 1 of Tier 2/3 tasks (not Tier 1 "hi").
-                    var llmResponse: LLMClient.LLMResponse
+                    // v3.9.6: REMOVED two-phase (was wasting API calls — Phase 1 said "Done.")
+                    // Now: single-phase with action history + dumb executor prompt + complete tool.
+                    // The complete tool forces the brain to verify success before stopping.
 
-                    val currentFilter = contextualToolFilter
-                    val useTwoPhase = iteration == 1 && !isTier1 && currentFilter != null && currentFilter.isNotEmpty()
-                    if (useTwoPhase) {
-                        // Phase 1: THINK (no tools → model MUST reason in text)
-                        LogCapture.i(TAG, "Phase 1: THINKING (no tools — forcing reasoning)")
-                        val thinkResponse = llmClient.chatWithFailover(
-                            conversation.toString(),
-                            activePrompt + "\n\n## PLANNING PHASE\nYou CANNOT call tools yet. You are PLANNING.\n" +
-                                "Answer these questions in your reply:\n" +
-                                "1. What does the user want? (restate)\n" +
-                                "2. What shortcut should you use? (searchInApp, playSpotify, openWhatsAppChat?)\n" +
-                                "3. After the shortcut, what will you need to do next? (readScreenStructured → tap)\n" +
-                                "4. What should you watch out for? (don't tap search bar, tap video with duration)\n\n" +
-                                "Reply with your FULL analysis + step-by-step plan.\n" +
-                                "Do NOT say 'Done.' — you are PLANNING, not finishing.\n" +
-                                "Do NOT ask the user questions — decide + plan automatically.",
-                            emptyList()  // NO tools — model can't shortcut to tool call
-                        )
-                        LogCapture.i(TAG, "Phase 1 thinking: ${thinkResponse.reply}")
-
-                        // Add the thinking to conversation so phase 2 sees it
-                        conversation.append("\n\n[MY PLAN]: ${thinkResponse.reply}")
-
-                        // Phase 2: ACT (tools available, plan in context)
-                        LogCapture.i(TAG, "Phase 2: ACTING (tools available, plan in context)")
-                        llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, currentFilter)
-                    } else {
-                        // Single-phase (Tier 1, or iterations 2+ — brain already has context)
-                        llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, currentFilter)
+                    // v3.9.6: Inject action history (last 5 actions) so brain sees what it did.
+                    if (workLog.isNotEmpty() && iteration > 1) {
+                        val recentActions = workLog.toString().lines()
+                            .filter { it.isNotBlank() }
+                            .takeLast(5)
+                            .joinToString("\n")
+                            .take(1000)  // truncate to avoid context bloat
+                        conversation.append("\n\n[ACTION HISTORY — last 5 steps]:\n$recentActions\n")
                     }
+
+                    // v3.9.6: Dumb executor prompt on iterations 2+ — don't re-plan, execute next step.
+                    val execPrompt = if (iteration > 1) {
+                        activePrompt + "\n\n## EXECUTION MODE\nYour plan is in the conversation history. Execute the NEXT step. Do NOT re-plan. Do NOT re-search. Just execute the next step. If the task is complete, call complete(success=true, reason=\"...\")."
+                    } else {
+                        activePrompt
+                    }
+
+                    // v3.9.6: Inject <memory> from previous iteration if available.
+                    if (memoryBuffer.isNotEmpty()) {
+                        conversation.append("\n\n[MEMORY]: $memoryBuffer")
+                    }
+
+                    val llmResponse = llmClient.chatWithFailover(conversation.toString(), execPrompt, contextualToolFilter)
 
                     // v3.8.6: Log the brain's reply text + tool calls so we can SEE what it said.
                     // Without this, we only see tool calls in logs — can't tell if brain planned or not.
@@ -1046,6 +1023,32 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     // v3.9.1: Log FULL brain reply — no truncation. Need to see complete reasoning.
                     LogCapture.i(TAG, "brain reply: ${llmResponse.reply}")
                     LogCapture.i(TAG, "tool calls: $toolsCalled")
+
+                    // v3.9.6: Extract <memory> tag from brain's reply for next iteration.
+                    val memoryTagPattern = Regex("(?i)<memory>(.*?)</memory>", RegexOption.DOT_MATCHES_ALL)
+                    val memoryMatch = memoryTagPattern.find(llmResponse.reply)
+                    if (memoryMatch != null) {
+                        memoryBuffer = memoryMatch.groupValues[1].trim().take(300)
+                        LogCapture.i(TAG, "Memory extracted: $memoryBuffer")
+                    }
+
+                    // v3.9.6: Check if brain called the complete tool — if so, stop the loop.
+                    val calledComplete = llmResponse.toolCalls.any { it.name == "complete" }
+                    if (calledComplete) {
+                        val completeCall = llmResponse.toolCalls.find { it.name == "complete" }
+                        val success = completeCall?.args?.get("success") as? Boolean ?: false
+                        val reason = completeCall?.args?.get("reason") as? String ?: "No reason"
+                        finalReply = if (success) "✅ Done! $reason" else "❌ Task couldn't be completed. $reason"
+                        LogCapture.i(TAG, "✓ complete tool called (success=$success) — stopping loop")
+                        // Execute the complete tool (so it gets logged)
+                        val completeResults = toolExecutor.executeTools(listOf(completeCall!!))
+                        val completeDisplay = completeResults.mapIndexed { i, r ->
+                            val c = if (i < llmResponse.toolCalls.size) llmResponse.toolCalls[i] else completeCall!!
+                            ToolCallDisplay(c.name, c.args, r.success, r.output, 0)
+                        }
+                        addAiStepMessage(finalReply, llmResponse.toolCalls, completeDisplay, iteration, ApiUsageTracker.getTaskCalls())
+                        return@withTimeoutOrNull false // stop the loop
+                    }
 
                     // v3.8.8: Enforced Plan Tracking
                     // Parse the plan from the brain's reply (iteration 1 or when re-planning).

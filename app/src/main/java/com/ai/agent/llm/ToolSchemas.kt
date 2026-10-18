@@ -306,6 +306,12 @@ object ToolSchemas {
         // ==================== ACTION CHAINS (1) ====================
         Schema("actionChain", "v3.7.0: Execute multiple actions sequentially in 1 API call. Saves 50-70% calls. Stops on first failure. Actions with safe:false PAUSE the chain. Screen state is auto-appended after.",
             map_of_action_chain()),
+        // v3.9.6: Completion tool — forces brain to verify success before stopping.
+        Schema("complete", "Call this when the task is COMPLETE. You MUST verify success via readScreen/VLM BEFORE calling this. Do NOT call this unless you have confirmed the task succeeded (or failed).",
+            mapOf(
+                "success" to Param("boolean", "true if task succeeded, false if it failed or is impossible.", required = true),
+                "reason" to Param("string", "Why the task is complete. Include what you see on screen as proof (e.g., 'Video playing at 9:07, 212M views').", required = true),
+            )),
     )
 
     // -----------------------------------------------------------------------
