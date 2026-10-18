@@ -1003,8 +1003,36 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     val activePrompt = systemPrompt  // already contextual from above
                     // v3.2.9: pass the contextual tool filter so we don't ship all 95 tools
                     // when the user just said "hi" or only needs a small tool group.
-                    // v3.3.2: use chatWithFailover so multi-binding auto-failover works.
-                    val llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, contextualToolFilter)
+                    // v3.9.5: TWO-PHASE APPROACH — forces reasoning before acting.
+                    // thinking:enabled doesn't work when tools are present (model shortcuts to tool call).
+                    // Fix: Phase 1 = think WITHOUT tools → Phase 2 = act WITH tools.
+                    // Only for iteration 1 of Tier 2/3 tasks (not Tier 1 "hi").
+                    var llmResponse: LLMClient.LLMResponse
+
+                    val currentFilter = contextualToolFilter
+                    val useTwoPhase = iteration == 1 && !isTier1 && currentFilter != null && currentFilter.isNotEmpty()
+                    if (useTwoPhase) {
+                        // Phase 1: THINK (no tools → model MUST reason in text)
+                        LogCapture.i(TAG, "Phase 1: THINKING (no tools — forcing reasoning)")
+                        val thinkResponse = llmClient.chatWithFailover(
+                            conversation.toString(),
+                            activePrompt + "\n\n## THINKING PHASE\nYou are in the THINKING phase. NO tools are available right now. " +
+                                "Reason deeply about the task: what's on screen, what approach to take, " +
+                                "what the plan is. State your full plan. In the next phase, you'll execute it.",
+                            emptyList()  // NO tools — model can't shortcut to tool call
+                        )
+                        LogCapture.i(TAG, "Phase 1 thinking: ${thinkResponse.reply}")
+
+                        // Add the thinking to conversation so phase 2 sees it
+                        conversation.append("\n\n[MY PLAN]: ${thinkResponse.reply}")
+
+                        // Phase 2: ACT (tools available, plan in context)
+                        LogCapture.i(TAG, "Phase 2: ACTING (tools available, plan in context)")
+                        llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, currentFilter)
+                    } else {
+                        // Single-phase (Tier 1, or iterations 2+ — brain already has context)
+                        llmResponse = llmClient.chatWithFailover(conversation.toString(), activePrompt, currentFilter)
+                    }
 
                     // v3.8.6: Log the brain's reply text + tool calls so we can SEE what it said.
                     // Without this, we only see tool calls in logs — can't tell if brain planned or not.
