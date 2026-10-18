@@ -1009,7 +1009,8 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     // v3.8.6: Log the brain's reply text + tool calls so we can SEE what it said.
                     // Without this, we only see tool calls in logs — can't tell if brain planned or not.
                     val toolsCalled = if (llmResponse.toolCalls.isEmpty()) "(none)" else llmResponse.toolCalls.joinToString(", ") { "${it.name}(${it.args.entries.joinToString(", ") { "${it.key}=${it.value}" }})" }
-                    LogCapture.i(TAG, "brain reply: ${llmResponse.reply.take(200)}")
+                    // v3.9.1: Log FULL brain reply — no truncation. Need to see complete reasoning.
+                    LogCapture.i(TAG, "brain reply: ${llmResponse.reply}")
                     LogCapture.i(TAG, "tool calls: $toolsCalled")
 
                     // v3.8.8: Enforced Plan Tracking
@@ -1519,7 +1520,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             success = r.success,
                             output = combinedOutput,
                         )
-                        LogCapture.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars)")
+                        LogCapture.i(TAG, "Auto-verify: readScreen after ${call.name} (${screenText.length} chars): $screenText")
                     }
                 } catch (e: Exception) {
                     LogCapture.w(TAG, "Auto-verify failed (non-fatal): ${e.message}")
@@ -1554,9 +1555,11 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
         apiCalls: Int,
         status: MessageStatus = MessageStatus.EXECUTING,
     ) {
-        val header = "[$iteration/$MAX_ITERATIONS] [API: $apiCalls calls] $text"
+        // v3.9.1: Show the brain's FULL reasoning text, not just a short header.
+        // The brain's reply is its "thinking" — the user should see it in the chat.
+        val header = "[$iteration/$MAX_ITERATIONS] [API: $apiCalls calls]"
         val msg = ChatMessage(
-            text = header,
+            text = "$header\n$text",  // Show full reply text below the header
             isUser = false,
             toolCalls = results,
             status = status,
