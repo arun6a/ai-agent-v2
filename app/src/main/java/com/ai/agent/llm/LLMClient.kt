@@ -395,8 +395,11 @@ class LLMClient(private val context: Context) {
             // v3.6.2: max_tokens per tier — stops brain from rambling on simple tasks.
             put("max_tokens", maxTokens)
             // Z.ai (both proxy and direct) uses "thinking" param
+            // v3.9.2: ENABLED thinking — was "disabled" since v3.7.1, which turned OFF
+            // the model's reasoning capability. This was the root cause of 18 versions
+            // of brain failures. The model CAN reason — we just turned it off.
             if (providerId == "zai" || providerId == "zai_direct") {
-                put("thinking", JSONObject().put("type", "disabled"))
+                put("thinking", JSONObject().put("type", "enabled"))
             }
             // v3.6.4: REMOVED tools array — was sending 4,750 tokens of junk
             // descriptions on Tier 3 (95 tools × ~50 tokens each, all with the
