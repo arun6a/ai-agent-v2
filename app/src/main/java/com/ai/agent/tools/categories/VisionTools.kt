@@ -10,6 +10,7 @@ import com.ai.agent.llm.ProviderEndpoints
 import com.ai.agent.llm.SavedModelsStore
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
+import com.ai.agent.util.LogCapture
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -282,8 +283,11 @@ object VisionTools {
         val screenshotBase64 = screenshotDeferred.await()
 
         if (screenshotBase64 == null) {
+            LogCapture.w(TAG, "VLM: screenshot capture returned null — accessibility service may not have canTakeScreenshot capability")
             return "Failed to capture screenshot"
         }
+
+        Log.i(TAG, "VLM: screenshot captured (${screenshotBase64.length} chars) — sending to model")
 
         Log.d(TAG, "Sending screenshot to VLM: ${screenshotBase64.length} chars")
 
@@ -334,6 +338,7 @@ object VisionTools {
                 val responseBody = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
+                    LogCapture.e(TAG, "VLM API error ${response.code}: ${responseBody.take(300)}")
                     Log.e(TAG, "VLM error ${response.code}: ${responseBody.take(300)}")
                     return@withContext "VLM error: ${response.code}. Body: ${responseBody.take(200)}"
                 }
@@ -346,9 +351,11 @@ object VisionTools {
                     ?.optString("content")
                     ?: "No response from VLM"
 
+                LogCapture.i(TAG, "VLM success: ${content.take(100)}...")
                 Log.d(TAG, "VLM response: ${content.take(200)}...")
                 content
             } catch (e: Exception) {
+                LogCapture.e(TAG, "VLM call failed: ${e.message}")
                 Log.e(TAG, "VLM call failed", e)
                 "Vision error: ${e.message}"
             }

@@ -255,8 +255,10 @@ class ToolExecutor(private val context: Context) {
                         // The proxy now detects image requests + routes to createVision().
                         Log.i(TAG, "readScreen: VLM mode — calling VLM (vision model or chat model fallback)")
                         val vlmResult = VisionTools.analyzeScreenWithVLM(context, service!!, "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
+                        // v3.8.14: Log the VLM result so we can see WHY it failed.
+                        LogCapture.i(TAG, "VLM result: ${vlmResult.take(200)}")
                         // v3.8.7: Fallback chain when VLM fails — give the brain something to work with.
-                        if (vlmResult.isBlank() || vlmResult.contains("Failed to capture screenshot") || vlmResult.startsWith("VLM error")) {
+                        if (vlmResult.isBlank() || vlmResult.contains("Failed to capture screenshot") || vlmResult.startsWith("VLM error") || vlmResult.startsWith("Vision error")) {
                             LogCapture.w(TAG, "VLM failed — falling back to readScreenStructured + a11y")
                             // Try readScreenStructured first (gives bounds for tapping)
                             val structured = try { service!!.readScreenStructured() } catch (e: Exception) { "" }
