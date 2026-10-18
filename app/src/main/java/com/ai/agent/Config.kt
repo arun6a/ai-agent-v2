@@ -15,5 +15,5 @@ object Config {
     const val SCREEN_HEIGHT = 2400
 
     // App version (must match app/build.gradle.kts versionName)
-    const val VERSION = "3.8.18"
+    const val VERSION = "3.9.0"
 }
