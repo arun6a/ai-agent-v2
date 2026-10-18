@@ -320,7 +320,12 @@ object VisionTools {
                     // Gemini → use sandbox proxy (Gemini's multimodal format is different — TODO)
                     // Z.ai proxy, custom, or non-vision models → use sandbox proxy
                     else -> {
-                        requestBuilder.url(AIProvider.getVisionUrl(context))
+                        // v3.8.11: Use getEndpoint() (includes ?XTransformPort=3030) instead of getVisionUrl()
+                        // getVisionUrl uses getProxyBaseUrl which might be empty/different.
+                        // getEndpoint is the SAME URL the LLMClient uses for chat (proven working).
+                        val visionUrl = AIProvider.getEndpoint(context)
+                        Log.i(TAG, "VLM using endpoint: $visionUrl")
+                        requestBuilder.url(visionUrl)
                     }
                 }
 
