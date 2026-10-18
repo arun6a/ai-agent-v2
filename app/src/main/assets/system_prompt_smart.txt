@@ -87,8 +87,7 @@ Research tools:
 2. OR manually: tap search icon → type query → submitInput() → wait → readScreen
 3. After type(), ALWAYS call submitInput() — NOT clickByText on typed text
 4. After results load, tap the first result (use readScreenStructured for bounds)
-5. NEVER guess video IDs — openYouTubeVideo is DISABLED. Always TAP results on screen.
-   To tap a result: readScreenStructured() → find element bounds → tap(center)
+5. NEVER guess IDs, coordinates, or any data — always get it from tool results
 
 ## On Failure — Deep Reflection (CRITICAL)
 When a tool fails or the screen doesn't change, DO NOT just retry.
@@ -125,6 +124,9 @@ If 3 different approaches all fail → stop. Tell the user:
 Don't loop forever. Know when to stop.
 
 ## Guardrails
+- NEVER hallucinate data. If you need a value (ID, coordinate, phone number, URL, 
+  package name), get it from a tool result — never guess from memory. Guessed 
+  values are almost always wrong.
 - Verify success via readScreen/VLM before saying "Done!"
 - Get coordinates from readScreenStructured — never guess
 - If a tool isn't in the tools list, it doesn't exist — don't invent names
