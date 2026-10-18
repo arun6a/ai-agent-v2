@@ -256,7 +256,17 @@ object AppTools {
                     }
                     searchIntent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                     context.startActivity(searchIntent)
-                    delay(2000)
+                    delay(2500)
+                    // v3.9.5b: Press submitInput to ensure search results load (not just suggestions).
+                    // YouTube sometimes shows the search bar with suggestions instead of results.
+                    // Pressing the search button submits the query.
+                    try {
+                        val a11y = com.ai.agent.accessibility.AgentAccessibilityService.getInstance()
+                        if (a11y != null) {
+                            a11y.submitInput()
+                            delay(1500)  // wait for results to load
+                        }
+                    } catch (_: Exception) {}
                     // v3.8.2: Include a hint in the result so the brain knows what to do next.
                     // Without this, the brain was opening Chrome/launchApp after searchInApp succeeded.
                     val hint = when (pkg) {

@@ -1016,9 +1016,15 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         LogCapture.i(TAG, "Phase 1: THINKING (no tools — forcing reasoning)")
                         val thinkResponse = llmClient.chatWithFailover(
                             conversation.toString(),
-                            activePrompt + "\n\n## THINKING PHASE\nYou are in the THINKING phase. NO tools are available right now. " +
-                                "Reason deeply about the task: what's on screen, what approach to take, " +
-                                "what the plan is. State your full plan. In the next phase, you'll execute it.",
+                            activePrompt + "\n\n## PLANNING PHASE\nYou CANNOT call tools yet. You are PLANNING.\n" +
+                                "Answer these questions in your reply:\n" +
+                                "1. What does the user want? (restate)\n" +
+                                "2. What shortcut should you use? (searchInApp, playSpotify, openWhatsAppChat?)\n" +
+                                "3. After the shortcut, what will you need to do next? (readScreenStructured → tap)\n" +
+                                "4. What should you watch out for? (don't tap search bar, tap video with duration)\n\n" +
+                                "Reply with your FULL analysis + step-by-step plan.\n" +
+                                "Do NOT say 'Done.' — you are PLANNING, not finishing.\n" +
+                                "Do NOT ask the user questions — decide + plan automatically.",
                             emptyList()  // NO tools — model can't shortcut to tool call
                         )
                         LogCapture.i(TAG, "Phase 1 thinking: ${thinkResponse.reply}")
