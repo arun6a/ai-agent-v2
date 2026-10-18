@@ -249,40 +249,29 @@ class ToolExecutor(private val context: Context) {
 
                 when (visionMode) {
                     "vlm" -> {
-                        // VLM mode — skip a11y + ML Kit, go straight to VLM (1 screenshot, 1 API call)
-                        // v3.3.11: check if a vision model is configured first.
-                        val visionModel = SavedModelsStore.getVisionModel(context)
-                        if (visionModel == null) {
-                            // v3.8.8: Fallback to a11y text when VLM mode is ON but no vision model configured.
-                            // Was: return error → brain is blind. Now: fall back to a11y text (better than nothing).
-                            LogCapture.w(TAG, "VLM mode ON but no vision model configured — falling back to a11y text")
+                        // v3.8.10: Always try VLM — even without a separate vision model.
+                        // VisionTools.analyzeScreenWithVLM falls back to the MAIN chat model
+                        // (GLM-5.3-Flash) which supports vision through the proxy.
+                        // The proxy now detects image requests + routes to createVision().
+                        Log.i(TAG, "readScreen: VLM mode — calling VLM (vision model or chat model fallback)")
+                        val vlmResult = VisionTools.analyzeScreenWithVLM(context, service!!, "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
+                        // v3.8.7: Fallback chain when VLM fails — give the brain something to work with.
+                        if (vlmResult.isBlank() || vlmResult.contains("Failed to capture screenshot") || vlmResult.startsWith("VLM error")) {
+                            LogCapture.w(TAG, "VLM failed — falling back to readScreenStructured + a11y")
+                            // Try readScreenStructured first (gives bounds for tapping)
+                            val structured = try { service!!.readScreenStructured() } catch (e: Exception) { "" }
                             val a11yText = try { service!!.readScreen() } catch (e: Exception) { "" }
-                            if (a11yText.isNotBlank()) {
-                                ToolResult(true, "Screen text (a11y fallback, no VLM model): $a11yText")
+                            if (structured.isNotBlank() && structured != "{\"error\":\"screen is null\"}") {
+                                LogCapture.i(TAG, "VLM fallback: readScreenStructured (${structured.length} chars)")
+                                ToolResult(true, "Screen structure (VLM failed, a11y fallback): $structured")
+                            } else if (a11yText.isNotBlank()) {
+                                LogCapture.i(TAG, "VLM fallback: a11y text (${a11yText.length} chars)")
+                                ToolResult(true, "Screen text (a11y fallback, VLM failed): $a11yText")
                             } else {
-                                ToolResult(true, "Screen is empty or unreadable. Set a vision model in AI Settings → Vision for full vision.")
+                                ToolResult(true, "Screen is empty or unreadable. The app may be loading or the screen is blank.")
                             }
                         } else {
-                            Log.i(TAG, "readScreen: VLM mode — calling VLM directly (${visionModel.modelName})")
-                            val vlmResult = VisionTools.analyzeScreenWithVLM(context, service!!, "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
-                            // v3.8.7: Fallback chain when VLM fails — give the brain something to work with.
-                            if (vlmResult.isBlank() || vlmResult.contains("Failed to capture screenshot")) {
-                                LogCapture.w(TAG, "VLM screenshot failed — falling back to readScreenStructured + a11y")
-                                // Try readScreenStructured first (gives bounds for tapping)
-                                val structured = try { service!!.readScreenStructured() } catch (e: Exception) { "" }
-                                val a11yText = try { service!!.readScreen() } catch (e: Exception) { "" }
-                                if (structured.isNotBlank() && structured != "{\"error\":\"screen is null\"}") {
-                                    LogCapture.i(TAG, "VLM fallback: readScreenStructured (${structured.length} chars)")
-                                    ToolResult(true, "Screen structure (VLM failed, a11y fallback): $structured")
-                                } else if (a11yText.isNotBlank()) {
-                                    LogCapture.i(TAG, "VLM fallback: a11y text (${a11yText.length} chars)")
-                                    ToolResult(true, "Screen text (a11y fallback, VLM failed): $a11yText")
-                                } else {
-                                    ToolResult(true, "Screen is empty or unreadable. The app may be loading or the screen is blank.")
-                                }
-                            } else {
-                                ToolResult(true, "Screen text (VLM): $vlmResult")
-                            }
+                            ToolResult(true, "Screen text (VLM): $vlmResult")
                         }
                     }
                     "mlkit" -> {
