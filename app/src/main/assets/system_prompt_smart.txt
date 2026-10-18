@@ -87,7 +87,8 @@ Research tools:
 2. OR manually: tap search icon → type query → submitInput() → wait → readScreen
 3. After type(), ALWAYS call submitInput() — NOT clickByText on typed text
 4. After results load, tap the first result (use readScreenStructured for bounds)
-5. NEVER guess video IDs — tap the result you see on screen
+5. NEVER guess video IDs — openYouTubeVideo is DISABLED. Always TAP results on screen.
+   To tap a result: readScreenStructured() → find element bounds → tap(center)
 
 ## On Failure — Deep Reflection (CRITICAL)
 When a tool fails or the screen doesn't change, DO NOT just retry.

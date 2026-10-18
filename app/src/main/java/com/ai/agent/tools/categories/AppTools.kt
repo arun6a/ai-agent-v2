@@ -323,26 +323,18 @@ object AppTools {
                 // v3.8.2: Accept both 'videoId' and 'id' params — brain sometimes guesses 'id'.
                 val videoId = (call.args["videoId"] as? String ?: call.args["id"] as? String)
                     ?: return ToolExecutor.ToolResult(false, "missing videoId. Pass {videoId: \"<11-char ID>\"} or {id: \"<11-char ID>\"}.")
-                try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("vnd.youtube://video/$videoId"))
-                    intent.setPackage("com.google.android.youtube")
-                    intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                    context.startActivity(intent)
-                    delay(2000)
-                    ToolExecutor.ToolResult(true, "Opened YouTube video: $videoId")
-                } catch (e: Exception) {
-                    try {
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId"))
-                        intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                        context.startActivity(intent)
-                        delay(2000)
-                        ToolExecutor.ToolResult(true, "Opened YouTube video $videoId in browser (YouTube app not available)")
-                    } catch (e2: Exception) {
-                        ToolExecutor.ToolResult(false, "openYouTubeVideo($videoId) failed: ${e2.message}")
-                    }
-                }
+                // v3.9.3: REJECT guessed/hallucinated video IDs.
+                // The brain keeps guessing fake IDs (like dQw4w9WgXcQ = Rick Astley).
+                // Real YouTube IDs are 11 chars, alphanumeric + - and _.
+                // But we can't verify if the ID is real without opening it.
+                // Instead, we BLOCK this tool entirely and force the brain to TAP results.
+                return ToolExecutor.ToolResult(false,
+                    "openYouTubeVideo is DISABLED. Do NOT guess video IDs — they are usually wrong. " +
+                    "Instead: the search results are ON SCREEN right now. " +
+                    "Call readScreenStructured() to find the video result's bounds, " +
+                    "then tap(center of bounds) to play it. " +
+                    "This is the ONLY reliable way to play a YouTube video."
+                )
             }
 
             "openMapsLocation" -> {
