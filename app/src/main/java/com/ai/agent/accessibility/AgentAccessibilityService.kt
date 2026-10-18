@@ -316,94 +316,111 @@ class AgentAccessibilityService : AccessibilityService() {
             return
         }
         try {
-            // v3.8.15: Direct call instead of reflection — reflection was failing with
-            // method signature mismatch on some devices.
-            // takeScreenshot(Executor, TakeScreenshotCallback) is available on API 30+.
+            // v3.8.16: Use Proxy-based reflection for takeScreenshot.
+            // The callback is created as a Proxy below (not a direct anonymous object).
             val executor: java.util.concurrent.Executor = java.util.concurrent.Executors.newSingleThreadExecutor()
-            val screenshotCallback = object : android.accessibilityservice.AccessibilityService.TakeScreenshotCallback {
-                override fun onSuccess(result: android.accessibilityservice.AccessibilityService.ScreenshotResult) {
-                    try {
-                        Log.i(TAG, "Screenshot received")
-                        val hardwareBuffer = result.hardwareBuffer
-                        val colorSpace = result.colorSpace
 
-                        val bitmap = android.graphics.Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
-                        if (bitmap == null) {
-                            Log.e(TAG, "wrapHardwareBuffer returned null")
-                            LogCapture.e(TAG, "Screenshot: wrapHardwareBuffer returned null")
-                            hardwareBuffer.close()
-                            callback(null)
-                            return
-                        }
-                        Log.i(TAG, "Bitmap: ${bitmap.width}x${bitmap.height} config=${bitmap.config}")
-
-                        // Scale down to 480px wide (save tokens for VLM, speed for ML Kit)
-                        val w = bitmap.width
-                        val h = bitmap.height
-                        val scaled = if (w > 480) {
-                            val r = 480f / w
-                            android.graphics.Bitmap.createScaledBitmap(bitmap, 480, (h * r).toInt(), true)
-                        } else bitmap
-
-                        // v4.0.0 approach: compress directly (works on most devices)
-                        val stream = java.io.ByteArrayOutputStream()
-                        val compressOk = try {
-                            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Direct compress failed: ${e.message} — trying ARGB_8888 copy fallback")
-                            false
-                        }
-
-                        if (!compressOk || stream.size() == 0) {
-                            // Fallback: copy to ARGB_8888 then compress
-                            Log.i(TAG, "Using ARGB_8888 copy fallback for compress")
-                            val softwareBitmap = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
-                            if (softwareBitmap != null) {
-                                val fallbackScaled = if (softwareBitmap.width > 480) {
-                                    val r = 480f / softwareBitmap.width
-                                    android.graphics.Bitmap.createScaledBitmap(softwareBitmap, 480, (softwareBitmap.height * r).toInt(), true)
-                                } else softwareBitmap
-                                stream.reset()
-                                fallbackScaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
-                                if (fallbackScaled !== softwareBitmap) fallbackScaled.recycle()
-                                softwareBitmap.recycle()
-                            }
-                        }
-
-                        val b64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
-                        Log.i(TAG, "Screenshot done: ${stream.toByteArray().size} bytes, base64: ${b64.length} chars")
-                        LogCapture.i(TAG, "Screenshot captured: ${b64.length} chars")
-
-                        if (scaled !== bitmap) scaled.recycle()
-                        bitmap.recycle()
-                        hardwareBuffer.close()
-
-                        if (b64.isEmpty() || b64.length < 100) {
-                            Log.e(TAG, "Screenshot base64 too small (${b64.length} chars) — likely failed")
-                            LogCapture.e(TAG, "Screenshot base64 too small (${b64.length} chars)")
-                            callback(null)
-                        } else {
-                            callback(b64)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Screenshot processing failed", e)
-                        LogCapture.e(TAG, "Screenshot processing failed: ${e.message}")
-                        callback(null)
-                    }
-                }
-
-                override fun onFailure(errorCode: Int) {
-                    Log.e(TAG, "Screenshot failed: error $errorCode")
-                    LogCapture.e(TAG, "Screenshot capture FAILED: error code $errorCode (1=unsupported, 2=invalid surface, 3=no display)")
-                    callback(null)
-                }
-            }
-            // v3.8.15: Use reflection but with the correct method signature.
-            // The direct call fails because Kotlin doesn't see the API 30+ overload.
+            // v3.8.16: Use reflection with Proxy
             val asClass = android.accessibilityservice.AccessibilityService::class.java
             val cbClass = Class.forName("android.accessibilityservice.AccessibilityService\$TakeScreenshotCallback")
-            val cbMethod = asClass.getMethod("takeScreenshot", java.util.concurrent.Executor::class.java, cbClass)
-            cbMethod.invoke(this, executor, screenshotCallback)
+            // Try getDeclaredMethod (searches in the class itself, not inherited)
+            val cbMethod = try {
+                asClass.getDeclaredMethod("takeScreenshot", java.util.concurrent.Executor::class.java, cbClass)
+            } catch (e: NoSuchMethodException) {
+                // Fallback to getMethod (searches inherited methods)
+                asClass.getMethod("takeScreenshot", java.util.concurrent.Executor::class.java, cbClass)
+            }
+
+            // Create a Proxy that implements the TakeScreenshotCallback interface
+            val proxyCallback = java.lang.reflect.Proxy.newProxyInstance(
+                cbClass.classLoader,
+                arrayOf(cbClass),
+                java.lang.reflect.InvocationHandler { _, method, args ->
+                    when (method.name) {
+                        "onSuccess" -> {
+                            try {
+                                val result = args[0] as android.accessibilityservice.AccessibilityService.ScreenshotResult
+                                Log.i(TAG, "Screenshot received")
+                                val hardwareBuffer = result.hardwareBuffer
+                                val colorSpace = result.colorSpace
+
+                                val bitmap = android.graphics.Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
+                                if (bitmap == null) {
+                                    Log.e(TAG, "wrapHardwareBuffer returned null")
+                                    LogCapture.e(TAG, "Screenshot: wrapHardwareBuffer returned null")
+                                    hardwareBuffer.close()
+                                    callback(null)
+                                    return@InvocationHandler null
+                                }
+                                Log.i(TAG, "Bitmap: ${bitmap.width}x${bitmap.height} config=${bitmap.config}")
+
+                                // Scale down to 480px wide (save tokens for VLM, speed for ML Kit)
+                                val w = bitmap.width
+                                val h = bitmap.height
+                                val scaled = if (w > 480) {
+                                    val r = 480f / w
+                                    android.graphics.Bitmap.createScaledBitmap(bitmap, 480, (h * r).toInt(), true)
+                                } else bitmap
+
+                                // v4.0.0 approach: compress directly (works on most devices)
+                                val stream = java.io.ByteArrayOutputStream()
+                                val compressOk = try {
+                                    scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Direct compress failed: ${e.message} — trying ARGB_8888 copy fallback")
+                                    false
+                                }
+
+                                if (!compressOk || stream.size() == 0) {
+                                    // Fallback: copy to ARGB_8888 then compress
+                                    Log.i(TAG, "Using ARGB_8888 copy fallback for compress")
+                                    val softwareBitmap = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                                    if (softwareBitmap != null) {
+                                        val fallbackScaled = if (softwareBitmap.width > 480) {
+                                            val r = 480f / softwareBitmap.width
+                                            android.graphics.Bitmap.createScaledBitmap(softwareBitmap, 480, (softwareBitmap.height * r).toInt(), true)
+                                        } else softwareBitmap
+                                        stream.reset()
+                                        fallbackScaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+                                        if (fallbackScaled !== softwareBitmap) fallbackScaled.recycle()
+                                        softwareBitmap.recycle()
+                                    }
+                                }
+
+                                val b64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+                                Log.i(TAG, "Screenshot done: ${stream.toByteArray().size} bytes, base64: ${b64.length} chars")
+                                LogCapture.i(TAG, "Screenshot captured: ${b64.length} chars")
+
+                                if (scaled !== bitmap) scaled.recycle()
+                                bitmap.recycle()
+                                hardwareBuffer.close()
+
+                                if (b64.isEmpty() || b64.length < 100) {
+                                    Log.e(TAG, "Screenshot base64 too small (${b64.length} chars) — likely failed")
+                                    LogCapture.e(TAG, "Screenshot base64 too small (${b64.length} chars)")
+                                    callback(null)
+                                } else {
+                                    callback(b64)
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Screenshot processing failed", e)
+                                LogCapture.e(TAG, "Screenshot processing failed: ${e.message}")
+                                callback(null)
+                            }
+                        }
+                        "onFailure" -> {
+                            val errorCode = args[0] as Int
+                            Log.e(TAG, "Screenshot failed: error $errorCode")
+                            LogCapture.e(TAG, "Screenshot capture FAILED: error code $errorCode (1=unsupported, 2=invalid surface, 3=no display)")
+                            callback(null)
+                        }
+                    }
+                    null
+                }
+            )
+
+            cbMethod.isAccessible = true
+            cbMethod.invoke(this, executor, proxyCallback)
         } catch (e: Exception) {
             Log.e(TAG, "takeScreenshot error", e)
             LogCapture.e(TAG, "takeScreenshot exception: ${e.message}")
