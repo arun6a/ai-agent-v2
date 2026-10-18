@@ -253,7 +253,15 @@ class ToolExecutor(private val context: Context) {
                         // v3.3.11: check if a vision model is configured first.
                         val visionModel = SavedModelsStore.getVisionModel(context)
                         if (visionModel == null) {
-                            ToolResult(false, "VLM mode selected but no vision model configured. Set one in AI Settings → Vision, or switch to Auto/ML Kit mode.")
+                            // v3.8.8: Fallback to a11y text when VLM mode is ON but no vision model configured.
+                            // Was: return error → brain is blind. Now: fall back to a11y text (better than nothing).
+                            LogCapture.w(TAG, "VLM mode ON but no vision model configured — falling back to a11y text")
+                            val a11yText = try { service!!.readScreen() } catch (e: Exception) { "" }
+                            if (a11yText.isNotBlank()) {
+                                ToolResult(true, "Screen text (a11y fallback, no VLM model): $a11yText")
+                            } else {
+                                ToolResult(true, "Screen is empty or unreadable. Set a vision model in AI Settings → Vision for full vision.")
+                            }
                         } else {
                             Log.i(TAG, "readScreen: VLM mode — calling VLM directly (${visionModel.modelName})")
                             val vlmResult = VisionTools.analyzeScreenWithVLM(context, service!!, "Read ALL text visible on the screen. Include app name, all visible text, button labels, menu items, and any text inside images. Be thorough.")
