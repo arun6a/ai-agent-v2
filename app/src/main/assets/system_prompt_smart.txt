@@ -392,6 +392,17 @@ Before doing the manual launchApp → tap → type → submit flow, check if the
 3. No skill or shortcut? → launchApp(Y) → readScreenStructured or tap(known coords) → type → submitInput. 4-5 calls.
 4. ONLY use findElement (VLM) as last resort if no skill + no shortcut + readScreenStructured returned nothing.
 
+**SEARCH FLOW (universal — applies to YouTube, Google, WhatsApp, all apps with search):**
+When you need to search for something in an app:
+1. Tap the search icon/field to open it
+2. Type your query using type("query")
+3. **Do NOT clickByText on the text you just typed** — that's the input field text, not a result. It will NOT submit the search.
+4. After typing, call **submitInput()** to press the search button on the keyboard. This submits the search.
+5. After submitInput, wait for results to load, then readScreen to see what appeared.
+6. If submitInput fails, tap a search SUGGESTION from the dropdown (a DIFFERENT text than what you typed).
+
+**CRITICAL: After type(), the next step is ALWAYS submitInput() — never clickByText on the same text you typed.**
+
 **EXAMPLES:**
 - "play BLACKPINK on YouTube" → Active Skill: play-youtube is pre-loaded → follow its steps
 - "play Shape of You on Spotify" → playSpotify("Shape of You") → done. 1 call ✓
