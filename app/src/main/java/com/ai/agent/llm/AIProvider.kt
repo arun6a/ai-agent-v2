@@ -348,9 +348,13 @@ object AIProvider {
     fun getLlmProxyUrl(context: Context): String =
         getProxyBaseUrl(context).trimEnd('/') + "/api/llm/proxy"
 
-    /** Full URL for the vision endpoint (POST /api/llm/vision). */
+    /**
+     * Full URL for the vision endpoint.
+     * v3.8.10: Uses /api/llm/proxy (same as chat) — the proxy detects image content
+     * and routes to createVision(). Was /api/llm/vision which didn't exist → 404.
+     */
     fun getVisionUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/llm/vision"
+        getProxyBaseUrl(context).trimEnd('/') + "/api/llm/proxy"
 
     /** Full URL for the web-search endpoint (POST /api/web-search). */
     fun getWebSearchUrl(context: Context): String =
