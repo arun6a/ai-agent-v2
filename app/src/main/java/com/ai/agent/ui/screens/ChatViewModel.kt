@@ -818,6 +818,16 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                 LogCapture.i(TAG, "Plan-then-Act: enabled (brain will state plan on first response)")
             }
 
+            // v3.8.13: Inject the ACTUAL screen resolution so the brain knows the coordinate space.
+            // Was hardcoded 1080x2400 — but tablets have different resolutions (2880x1800, etc.).
+            val displayMetrics = context.resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+            val screenHeight = displayMetrics.heightPixels
+            systemPrompt += "\n\n## Device Info\n" +
+                "Screen resolution: ${screenWidth}x${screenHeight} pixels. " +
+                "When tapping, ALWAYS get coordinates from readScreenStructured bounds (not guessed). " +
+                "Calculate center: x=(left+right)/2, y=(top+bottom)/2."
+
             // v3.6.2: Per-iteration instruction moved here (was repeated every step).
             // This saves ~50 tokens per iteration × every step.
             systemPrompt += "\n\n## Agent Loop Instructions\n" +

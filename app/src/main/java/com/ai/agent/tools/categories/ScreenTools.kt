@@ -44,10 +44,14 @@ object ScreenTools {
                 }
                 val x = (call.args["x"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing x. Pass {x, y} for coordinates OR {target: \"text\"} to click by text.")
                 val y = (call.args["y"] as? Number)?.toFloat() ?: return ToolExecutor.ToolResult(false, "missing y. Pass {x, y} for coordinates OR {target: \"text\"} to click by text.")
-                // v3.7.7: Reject out-of-bounds taps — screen is 1080x2400.
-                // The brain sometimes hallucinates coords like tap(2248, 1411) which are impossible.
-                if (x > 1080 || y > 2400 || x < 0 || y < 0) {
-                    return ToolExecutor.ToolResult(false, "tap($x, $y) is OUT OF BOUNDS — screen is 1080x2400. Call readScreenStructured() to get real element bounds, then tap the center: x=(left+right)/2, y=(top+bottom)/2.")
+                // v3.8.13: Dynamic screen resolution — was hardcoded 1080x2400, but tablets have
+                // different resolutions (e.g., 2880x1800). Detect actual screen size from the context.
+                val displayMetrics = context.resources.displayMetrics
+                val screenWidth = displayMetrics.widthPixels
+                val screenHeight = displayMetrics.heightPixels
+                // v3.7.7: Reject out-of-bounds taps.
+                if (x > screenWidth || y > screenHeight || x < 0 || y < 0) {
+                    return ToolExecutor.ToolResult(false, "tap($x, $y) is OUT OF BOUNDS — screen is ${screenWidth}x${screenHeight}. Call readScreenStructured() to get real element bounds, then tap the center: x=(left+right)/2, y=(top+bottom)/2.")
                 }
                 ToolExecutor.ToolResult(service!!.tap(x, y), "tap($x, $y)")
             }

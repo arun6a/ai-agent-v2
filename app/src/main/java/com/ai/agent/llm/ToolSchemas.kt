@@ -45,10 +45,10 @@ object ToolSchemas {
         // ==================== SCREEN (14) ====================
         Schema("readScreen", "Read current screen text (3-tier: accessibility → ML Kit OCR → VLM). No API call needed for text-heavy screens."),
         Schema("readScreenStructured", "Read screen as a JSON tree of clickable elements with their bounds. Use to find tappable elements (icons, buttons) when clickByText fails."),
-        Schema("tap", "Tap at screen coordinates. Pass {x, y} for a coordinate tap, OR {target: \"text\"} to click by text (redirects to clickByText). Screen is 1080x2400.",
+        Schema("tap", "Tap at screen coordinates. Pass {x, y} for a coordinate tap, OR {target: \"text\"} to click by text (redirects to clickByText). IMPORTANT: Call readScreenStructured first to get element bounds, then tap the center: x=(left+right)/2, y=(top+bottom)/2. Do NOT guess coordinates. Screen resolution varies by device.",
             mapOf(
-                "x" to Param("number", "X coordinate (0-1080). Required unless using target.", required = false),
-                "y" to Param("number", "Y coordinate (0-2400). Required unless using target.", required = false),
+                "x" to Param("number", "X coordinate. Get from readScreenStructured bounds: (left+right)/2.", required = false),
+                "y" to Param("number", "Y coordinate. Get from readScreenStructured bounds: (top+bottom)/2.", required = false),
                 "target" to Param("string", "Text of element to click (alternative to x/y). Use when you don't know exact coords.", required = false),
             )),
         Schema("clickByText", "Click a UI element by its visible text. Supports partial matching. SILENTLY FAILS on icon-only UIs (no text) — use readScreenStructured instead.",
