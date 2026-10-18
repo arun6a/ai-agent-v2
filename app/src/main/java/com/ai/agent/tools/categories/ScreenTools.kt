@@ -82,7 +82,22 @@ object ScreenTools {
             "scrollUp" -> ToolExecutor.ToolResult(service!!.scrollUp(), "scrollUp")
             "pressBack" -> ToolExecutor.ToolResult(service!!.pressBack(), "pressBack")
             "pressHome" -> ToolExecutor.ToolResult(service!!.pressHome(), "pressHome")
-            "pressEnter" -> ToolExecutor.ToolResult(service!!.pressEnter(), "pressEnter")
+            "pressEnter" -> {
+                // v3.8.9: pressEnter often doesn't submit on YouTube/Google search boxes
+                // because the Enter key transforms into a Search button. Fall back to submitInput.
+                val entered = service!!.pressEnter()
+                delay(500)
+                // Check if the input field is still focused (meaning Enter didn't submit)
+                val stillFocused = service!!.rootInActiveWindow?.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT) != null
+                if (stillFocused) {
+                    android.util.Log.w(TAG, "pressEnter didn't submit (input still focused) — falling back to submitInput")
+                    val submitted = service!!.submitInput()
+                    delay(800)
+                    ToolExecutor.ToolResult(submitted, "pressEnter → submitInput fallback (Enter didn't submit)")
+                } else {
+                    ToolExecutor.ToolResult(entered, "pressEnter (submitted)")
+                }
+            }
             "submitInput" -> {
                 // Same AI-Agent-foreground guard as type() — don't submit our own chat input.
                 val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager

@@ -875,6 +875,13 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             var replanCount = 0                     // how many times brain re-planned
             val MAX_REPLANS = 2                     // max re-plans before STOP
 
+            // v3.8.9: "Screen didn't change" detection — catches "fake success" loops.
+            // When a tool returns ✓ but the screen is identical to before → the brain is stuck.
+            // This catches what failure-based detection misses (tools that "succeed" without accomplishing).
+            var lastScreenText = ""                 // screen text after last action
+            var sameScreenCount = 0                 // how many times screen didn't change in a row
+            val MAX_SAME_SCREEN = 2                 // 2x same screen → force re-plan
+
             // v2.2.2: Notify AgentService that a task is running (updates notification)
             com.ai.agent.service.AgentService.notifyTaskStarted()
             // v2.2.2: Reset stop flag from notification
@@ -1286,6 +1293,32 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                                 LogCapture.i(TAG, "Plan COMPLETE — all ${currentPlan!!.size} steps done")
                             }
                         }
+                    }
+
+                    // v3.8.9: "Screen didn't change" detection — catches "fake success" loops.
+                    // Extract the screen text from the tool results (auto-verify appends "[Screen after action]: ...")
+                    // If the screen is identical to the previous iteration → the brain is stuck.
+                    val currentScreenText = results.joinToString("") { it.output }
+                        .substringAfter("[Screen after action]: ", "")
+                        .take(500)
+                    if (currentScreenText.isNotBlank()) {
+                        if (currentScreenText == lastScreenText) {
+                            sameScreenCount++
+                            LogCapture.w(TAG, "Screen didn't change (count=$sameScreenCount) — possible stuck loop")
+                            if (sameScreenCount >= MAX_SAME_SCREEN) {
+                                // Force re-plan — the brain is stuck on the same screen
+                                conversation.append(
+                                    "\n\n⚠️ STUCK LOOP DETECTED: You've taken $sameScreenCount actions but the screen hasn't changed. " +
+                                        "Your approach isn't working. RE-PLAN NOW: state 'NEW PLAN: 1)... 2)...' with a completely different approach. " +
+                                        "The current screen is: ${currentScreenText.take(200)}"
+                                )
+                                LogCapture.w(TAG, "Stuck loop detected (same screen ${sameScreenCount}x) — forcing re-plan")
+                                sameScreenCount = 0 // reset after injecting warning
+                            }
+                        } else {
+                            sameScreenCount = 0 // screen changed — reset
+                        }
+                        lastScreenText = currentScreenText
                     }
 
                     // v3.8.2: 3-different-approach cap (counts tools TRIED, not just failed).
