@@ -76,14 +76,15 @@ class LLMClient(private val context: Context) {
         // Retry up to 3 times with increasing delay
         for (attempt in 1..3) {
             try {
-                // v3.6.2: compute max_tokens based on tool filter (tier proxy).
-                // Tier 1 (empty filter = no tools) → 100 tokens (short reply)
-                // Tier 2 (non-empty filter = contextual tools) → 500 tokens
-                // Tier 3 (null filter = all tools) → 2000 tokens
+                // v3.8.18: max_tokens per tier — INCREASED for chain-of-thought reasoning.
+                // Tier 1 (empty filter = no tools) → 100 tokens (short reply, no reasoning needed)
+                // Tier 2 (non-empty filter = contextual tools) → 1500 tokens (room for reasoning + tool call)
+                // Tier 3 (null filter = all tools) → 3000 tokens (complex tasks need deep thinking)
+                // Reasoning tokens are CHEAP. Tool call iterations are EXPENSIVE. Think more, call fewer tools.
                 val maxTokens = when {
                     toolFilter != null && toolFilter.isEmpty() -> 100
-                    toolFilter != null -> 500
-                    else -> 2000
+                    toolFilter != null -> 1500
+                    else -> 3000
                 }
                 val requestBody = when (provider.id) {
                     "gemini" -> buildGeminiRequest(model, userMessage, systemPrompt)
@@ -376,7 +377,7 @@ class LLMClient(private val context: Context) {
         systemPrompt: String,
         providerId: String,
         toolFilter: List<String>? = null,
-        maxTokens: Int = 2000,  // v3.6.2: per-tier max completion tokens
+        maxTokens: Int = 3000,  // v3.8.18: increased for chain-of-thought reasoning
     ): String {
         val messages = JSONArray()
         messages.put(JSONObject().apply {
