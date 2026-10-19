@@ -1003,9 +1003,17 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         conversation.append("\n\n[ACTION HISTORY — last 5 steps]:\n$recentActions\n")
                     }
 
-                    // v3.9.6: Dumb executor prompt on iterations 2+ — don't re-plan, execute next step.
+                    // v3.9.7: Dumb executor prompt — strengthened (inspired by mobilerun).
+                    // Be aggressive: "dumb robot", "do NOT optimize", "do NOT consider screen state".
+                    // Prevents brain from re-planning or second-guessing instead of executing.
                     val execPrompt = if (iteration > 1) {
-                        activePrompt + "\n\n## EXECUTION MODE\nYour plan is in the conversation history. Execute the NEXT step. Do NOT re-plan. Do NOT re-search. Just execute the next step. If the task is complete, call complete(success=true, reason=\"...\")."
+                        activePrompt + "\n\n## EXECUTION MODE\n" +
+                            "You are a DUMB ROBOT. Your plan is in the conversation history above.\n" +
+                            "Execute the NEXT step. Do NOT re-plan. Do NOT re-search. Do NOT optimize.\n" +
+                            "Do NOT consider whether the plan makes sense. Do NOT second-guess.\n" +
+                            "Just execute the next step NOW.\n" +
+                            "If you can't execute (element not found, wrong screen), call complete(success=false, reason=\"...\").\n" +
+                            "If the task is complete, call complete(success=true, reason=\"...\")."
                     } else {
                         activePrompt
                     }
@@ -1161,8 +1169,17 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     }
 
                     // === Infinite-loop detection + strategy switching ===
-                    // readScreen() and wait() are verification tools — expected to repeat.
-                    val actionTools = llmResponse.toolCalls.filter { it.name != "readScreen" && it.name != "wait" && it.name != "readScreenStructured" }
+                    // v3.9.7: Exclude verification tools (readScreen, wait) AND navigation tools
+                    // (scrollDown, scrollUp, pressBack, pressHome) from the repeat cap.
+                    // Navigation tools are legitimately repeatable — you often need to scroll
+                    // 3-5 times to find a video in search results. Only ACTION tools that
+                    // target specific elements (tap, clickByText, type, swipe) should trigger
+                    // the cap — repeating those with the same args means the brain is stuck.
+                    val actionTools = llmResponse.toolCalls.filter {
+                        it.name != "readScreen" && it.name != "wait" && it.name != "readScreenStructured" &&
+                        it.name != "scrollDown" && it.name != "scrollUp" &&
+                        it.name != "pressBack" && it.name != "pressHome"
+                    }
                     var stuckSignature: String? = null
                     for (call in actionTools) {
                         val signature = "${call.name}(${argsStr(call.args)})"
