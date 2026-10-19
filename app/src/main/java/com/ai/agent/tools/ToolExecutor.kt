@@ -52,7 +52,7 @@ class ToolExecutor(private val context: Context) {
          */
         fun getAvailableToolNames(): List<String> = listOf(
             // Screen
-            "readScreen", "readScreenStructured", "tap", "clickByText", "type", "swipe",
+            "readScreen", "readScreenStructured", "tap", "clickByText", "clickElement", "type", "swipe",
             "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput",
             "lockScreen", "takeScreenshotToGallery",
             // Apps
@@ -380,6 +380,7 @@ class ToolExecutor(private val context: Context) {
             }
             "tap" -> ScreenTools.execute(call, context, service, database)
             "clickByText" -> ScreenTools.execute(call, context, service, database)
+            "clickElement" -> ScreenTools.execute(call, context, service, database)
             "type" -> ScreenTools.execute(call, context, service, database)
             "swipe" -> ScreenTools.execute(call, context, service, database)
             "scrollDown" -> ScreenTools.execute(call, context, service, database)

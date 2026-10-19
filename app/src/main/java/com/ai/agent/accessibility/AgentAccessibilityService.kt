@@ -121,7 +121,7 @@ class AgentAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return "{\"error\":\"screen is null\"}"
         val sb = StringBuilder()
         sb.append("{\"app\":\"${root.packageName ?: "unknown"}\",\"elements\":[")
-        val state = intArrayOf(0) // state[0] = element count
+        val state = intArrayOf(0) // state[0] = element count (also used as 1-based index)
         collectElements(root, sb, state, 15, 100)
         sb.append("]}")
         return sb.toString()
@@ -144,6 +144,7 @@ class AgentAccessibilityService : AccessibilityService() {
         if (text.isNotEmpty() || desc.isNotEmpty() || clickable || scrollable) {
             if (state[0] > 0) sb.append(",")
             state[0]++
+            val index = state[0]  // v3.9.9: 1-based index for clickElement(index)
 
             val type = when {
                 className.contains("Button") || clickable -> "button"
@@ -158,7 +159,8 @@ class AgentAccessibilityService : AccessibilityService() {
             node.getBoundsInScreen(bounds)
             val label = if (text.isNotEmpty()) text else desc
 
-            sb.append("{\"type\":\"$type\",\"text\":\"${escapeJson(label)}\",\"clickable\":$clickable,\"scrollable\":$scrollable,\"bounds\":\"${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}\"}")
+            // v3.9.9: Include index field so brain can use clickElement(index) instead of guessing coordinates
+            sb.append("{\"index\":$index,\"type\":\"$type\",\"text\":\"${escapeJson(label)}\",\"clickable\":$clickable,\"scrollable\":$scrollable,\"bounds\":\"${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}\"}")
         }
 
         for (i in 0 until node.childCount) {
@@ -197,6 +199,61 @@ class AgentAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 100)).build()
         return dispatchGesture(gesture, null, null)
+    }
+
+    /**
+     * v3.9.9: Click an element by its 1-based index from readScreenStructured().
+     * Re-traverses the accessibility tree (same order as readScreenStructured)
+     * and taps the center bounds of the element at the given index.
+     *
+     * This eliminates coordinate guessing — the brain says "click element 3"
+     * instead of "tap x=1347, y=158" (which often hits the wrong element).
+     *
+     * Returns true if the element was found + tapped, false otherwise.
+     */
+    fun clickElement(index: Int): Boolean {
+        if (index < 1) return false
+        val root = rootInActiveWindow ?: return false
+        val counter = intArrayOf(0)
+        val target = findElementByIndex(root, index, counter, 15, 100)
+        if (target == null) return false
+        val bounds = android.graphics.Rect()
+        target.getBoundsInScreen(bounds)
+        val centerX = (bounds.left + bounds.right) / 2f
+        val centerY = (bounds.top + bounds.bottom) / 2f
+        // Try performAction first (more reliable than tap for clickable elements)
+        if (target.isClickable) {
+            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Log.i(TAG, "clickElement($index): performed ACTION_CLICK at center ($centerX, $centerY)")
+            return true
+        }
+        // Fall back to gesture tap for non-clickable elements
+        val tapped = tap(centerX, centerY)
+        Log.i(TAG, "clickElement($index): gesture tap at ($centerX, $centerY) → $tapped")
+        return tapped
+    }
+
+    private fun findElementByIndex(
+        node: AccessibilityNodeInfo?,
+        targetIndex: Int,
+        counter: IntArray,
+        maxDepth: Int,
+        maxElements: Int
+    ): AccessibilityNodeInfo? {
+        if (node == null || maxDepth <= 0 || counter[0] >= maxElements) return null
+        val text = node.text?.toString()?.trim() ?: ""
+        val desc = node.contentDescription?.toString()?.trim() ?: ""
+        val clickable = node.isClickable
+        val scrollable = node.isScrollable
+        if (text.isNotEmpty() || desc.isNotEmpty() || clickable || scrollable) {
+            counter[0]++
+            if (counter[0] == targetIndex) return node
+        }
+        for (i in 0 until node.childCount) {
+            val found = findElementByIndex(node.getChild(i), targetIndex, counter, maxDepth - 1, maxElements)
+            if (found != null) return found
+        }
+        return null
     }
 
     fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long = 300): Boolean {

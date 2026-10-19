@@ -59,6 +59,16 @@ object ScreenTools {
                 val text = call.args["text"] as? String ?: return ToolExecutor.ToolResult(false, "missing text")
                 ToolExecutor.ToolResult(service!!.clickByText(text), "clickByText($text)")
             }
+            // v3.9.9: clickElement(index) — click by index from readScreenStructured.
+            // Preferred over tap(x,y) — no coordinate guessing. The brain reads
+            // readScreenStructured (which now includes "index" field), picks the
+            // element it wants (e.g., the first video result), and clicks it by index.
+            "clickElement" -> {
+                val index = (call.args["index"] as? Number)?.toInt()
+                    ?: return ToolExecutor.ToolResult(false, "missing index. Call readScreenStructured() first to see element indices, then clickElement(index=N).")
+                val clicked = service!!.clickElement(index)
+                ToolExecutor.ToolResult(clicked, if (clicked) "clickElement($index) → tapped" else "clickElement($index) failed (element not found — screen may have changed. Call readScreenStructured() again.)")
+            }
             "type" -> {
                 val text = call.args["text"] as? String ?: return ToolExecutor.ToolResult(false, "missing text")
                 // First, check what app is currently foreground so we don't accidentally type

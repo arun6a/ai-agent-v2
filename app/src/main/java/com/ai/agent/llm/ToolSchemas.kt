@@ -53,6 +53,12 @@ object ToolSchemas {
             )),
         Schema("clickByText", "Click a UI element by its visible text. Supports partial matching. SILENTLY FAILS on icon-only UIs (no text) — use readScreenStructured instead.",
             mapOf("text" to Param("string", "Text of the element to click (supports partial match).", required = true))),
+        // v3.9.9: clickElement — PREFERRED way to click. No coordinate guessing.
+        // Brain reads readScreenStructured (elements have "index" field), picks the
+        // element it wants (e.g., first video result), calls clickElement(index=N).
+        // The app taps that element's bounds center automatically.
+        Schema("clickElement", "Click an element by its 1-based index from readScreenStructured(). PREFERRED over tap(x,y) — no coordinate guessing. Call readScreenStructured() first to see element indices, then clickElement(index=N) to click the Nth element.",
+            mapOf("index" to Param("number", "1-based index of the element from readScreenStructured(). Example: if the first video result has index 3 in the JSON, call clickElement(index=3).", required = true))),
         Schema("type", "Type text into the currently focused input field. Use after tapping a search box or text field.",
             mapOf("text" to Param("string", "Text to type into the focused field.", required = true))),
         Schema("swipe", "Swipe from one point to another.",

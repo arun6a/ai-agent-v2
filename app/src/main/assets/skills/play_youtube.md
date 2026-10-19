@@ -24,11 +24,12 @@ keywords: play, youtube, video, song, music, listen, watch
 - User said "play BLACKPINK" → search for "BLACKPINK" (not "play BLACKPINK")
 
 ## How to Find the Video (CRITICAL — read carefully)
-- Use readScreenStructured() to get accurate text + bounds. Do NOT use readScreen() —
-  the VLM misreads text (e.g., "APT." becomes "X7" or "XAT") and you will tap the wrong video.
-- readScreenStructured gives you the REAL text from the accessibility tree.
-- Find the first element with a duration field (e.g., "2:56", "3:11").
-- Tap its bounds center: tap(x=(left+right)/2, y=(top+bottom)/2).
+- Call readScreenStructured() to get the element list with indices.
+- Do NOT use readScreen() — the VLM misreads text (e.g., "APT." becomes "X7" or "XAT").
+- readScreenStructured gives you the REAL text from the accessibility tree + each element's index.
+- Find the first element that looks like a video result (has title text, usually clickable).
+- Call clickElement(index=N) where N is that element's index.
+- Do NOT use tap(x,y) with guessed coordinates — you will tap the search bar instead of the video.
 
 ## How to Verify Video is Playing (CRITICAL — read carefully)
 After tapping a video result, call readScreen() to check the VLM description.
