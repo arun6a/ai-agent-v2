@@ -1171,10 +1171,13 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     // === Infinite-loop detection + strategy switching ===
                     // v3.9.7: Exclude verification tools (readScreen, wait) AND navigation tools
                     // (scrollDown, scrollUp, pressBack, pressHome) from the repeat cap.
-                    // Navigation tools are legitimately repeatable — you often need to scroll
-                    // 3-5 times to find a video in search results. Only ACTION tools that
-                    // target specific elements (tap, clickByText, type, swipe) should trigger
-                    // the cap — repeating those with the same args means the brain is stuck.
+                    // v3.9.8: Distinguish FAILED repeats from SUCCESSFUL repeats.
+                    //   - FAILED repeat (signature in previouslyFailedSignatures) → stop at MAX_REPEATED_TOOLS (2)
+                    //     This is a TRUE stuck loop — brain is retrying a failed action.
+                    //   - SUCCESSFUL repeat (not in failed set) → inject GUIDANCE, don't stop until SOFT_CAP (4)
+                    //     Brain is confused about the next step, not stuck. Give it direction.
+                    //   This fixes the issue where brain calls searchInApp(youtube, "X") twice (both succeed)
+                    //   and gets stopped with "it's not working" — even though it DID work.
                     val actionTools = llmResponse.toolCalls.filter {
                         it.name != "readScreen" && it.name != "wait" && it.name != "readScreenStructured" &&
                         it.name != "scrollDown" && it.name != "scrollUp" &&
@@ -1185,11 +1188,10 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         val signature = "${call.name}(${argsStr(call.args)})"
                         toolCallHistory.add(signature)
                         val count = toolCallHistory.count { it == signature }
+                        val isFailedRepeat = signature in previouslyFailedSignatures
 
                         // v3.8.2: Strategy switch ONLY fires if this signature FAILED in a previous iteration.
-                        // v3.8.1 bug: was firing on count==1 (before the tool even ran), confusing the brain.
-                        // Now: only inject the warning if the brain is RETRYING a tool that already failed.
-                        if (signature in previouslyFailedSignatures) {
+                        if (isFailedRepeat) {
                             val alternatives = getStrategyAlternatives(call.name)
                             conversation.append(
                                 "\n\n⚠️ STRATEGY SWITCH REQUIRED: \"$signature\" failed before. " +
@@ -1202,7 +1204,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             LogCapture.w(TAG, "Strategy switch injected for $signature (previously failed — must switch now)")
                         }
 
-                        if (count >= MAX_REPEATED_TOOLS) {
+                        // v3.9.8: FAILED repeat → stop at MAX_REPEATED_TOOLS (2).
+                        // Brain is retrying a tool that already failed — true stuck loop.
+                        if (isFailedRepeat && count >= MAX_REPEATED_TOOLS) {
                             finalReply = "I stopped because I tried \"$signature\" $count times — it's not working. " +
                                 "I may be stuck on this step.\n\n$workLog\n\n" +
                                 "The task might need a different approach. Try breaking it into smaller steps, " +
@@ -1227,6 +1231,30 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                             }
                             stuckSignature = signature
                             break
+                        }
+
+                        // v3.9.8: SUCCESSFUL repeat → inject guidance, don't stop until SOFT_CAP (4).
+                        // Brain called a tool that SUCCEEDED before, with the same args.
+                        // It's not stuck — it's confused about what to do NEXT.
+                        // Give it direction instead of killing the task.
+                        if (!isFailedRepeat && count >= 2) {
+                            val SOFT_CAP_SUCCESSFUL = 4  // safety valve — if brain ignores guidance 4x, stop
+                            if (count >= SOFT_CAP_SUCCESSFUL) {
+                                finalReply = "I stopped because I repeated \"$signature\" $count times even though it succeeded. " +
+                                    "The task isn't progressing. I may be confused about the next step.\n\n$workLog"
+                                stuckSignature = signature
+                                break
+                            }
+                            // Inject guidance — tell the brain what to do INSTEAD of repeating
+                            conversation.append(
+                                "\n\n⚠️ \"$signature\" ALREADY SUCCEEDED ${count}x. Do NOT call it again.\n" +
+                                "The results are already on screen. Your next step should be DIFFERENT:\n" +
+                                "- If you searched → call readScreenStructured() to get element bounds, then tap the first result.\n" +
+                                "- If you tapped → call readScreen() to verify the result.\n" +
+                                "- If you typed → call submitInput() to submit the search.\n" +
+                                "Do NOT repeat the same action. Move to the NEXT step."
+                            )
+                            LogCapture.w(TAG, "Successful repeat detected: $signature (count=$count) — injecting guidance instead of stopping")
                         }
                     }
                     if (stuckSignature != null) {
