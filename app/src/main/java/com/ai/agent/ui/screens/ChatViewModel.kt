@@ -777,6 +777,48 @@ readScreen() reads the screen using: accessibility text → ML Kit OCR → VLM (
 analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). Use readScreen() first, only use analyzeScreen() if you need to find visual elements (icons, images, positions).
 """.trimIndent()
                 systemPrompt += "\n\n$visionGuide"
+
+                // v3.9.11: VLM-only mode gets DETAILED clicking rule.
+                // In VLM mode, readScreen returns natural language descriptions →
+                // brain can match element text to user request → detailed rule works.
+                // In auto/mlkit mode, readScreen returns cryptic a11y text →
+                // detailed rule would confuse the brain → skip it (uses base CLICKING RULE).
+                if (visionMode == "vlm") {
+                    val detailedClickingRule = """
+## DETAILED CLICKING RULE (VLM mode — follow EXACTLY)
+
+BEFORE calling clickElement, you MUST identify WHICH element and WHY:
+
+STEP 1: Call readScreenStructured() to get the element list with indices.
+STEP 2: READ each element's "text" field. Do NOT skip this.
+STEP 3: Identify which element matches your target:
+  - For "play X": find the element whose text contains the song/movie title
+  - For "open Y channel": find the element with the channel name
+  - For "click Z button": find the element with button text Z
+  - Match the USER'S REQUEST to the element's text — don't pick "index 1" just because it's first
+STEP 4: State in your reply: "Element index N has text 'X' — matches my target because [reason]"
+STEP 5: THEN call clickElement(index=N)
+
+NEVER call clickElement without first identifying WHICH element and WHY.
+If you can't find a matching element → scroll, re-search, or call complete(success=false).
+Do NOT guess an index and hope it's right — you will click the wrong thing.
+
+EXAMPLE (good):
+"User wants GTA 6 trailer from official channel.
+ readScreenStructured shows: index 4 has text 'Grand Theft Auto VI: An Extended Look', channel 'Rockstar Games'.
+ This matches — Rockstar is the official GTA channel.
+ → clicking index 4."
+clickElement(index=4)
+
+EXAMPLE (bad — NEVER do this):
+"Done."
+clickElement(index=4)  ← no reasoning, no text match, just guessed
+
+ALWAYS state index + text + reason before clicking. No exceptions.
+""".trimIndent()
+                    systemPrompt += "\n\n$detailedClickingRule"
+                    LogCapture.i(TAG, "VLM mode detected — injecting detailed clicking rule")
+                }
             }  // end if (!isTier1)
 
             // v3.7.6: Auto-inject the FULL skill body for relevant skills.
@@ -1003,21 +1045,24 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         conversation.append("\n\n[ACTION HISTORY — last 5 steps]:\n$recentActions\n")
                     }
 
-                    // v3.9.10: Dumb executor prompt — strengthened with "read SCREEN STATE" + "don't repeat".
-                    // Skills are proven workflows → execute steps in order. BUT after each step,
-                    // read the SCREEN STATE block. If task is already complete → call complete.
-                    // Don't blindly follow skill steps if reality differs (auto-play, wrong results, etc.).
+                    // v3.9.11: Dumb executor prompt — softened to allow reasoning before clicks.
+                    // v3.9.10 was too aggressive ("DUMB ROBOT. Don't think.") → brain stopped reasoning
+                    // and just guessed indices. Now: "execute, but REASON about each click first."
+                    // Forces brain to state index + text + why before every clickElement.
                     val execPrompt = if (iteration > 1) {
                         activePrompt + "\n\n## EXECUTION MODE\n" +
-                            "You are a DUMB ROBOT. Your plan is in the conversation history above.\n" +
-                            "Execute the NEXT step. Do NOT re-plan. Do NOT re-search. Do NOT optimize.\n" +
-                            "Do NOT consider whether the plan makes sense. Do NOT second-guess.\n" +
-                            "Just execute the next step NOW.\n\n" +
-                            "AFTER EACH STEP, read the ╔══ SCREEN STATE ══╗ block in the tool result.\n" +
-                            "If it shows the task is ALREADY COMPLETE (e.g., video playing, message sent),\n" +
-                            "call complete(success=true, reason=\"...\") NOW — do NOT proceed to the next step.\n\n" +
+                            "Execute the NEXT step from your plan. Do NOT re-plan from scratch.\n" +
+                            "Do NOT re-search unless the previous search failed.\n\n" +
+                            "BUT — before EVERY clickElement call, you MUST:\n" +
+                            "1. State the index you're clicking\n" +
+                            "2. State the TEXT of that element (from readScreenStructured)\n" +
+                            "3. State WHY it matches your target\n" +
+                            "Example: 'Element index 4 has text \"GTA VI Trailer\" — matches user request. Clicking.'\n\n" +
+                            "If you can't state all 3 → call readScreenStructured() first. Do NOT guess.\n\n" +
+                            "After each step, read the ╔══ SCREEN STATE ══╗ block.\n" +
+                            "If it shows the task is ALREADY COMPLETE → call complete(success=true). Don't proceed.\n\n" +
                             "Do NOT repeat readScreenStructured() if you called it in the previous step.\n" +
-                            "Use the data from [ACTION HISTORY — last 5 steps] instead.\n\n" +
+                            "Use the data from [ACTION HISTORY — last 5 steps].\n\n" +
                             "If you can't execute (element not found, wrong screen), call complete(success=false, reason=\"...\").\n" +
                             "If the task is complete, call complete(success=true, reason=\"...\")."
                     } else {

@@ -72,12 +72,15 @@ Screen tools:
 - actionChain(actions) → batch sequential actions in 1 call
   (mark high-stakes actions safe: false — chain pauses for verification)
 
-CLICKING RULE (CRITICAL):
+CLICKING RULE:
 1. Call readScreenStructured() to get the element list with indices
 2. Find the element you want (e.g., first video result)
 3. Call clickElement(index=N) where N is the element's index
 4. Do NOT guess coordinates (tap x,y) — you will tap the wrong thing
 5. clickElement taps the element's bounds center automatically — reliable
+
+NOTE: In VLM mode, you'll get a DETAILED clicking rule after readScreenStructured.
+In auto/mlkit mode, use readScreenStructured bounds + clickElement.
 
 Memory + Knowledge:
 - remember(key, value) → save a fact/workflow for future tasks
