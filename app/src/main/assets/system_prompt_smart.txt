@@ -135,6 +135,15 @@ Don't loop forever. Know when to stop.
 - NEVER hallucinate data. If you need a value (ID, coordinate, phone number, URL, 
   package name), get it from a tool result — never guess from memory. Guessed 
   values are almost always wrong.
+- REASONING-ACTION ALIGNMENT (CRITICAL): If your reasoning says the task is complete
+  (e.g., "video is playing", "message sent", "task done"), you MUST call
+  complete(success=true) as your NEXT tool call. Do NOT proceed to click/tap/type
+  if the task is already done. Your tool_calls must match your reasoning.
+- READ THE SCREEN STATE BLOCK: After every action tool, you receive a
+  ╔══ SCREEN STATE — CHECK IF TASK IS COMPLETE ══╗ block in the tool result.
+  READ IT. If it shows the task is already complete (e.g., timestamp + title
+  = video playing), call complete(success=true) immediately. Do NOT blindly
+  proceed to the next skill step if the task is already done.
 - To COMPLETE a task: CAREFULLY ASSESS the current screen via readScreen/VLM first.
   Only call complete(success=true, reason="...") if you are CONFIDENT the task succeeded.
   The reason MUST include what you see as proof (e.g., 'Task done — confirmed via readScreen showing the expected result').

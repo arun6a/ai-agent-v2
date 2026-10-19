@@ -1003,15 +1003,21 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                         conversation.append("\n\n[ACTION HISTORY — last 5 steps]:\n$recentActions\n")
                     }
 
-                    // v3.9.7: Dumb executor prompt — strengthened (inspired by mobilerun).
-                    // Be aggressive: "dumb robot", "do NOT optimize", "do NOT consider screen state".
-                    // Prevents brain from re-planning or second-guessing instead of executing.
+                    // v3.9.10: Dumb executor prompt — strengthened with "read SCREEN STATE" + "don't repeat".
+                    // Skills are proven workflows → execute steps in order. BUT after each step,
+                    // read the SCREEN STATE block. If task is already complete → call complete.
+                    // Don't blindly follow skill steps if reality differs (auto-play, wrong results, etc.).
                     val execPrompt = if (iteration > 1) {
                         activePrompt + "\n\n## EXECUTION MODE\n" +
                             "You are a DUMB ROBOT. Your plan is in the conversation history above.\n" +
                             "Execute the NEXT step. Do NOT re-plan. Do NOT re-search. Do NOT optimize.\n" +
                             "Do NOT consider whether the plan makes sense. Do NOT second-guess.\n" +
-                            "Just execute the next step NOW.\n" +
+                            "Just execute the next step NOW.\n\n" +
+                            "AFTER EACH STEP, read the ╔══ SCREEN STATE ══╗ block in the tool result.\n" +
+                            "If it shows the task is ALREADY COMPLETE (e.g., video playing, message sent),\n" +
+                            "call complete(success=true, reason=\"...\") NOW — do NOT proceed to the next step.\n\n" +
+                            "Do NOT repeat readScreenStructured() if you called it in the previous step.\n" +
+                            "Use the data from [ACTION HISTORY — last 5 steps] instead.\n\n" +
                             "If you can't execute (element not found, wrong screen), call complete(success=false, reason=\"...\").\n" +
                             "If the task is complete, call complete(success=true, reason=\"...\")."
                     } else {
@@ -1389,10 +1395,12 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     }
 
                     // v3.8.9: "Screen didn't change" detection — catches "fake success" loops.
-                    // Extract the screen text from the tool results (auto-verify appends "[Screen after action]: ...")
+                    // v3.9.10: Updated to match new SCREEN STATE block format (was "[Screen after action]: ")
+                    // Extract the screen text from the tool results (auto-verify appends SCREEN STATE block)
                     // If the screen is identical to the previous iteration → the brain is stuck.
                     val currentScreenText = results.joinToString("") { it.output }
-                        .substringAfter("[Screen after action]: ", "")
+                        .substringAfter("╔══ SCREEN STATE — CHECK IF TASK IS COMPLETE ══╗\n", "")
+                        .substringBefore("╚══════════════════════════════════════════════╝")
                         .take(500)
                     if (currentScreenText.isNotBlank()) {
                         if (currentScreenText == lastScreenText) {
@@ -1568,7 +1576,7 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
         // actionChain already has its own auto-verify built in — skip it here.
         val ACTION_TOOLS = setOf(
             "openWhatsAppChat", "sendSMS", "sendEmail", "deleteFile", "callContact",
-            "launchApp", "tap", "clickByText", "submitInput", "pressBack", "pressHome",
+            "launchApp", "tap", "clickByText", "clickElement", "submitInput", "pressBack", "pressHome",
             "scrollDown", "scrollUp", "swipe", "type",
             "browserOpen", "browserClick", "browserClickText", "browserFill", "browserSearch",
             "openActivity", "openDeepLink", "searchInApp", "openYouTubeVideo",
@@ -1586,6 +1594,9 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
             // Skip actionChain — it has its own auto-verify built in.
             // v3.8.6: Use toolExecutor.readScreen (respects vision mode) instead of a11y.readScreen.
             //         This fixes the "57 chars" bug — when VLM mode is ON, the brain now SEES the screen.
+            // v3.9.10: Format auto-verify as VISUALLY DISTINCT block so brain can't ignore it.
+            //          Was buried in tool result string — brain skipped reading it.
+            //          Now uses ╔══ borders + "CHECK IF TASK IS COMPLETE" prompt.
             if (call.name in ACTION_TOOLS && call.name != "actionChain" && r?.success == true
                 && com.ai.agent.llm.AgentThinkingSettings.isVerificationEnabled(context)) {
                 try {
@@ -1597,7 +1608,14 @@ analyzeScreen(prompt) uses VLM directly (1 API call, more capable but slower). U
                     val screenText = readResults.firstOrNull()?.output ?: ""
                     if (screenText.isNotEmpty()) {
                         val baseOutput = r.output.take(200)
-                        val combinedOutput = "$baseOutput\n\n[Screen after action]: ${screenText.take(500)}"
+                        // v3.9.10: Visually distinct block — impossible to miss
+                        val combinedOutput = "$baseOutput\n\n" +
+                            "╔══ SCREEN STATE — CHECK IF TASK IS COMPLETE ══╗\n" +
+                            "${screenText.take(500)}\n" +
+                            "╚══════════════════════════════════════════════╝\n" +
+                            "If the task is ALREADY COMPLETE (you see proof above — e.g., video playing, message sent), " +
+                            "call complete(success=true, reason=\"...\") NOW. " +
+                            "Do NOT proceed to the next step if the task is already done."
                         r = ToolExecutor.ToolResult(
                             success = r.success,
                             output = combinedOutput,
