@@ -556,21 +556,8 @@ private fun ChatTopBar(
 
                 Spacer(Modifier.width(6.dp))
 
-                // v3.2.7: Compact status — "● thinking" / "● ready" / "○ not configured"
+                // v3.2.7: Compact status — just the dot (no text)
                 PulsingDot(active = isThinking, color = if (isConfigured) custom.accent else custom.fg3)
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = when {
-                        isThinking -> "thinking"
-                        !isConfigured -> "not configured"
-                        else -> "ready"
-                    },
-                    style = TextStyle(
-                        fontFamily = MonoFontFamily,
-                        fontSize = 11.sp,
-                    ),
-                    color = if (isConfigured) custom.fg3 else custom.fg3,
-                )
             }
         },
         actions = {
