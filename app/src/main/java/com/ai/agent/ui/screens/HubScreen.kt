@@ -1,26 +1,41 @@
 package com.ai.agent.ui.screens
 
+import android.content.res.Configuration
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Psychology
@@ -28,7 +43,8 @@ import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Verified
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,17 +54,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ai.agent.ui.components.HubNavItem
 import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.screens.hub.AiSettingsSection
 import com.ai.agent.ui.screens.hub.FilesSection
 import com.ai.agent.ui.screens.hub.HistorySection
-import com.ai.agent.ui.screens.hub.HubFooter
 import com.ai.agent.ui.screens.hub.KnowledgeSection
 import com.ai.agent.ui.screens.hub.LogsSection
 import com.ai.agent.ui.screens.hub.MemorySection
@@ -61,54 +75,40 @@ import com.ai.agent.ui.screens.hub.UsageSection
 import com.ai.agent.ui.theme.MonoFontFamily
 
 // ============================================================================
-// HubScreen — tablet/desktop-style dashboard with side nav + content area.
+// HubScreen — v4.0.0 stack navigation redesign.
 // ----------------------------------------------------------------------------
-// Mirrors `design/03-hub-screen.html`:
-//   - Side nav 200dp wide: 13 sections + count badges
-//   - Content area: 13 functional sections (Skills, Rules, Tools, Plugins,
-//     Memory, Knowledge, History, Files, LLM, Vision, Audio, Permissions,
-//     Settings) — all backed by real data from the frozen backend
-//   - Status footer: agent ready · API calls today · success rate
-// ============================================================================
+// OLD (v3.x): side-nav split view (200dp sidebar + content area)
+// NEW (v4.0.0): hub home grid → section detail page with back button
 //
-// v3.3.15: Section composables + shared building blocks extracted into
-// `com.ai.agent.ui.screens.hub` package. Each section file owns its own
-// state, helper functions, and data classes. HubScreen stays the router.
-// See:
-//   - hub/SharedHubComponents.kt   (SectionHeader, PlaceholderCard, LoadingCard, HubFooter, ...)
-//   - hub/SkillsSection.kt         (SkillsSection + dialogs)
-//   - hub/RulesSection.kt
-//   - hub/ToolsSection.kt
-//   - hub/HistorySection.kt
-//   - hub/KnowledgeSection.kt
-//   - hub/FilesSection.kt
-//   - hub/MemorySection.kt
-//   - hub/AiSettingsSection.kt     (Vision + Audio + ModelSettingsScreen wrapper)
-//   - hub/SettingsSection.kt
-//   - hub/LlmSection.kt
-//   - hub/PermissionsSection.kt
-//   - hub/UsageSection.kt
-//   - hub/AppsSection.kt           (AppProfileManager integration; not currently routed)
+// - Hub home: grouped category cards (AUTOMATION, AI CONFIG, DATA, SYSTEM, etc.)
+// - Click a card → full-page section detail with sticky top bar (back + title)
+// - Seamless front/back navigation via AnimatedContent
+// - Responsive: 2 cols on phone, 3 cols on tablet
+// - No stale count badges, no "SECTIONS · 12" counter, no HubFooter
+// ============================================================================
 
-// v3.1.0: Reorganized Hub sections for better UX
-// - History moved to FIRST (most used)
-// - Rules renamed to "Automation Rules"
-// - Apps section REMOVED (useless — AppProfileManager does this)
-// - LLM + Vision + Audio merged into "AI Settings"
-// - Order optimized for mobile usage
-enum class HubSection(val label: String, val icon: ImageVector, val count: String? = null) {
-    HISTORY("History", Icons.Outlined.History, "487"),
-    RULES("Automation", Icons.Outlined.Rule, "36"),
-    SKILLS("Skills", Icons.Outlined.Psychology, "20"),
-    TOOLS("Tools", Icons.Outlined.Build, "100+"),
-    MEMORY("Memory", Icons.Outlined.Memory, "142"),
-    KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder, "23"),
-    FILES("Files", Icons.Outlined.Folder, "12"),
+enum class HubSection(val label: String, val icon: ImageVector) {
+    HISTORY("History", Icons.Outlined.History),
+    RULES("Automation", Icons.Outlined.Rule),
+    SKILLS("Skills", Icons.Outlined.Psychology),
+    TOOLS("Tools", Icons.Outlined.Build),
+    MEMORY("Memory", Icons.Outlined.Memory),
+    KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder),
+    FILES("Files", Icons.Outlined.Folder),
     AI_SETTINGS("AI Settings", Icons.Outlined.SmartToy),
-    USAGE("Usage", Icons.Outlined.BarChart, "live"),
-    PERMISSIONS("Permissions", Icons.Outlined.Verified, "14"),
+    USAGE("Usage", Icons.Outlined.BarChart),
+    PERMISSIONS("Permissions", Icons.Outlined.Verified),
     LOGS("Logs", Icons.Outlined.Description),
     SETTINGS("Settings", Icons.Outlined.Settings),
+}
+
+/** Category group for the hub home grid. */
+enum class HubCategory(val title: String, val sections: List<HubSection>) {
+    AUTOMATION("AUTOMATION", listOf(HubSection.RULES, HubSection.SKILLS)),
+    AI("AI CONFIGURATION", listOf(HubSection.AI_SETTINGS, HubSection.USAGE, HubSection.PERMISSIONS)),
+    DATA("DATA & MEMORY", listOf(HubSection.MEMORY, HubSection.KNOWLEDGE, HubSection.FILES)),
+    SYSTEM("SYSTEM", listOf(HubSection.TOOLS, HubSection.LOGS, HubSection.SETTINGS)),
+    CONVERSATION("CONVERSATION", listOf(HubSection.HISTORY)),
 }
 
 @Composable
@@ -118,114 +118,225 @@ fun HubScreen(
     onOpenProviderSettings: () -> Unit = {},
     onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit = { _, _ -> },
     onOpenSystemPromptEditor: () -> Unit = {},
-    /** v2.2.0 Issue 113d — Tap a chat session in History → continue it on the chat screen. */
     onContinueSession: (Long) -> Unit = {},
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
-    var selected by remember { mutableStateOf(initialSection.toHubSection()) }
+    var selectedSection by remember { mutableStateOf<HubSection?>(initialSection.toHubSection()) }
 
-    Row(
+    AnimatedContent(
+        targetState = selectedSection,
+        transitionSpec = {
+            if (initialState == null && targetState != null) {
+                // home → detail: slide in from right
+                fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+            } else if (initialState != null && targetState == null) {
+                // detail → home: slide out to right
+                fadeIn(tween(200)) togetherWith fadeOut(tween(150))
+            } else {
+                fadeIn(tween(100)) togetherWith fadeOut(tween(100))
+            }
+        },
+        label = "hub_transition",
+    ) { section ->
+        if (section == null) {
+            HubHome(
+                onSectionClick = { selectedSection = it },
+                onBackToChat = onBackToChat,
+            )
+        } else {
+            SectionDetailPage(
+                section = section,
+                onBack = { selectedSection = null },
+                onOpenProviderSettings = onOpenProviderSettings,
+                onEditSkill = onEditSkill,
+                onOpenSystemPromptEditor = onOpenSystemPromptEditor,
+                onContinueSession = onContinueSession,
+            )
+        }
+    }
+}
+
+// ============================================================================
+// Hub Home — grid of categorized section cards
+// ============================================================================
+
+@Composable
+private fun HubHome(
+    onSectionClick: (HubSection) -> Unit,
+    onBackToChat: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val columns = if (isTablet) 3 else 2
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(custom.canvas),
     ) {
-        // ---- Side nav (200dp) ----
-        Column(
+        // ---- Top bar ----
+        HubTopBar(title = "Aira Lab", onBack = onBackToChat, showBack = true)
+        // ---- Grid ----
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
             modifier = Modifier
-                .width(200.dp)
-                .fillMaxHeight()
-                .background(custom.canvas)
-                .border(width = 1.dp, color = custom.border)
-                .padding(vertical = 8.dp),
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .background(custom.accent, RoundedCornerShape(6.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("A", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-                Spacer(Modifier.width(8.dp))
-                Column {
+            HubCategory.entries.forEach { category ->
+                // Category header — spans all columns
+                item(span = { GridItemSpan(columns) }) {
                     Text(
-                        text = "Aira Lab",
-                        color = m3.onSurface,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                    )
-                    Text(
-                        text = "Personal Assistant",
+                        text = category.title,
                         color = custom.fg3,
-                        fontSize = 10.sp,
+                        fontFamily = MonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                     )
                 }
-            }
-            Text(
-                text = "SECTIONS · 12",
-                color = custom.fg3,
-                fontFamily = MonoFontFamily,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            )
-            HorizontalDivider(color = custom.border, thickness = 1.dp)
-
-            // Nav items — scrollable if viewport is short
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-                HubSection.entries.forEach { section ->
-                    HubNavItem(
-                        label = section.label,
-                        icon = section.icon,
-                        count = section.count,
-                        active = section == selected,
-                        onClick = { selected = section },
+                // Section cards in this category
+                items(category.sections) { section ->
+                    HubCard(
+                        section = section,
+                        onClick = { onSectionClick(section) },
                     )
                 }
             }
         }
+    }
+}
 
-        // ---- Content area ----
-        Column(
+@Composable
+private fun HubCard(
+    section: HubSection,
+    onClick: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1.6f)
+            .background(m3.surface)
+            .border(1.dp, custom.border, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Box(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
+                .size(32.dp)
+                .background(custom.accent.copy(alpha = 0.15f), RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-            ) {
-                when (selected) {
-                    HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
-                    HubSection.RULES -> RulesSection()
-                    HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
-                    HubSection.TOOLS -> ToolsSection()
-                    HubSection.MEMORY -> MemorySection()
-                    HubSection.KNOWLEDGE -> KnowledgeSection()
-                    HubSection.FILES -> FilesSection()
-                    HubSection.AI_SETTINGS -> AiSettingsSection(onOpenProviderSettings = onOpenProviderSettings)
-                    HubSection.USAGE -> UsageSection()
-                    HubSection.PERMISSIONS -> PermissionsSection()
-                    HubSection.LOGS -> LogsSection()
-                    HubSection.SETTINGS -> SettingsSection(onOpenSystemPromptEditor = onOpenSystemPromptEditor)
-                }
-            }
-
-            HubFooter()
+            Icon(
+                imageVector = section.icon,
+                contentDescription = section.label,
+                tint = custom.accent,
+                modifier = Modifier.size(18.dp),
+            )
         }
+        Text(
+            text = section.label,
+            color = m3.onSurface,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+// ============================================================================
+// Section Detail Page — full-screen section with sticky top bar (back button)
+// ============================================================================
+
+@Composable
+private fun SectionDetailPage(
+    section: HubSection,
+    onBack: () -> Unit,
+    onOpenProviderSettings: () -> Unit,
+    onEditSkill: (String?, Boolean) -> Unit,
+    onOpenSystemPromptEditor: () -> Unit,
+    onContinueSession: (Long) -> Unit,
+) {
+    val custom = LocalCustomColors.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(custom.canvas),
+    ) {
+        // Sticky top bar with back button
+        HubTopBar(title = section.label, onBack = onBack, showBack = true)
+
+        // Section content — fills remaining space, scrolls internally
+        Box(
+            modifier = Modifier
+                .fillMaxSize(),
+        ) {
+            when (section) {
+                HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
+                HubSection.RULES -> RulesSection()
+                HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
+                HubSection.TOOLS -> ToolsSection()
+                HubSection.MEMORY -> MemorySection()
+                HubSection.KNOWLEDGE -> KnowledgeSection()
+                HubSection.FILES -> FilesSection()
+                HubSection.AI_SETTINGS -> AiSettingsSection(onOpenProviderSettings = onOpenProviderSettings)
+                HubSection.USAGE -> UsageSection()
+                HubSection.PERMISSIONS -> PermissionsSection()
+                HubSection.LOGS -> LogsSection()
+                HubSection.SETTINGS -> SettingsSection(onOpenSystemPromptEditor = onOpenSystemPromptEditor)
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Shared top bar — used by both HubHome and SectionDetailPage
+// ============================================================================
+
+@Composable
+private fun HubTopBar(
+    title: String,
+    onBack: () -> Unit,
+    showBack: Boolean,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(m3.surface)
+            .border(width = 1.dp, color = custom.border)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (showBack) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = custom.fg2,
+                )
+            }
+        }
+        Spacer(Modifier.size(4.dp))
+        Text(
+            text = title,
+            color = m3.onSurface,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+        )
     }
 }
 
