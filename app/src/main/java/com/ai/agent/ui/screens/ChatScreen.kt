@@ -245,7 +245,6 @@ fun ChatScreen(
                         onRemove = { viewModel.removeAttachment(it) },
                     )
                 }
-                StatusFooter(apiCalls = state.apiCallCount, context = context)
                 ChatInputBar(
                     text = input,
                     onTextChange = { input = it },
@@ -268,10 +267,7 @@ fun ChatScreen(
                 .padding(inner),
         ) {
             if (state.messages.isEmpty()) {
-                WelcomeEmptyState(
-                    modifier = Modifier.fillMaxSize(),
-                    onSuggestion = { viewModel.sendMessage(it) },
-                )
+                // Empty state — input bar below is enough to start.
             } else {
                 // v2.2.0 Issue 111 — TaskBanner now lives INSIDE the LazyColumn
                 // as the first item so it scrolls with messages instead of
@@ -552,20 +548,11 @@ private fun ChatTopBar(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // v2.0.7: Removed logo from header (per user request).
                 // Just "Aira" + tagline subtitle now.
-                Column {
-                    Text(
-                        text = "Aira",
-                        style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = m3.onSurface,
-                    )
-                    Text(
-                        text = "Your intelligent companion",
-                        color = custom.fg3,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 1,
-                    )
-                }
+                Text(
+                    text = "Aira",
+                    style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = m3.onSurface,
+                )
 
                 Spacer(Modifier.width(6.dp))
 
@@ -832,93 +819,6 @@ private fun StopButton(onStop: () -> Unit) {
 // Empty state with suggestion chips
 // ---------------------------------------------------------------------------
 
-@Composable
-private fun WelcomeEmptyState(
-    modifier: Modifier = Modifier,
-    onSuggestion: (String) -> Unit,
-) {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
-    val typography = MaterialTheme.typography
-
-    Column(
-        modifier = modifier.padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .shadow(elevation = 12.dp, shape = RoundedCornerShape(20.dp), clip = false)
-                .background(custom.accent, RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "⬡",
-                color = Color.White,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = "Hey, I'm Aira",
-            style = typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-            color = m3.onSurface,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Your intelligent companion for seamless device control and daily tasks.",
-            style = typography.bodyMedium,
-            color = custom.fg2,
-            textAlign = TextAlign.Center,
-            lineHeight = 20.sp,
-        )
-
-        Spacer(Modifier.height(28.dp))
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            SuggestionChip(text = "Open YouTube and play music", onClick = onSuggestion)
-            SuggestionChip(text = "Send WhatsApp message", onClick = onSuggestion)
-            SuggestionChip(text = "Order food", onClick = onSuggestion)
-        }
-    }
-}
-
-@Composable
-private fun SuggestionChip(text: String, onClick: (String) -> Unit) {
-    val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
-    val typography = MaterialTheme.typography
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth(0.85f)
-            .background(custom.surface2, RoundedCornerShape(12.dp))
-            .border(1.dp, custom.border, RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .background(custom.accent, CircleShape),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = text,
-            style = typography.bodyMedium,
-            color = m3.onSurface,
-        )
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Bottom input bar
 // ---------------------------------------------------------------------------
@@ -1062,64 +962,6 @@ private fun ChatInputBar(
 // ---------------------------------------------------------------------------
 // Status footer — "v2.0.5 · 47/14400 calls · 847ms avg"
 // ---------------------------------------------------------------------------
-
-@Composable
-private fun StatusFooter(apiCalls: Int, context: android.content.Context) {
-    val custom = LocalCustomColors.current
-    val (todayCalls, _) = remember(apiCalls) { ApiUsageTracker.getTodayStats(context) }
-    val dailyLimit = 14400
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(custom.canvas)
-            .border(1.dp, custom.border)
-            .padding(horizontal = 14.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "v2.0.9",
-            color = custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "·",
-            color = custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "$todayCalls/$dailyLimit calls",
-            color = custom.fg2,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "·",
-            color = custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "847ms avg",
-            color = custom.accent,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = if (apiCalls > 0) "+$apiCalls this task" else "idle",
-            color = custom.fg3,
-            fontFamily = MonoFontFamily,
-            fontSize = 11.sp,
-        )
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Task 40 — Save-skill prompt card + dialog
@@ -1368,9 +1210,7 @@ private fun ChatScreenPreviewBody() {
                 Text("Aira", style = typography.titleMedium, color = m3.onSurface)
                 Text(" · Personal Assistant", color = custom.fg3, fontFamily = MonoFontFamily, fontSize = 11.sp)
             }
-            Box(modifier = Modifier.weight(1f)) {
-                WelcomeEmptyState(Modifier.fillMaxSize()) {}
-            }
+            Box(modifier = Modifier.weight(1f))
         }
     }
 }
