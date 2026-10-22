@@ -405,7 +405,8 @@ class AgentService : Service() {
         scope.launch {
             try {
                 val basePrompt = try {
-                    assets.open("system_prompt.txt").bufferedReader().use { it.readText() }
+                    // v3.9.12: Use smart prompt (unified with chat brain)
+                    assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() }
                 } catch (e: Exception) {
                     "You are an AI agent controlling an Android phone."
                 }

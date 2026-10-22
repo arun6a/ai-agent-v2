@@ -153,8 +153,10 @@ class RuleWorker(
             val llmClient = LLMClient(context)
 
             // Build system prompt for rule execution
+            // v3.9.12: Switched from system_prompt.txt (old 623-line) to system_prompt_smart.txt
+            // Unifies rule brain + chat brain on the same clean prompt.
             val basePrompt = try {
-                context.assets.open("system_prompt.txt").bufferedReader().use { it.readText() }
+                context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() }
             } catch (e: Exception) {
                 "You are an AI agent controlling an Android phone."
             }

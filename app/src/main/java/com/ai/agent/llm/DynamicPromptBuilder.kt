@@ -241,8 +241,9 @@ Triggers: morning briefing, check price, send whatsapp, play music, order food, 
         return try {
             context.assets.open(fileName).bufferedReader().use { it.readText() }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not load $fileName, falling back to system_prompt.txt")
-            context.assets.open("system_prompt.txt").bufferedReader().use { it.readText() }
+            // v3.9.12: fallback to smart prompt (was system_prompt.txt — old/bloated)
+            Log.w(TAG, "Could not load $fileName, falling back to system_prompt_smart.txt")
+            context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() }
         }
     }
 
