@@ -359,8 +359,23 @@ class AgentAccessibilityService : AccessibilityService() {
         } catch (e: Exception) { false }
     }
 
-    fun scrollDown(): Boolean = swipe(540f, 1800f, 540f, 400f, 400)
-    fun scrollUp(): Boolean = swipe(540f, 400f, 540f, 1800f, 400)
+    // v3.9.12: Dynamic scroll coords — was hardcoded 540f/1800f/400f (wrong for tablets).
+    // Uses displayMetrics to get real screen size. Swipe from 75% down → 25% down (center column).
+    fun scrollDown(): Boolean {
+        val dm = android.content.res.Resources.getSystem().displayMetrics
+        val cx = dm.widthPixels / 2f
+        val yStart = dm.heightPixels * 0.75f
+        val yEnd = dm.heightPixels * 0.25f
+        return swipe(cx, yStart, cx, yEnd, 400)
+    }
+
+    fun scrollUp(): Boolean {
+        val dm = android.content.res.Resources.getSystem().displayMetrics
+        val cx = dm.widthPixels / 2f
+        val yStart = dm.heightPixels * 0.25f
+        val yEnd = dm.heightPixels * 0.75f
+        return swipe(cx, yStart, cx, yEnd, 400)
+    }
     fun lockScreen(): Boolean = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
 
     // === SCREENSHOT (Vision) ===

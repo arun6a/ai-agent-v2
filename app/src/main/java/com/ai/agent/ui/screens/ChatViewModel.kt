@@ -907,11 +907,9 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // STORE it, and INJECT "[PLAN]: ... [STEP 2 of 3]: ..." every iteration.
             // When a step fails, brain gets: retry, skip, or re-plan.
             // Max 2 re-plans, then STOP.
-            var currentPlan: List<String>? = null  // parsed steps from iteration 1 reply
-            var currentStep = 0                     // which step we're on (0-indexed)
-            var stepFailures = 0                    // failures on current step
-            var replanCount = 0                     // how many times brain re-planned
-            val MAX_REPLANS = 2                     // max re-plans before STOP
+            // v3.9.12: Removed plan-tracking vars (currentPlan, currentStep, stepFailures,
+            // replanCount, MAX_REPLANS) — Phase 1 was removed in v3.9.6, plan parsing
+            // was inert. Brain's natural reasoning + action history handle multi-step now.
 
             // v3.8.9: "Screen didn't change" detection — catches "fake success" loops.
             // When a tool returns ✓ but the screen is identical to before → the brain is stuck.
@@ -1109,46 +1107,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         return@withTimeoutOrNull false // stop the loop
                     }
 
-                    // v3.8.8: Enforced Plan Tracking
-                    // Parse the plan from the brain's reply (iteration 1 or when re-planning).
-                    // Look for "Plan: 1)... 2)... 3)..." or "NEW plan: 1)..." patterns.
-                    val replyText = llmResponse.reply
-                    val planPattern = Regex("(?i)(?:NEW\\s+)?PLAN\\s*:?\\s*((?:\\d+[)\\.).:-]?\\s*.+(?:\\n|$))+)", RegexOption.MULTILINE)
-                    val planMatch = planPattern.find(replyText)
-                    if (planMatch != null) {
-                        // Parse the steps from the plan
-                        val stepPattern = Regex("\\d+[)\\.).:-]?\\s*(.+)", RegexOption.MULTILINE)
-                        val steps = stepPattern.findAll(planMatch.groupValues[1])
-                            .map { it.groupValues[1].trim().take(120) }
-                            .filter { it.isNotBlank() }
-                            .toList()
-                        if (steps.size >= 2) {
-                            val isReplan = currentPlan != null
-                            currentPlan = steps
-                            currentStep = 0
-                            stepFailures = 0
-                            if (isReplan) {
-                                replanCount++
-                                LogCapture.i(TAG, "Plan re-planned (count=$replanCount): ${steps.size} steps — ${steps.joinToString(" | ")}")
-                            } else {
-                                LogCapture.i(TAG, "Plan parsed: ${steps.size} steps — ${steps.joinToString(" | ")}")
-                            }
-                        }
-                    }
-
-                    // v3.8.8: Inject plan state into conversation so brain knows where it is.
-                    // This is the KEY fix — the brain can't forget because the code injects it every iteration.
-                    if (currentPlan != null && currentPlan!!.isNotEmpty()) {
-                        val plan = currentPlan!!
-                        val completedSteps = if (currentStep > 0) plan.take(currentStep).mapIndexed { i, s -> "${i + 1}) $s ✓" }.joinToString(" ") else "(none yet)"
-                        val currentStepText = if (currentStep < plan.size) "${currentStep + 1}) ${plan[currentStep]}" else "(all done)"
-                        val planStateMsg = "\n\n[PLAN STATE — you are on STEP ${currentStep + 1} of ${plan.size}]\n" +
-                            "FULL PLAN: ${plan.mapIndexed { i, s -> "${i + 1}) $s" }.joinToString("  ")}\n" +
-                            "COMPLETED: $completedSteps\n" +
-                            "CURRENT STEP: $currentStepText\n" +
-                            "Execute the CURRENT STEP. Do NOT skip ahead. Do NOT repeat completed steps."
-                        conversation.append(planStateMsg)
-                    }
+                    // v3.9.12: Removed plan parsing + plan state injection (was dead code
+                    // since v3.9.6 removed Phase 1). Brain plans naturally in its reply text.
 
                     _state.update {
                         it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())
@@ -1389,55 +1349,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         resultsForLLM.append("Result: ${dr.output.take(500)}\n\n")
                     }
 
-                    // v3.8.8: Plan step tracking — increment step if tools succeeded, handle failures.
-                    // This is the CORE of enforced plan tracking: the brain knows which step it's on.
-                    if (currentPlan != null && currentPlan!!.isNotEmpty()) {
-                        val anyFailed = results.any { !it.success }
-                        val anySucceeded = results.any { it.success }
-                        if (anyFailed && !anySucceeded) {
-                            // All tools failed on this step
-                            stepFailures++
-                            LogCapture.w(TAG, "Plan step ${currentStep + 1} failed (attempt $stepFailures)")
-                            when {
-                                stepFailures >= 3 && replanCount >= MAX_REPLANS -> {
-                                    // Truly stuck — stop
-                                    finalReply = "I'm stuck on step ${currentStep + 1} of my plan (${currentPlan!![currentStep]}).\n" +
-                                        "I tried $stepFailures times and re-planned $replanCount times.\n\n" +
-                                        "What I tried:\n$workLog\n\n" +
-                                        "Suggestions: check the screen, or describe what you see so I can help differently."
-                                    LogCapture.w(TAG, "STUCK: step ${currentStep + 1} failed 3x + $replanCount replans — stopping")
-                                    addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
-                                    return@withTimeoutOrNull false
-                                }
-                                stepFailures >= 2 -> {
-                                    // Force re-plan
-                                    conversation.append("\n\n⚠️ STEP ${currentStep + 1} FAILED TWICE. Your plan isn't working. " +
-                                        "RE-PLAN NOW: state a NEW plan starting with 'NEW PLAN: 1)... 2)...' based on the CURRENT screen state. " +
-                                        "Don't repeat the same approach.")
-                                    LogCapture.w(TAG, "Forcing re-plan (step failed 2x)")
-                                }
-                                else -> {
-                                    // First failure — give options
-                                    conversation.append("\n\n⚠️ STEP ${currentStep + 1} failed. You have 3 options:\n" +
-                                        "  A) RETRY step ${currentStep + 1} with a different approach\n" +
-                                        "  B) SKIP step ${currentStep + 1} and move to step ${currentStep + 2}\n" +
-                                        "  C) RE-PLAN: state 'NEW PLAN: 1)... 2)...' with a completely new approach\n" +
-                                        "Pick one. Don't wander.")
-                                    LogCapture.i(TAG, "Step failed — injected retry/skip/re-plan options")
-                                }
-                            }
-                        } else if (anySucceeded) {
-                            // Step succeeded — increment to next step
-                            if (currentStep < currentPlan!!.size - 1) {
-                                currentStep++
-                                stepFailures = 0
-                                LogCapture.i(TAG, "Plan step ${currentStep} completed → moving to step ${currentStep + 1}")
-                            } else {
-                                // Last step completed!
-                                LogCapture.i(TAG, "Plan COMPLETE — all ${currentPlan!!.size} steps done")
-                            }
-                        }
-                    }
+                    // v3.9.12: Removed plan step tracking (was dead code — no plan to track).
 
                     // v3.8.9: "Screen didn't change" detection — catches "fake success" loops.
                     // v3.9.10: Updated to match new SCREEN STATE block format (was "[Screen after action]: ")

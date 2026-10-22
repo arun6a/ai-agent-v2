@@ -29,8 +29,6 @@ object AgentThinkingSettings {
     private const val KEY_REFLECTION = "thinking_reflection_v350"
     private const val KEY_PLANNING = "thinking_planning_v350"
     private const val KEY_VERIFICATION = "thinking_verification_v350"
-    // v3.8.0: Plan-then-Act — brain states plan on first response to complex tasks
-    private const val KEY_PLAN_THEN_ACT = "thinking_plan_then_act_v380"
 
     // === LEARNING toggles ===
     private const val KEY_ALWAYS_LEARN = "learning_always_learn_v350"  // v3.5.0: was dead switch, now persisted
@@ -68,25 +66,8 @@ object AgentThinkingSettings {
             .edit().putBoolean(KEY_VERIFICATION, enabled).apply()
     }
 
-    /**
-     * v3.8.0: Plan-then-Act — brain states its plan on the FIRST response to a
-     * complex multi-step task, then starts executing step 1. The plan stays
-     * in conversation history so subsequent iterations follow it step-by-step.
-     *
-     * Default OFF (opt-in). Useful when teaching the brain a new task — the plan
-     * makes the brain follow the user's detailed instructions in order, instead
-     * of wandering. The saved skill then captures the planned flow.
-     *
-     * No extra API call — the plan is in the reply text of iteration 1.
-     */
-    fun isPlanThenActEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_PLAN_THEN_ACT, false)
-
-    fun setPlanThenActEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_PLAN_THEN_ACT, enabled).apply()
-    }
+    // v3.9.12: Plan-then-Act removed — Phase 1 was removed in v3.9.6, toggle was dead.
+    // KEYS for migration safety left intentionally removed (no prefs migration needed).
 
     // === LEARNING ===
 

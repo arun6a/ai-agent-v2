@@ -434,7 +434,7 @@ class OverlayManager(private val context: Context) {
 
                 Available tools:
                 - readScreen() — returns all text on screen. USE THIS to verify actions.
-                - tap(x, y) — taps at coordinates (screen is 1080x2400)
+                - tap(x, y) — taps at coordinates (use readScreenStructured to get bounds)
                 - clickByText(text) — clicks a UI element by text
                 - type(text) — types text into focused field
                 - swipe(x1, y1, x2, y2) — swipes

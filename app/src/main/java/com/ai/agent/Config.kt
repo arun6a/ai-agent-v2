@@ -10,10 +10,6 @@ package com.ai.agent
  * This Config object holds only static constants.
  */
 object Config {
-    // Default screen resolution (Nothing A015)
-    const val SCREEN_WIDTH = 1080
-    const val SCREEN_HEIGHT = 2400
-
     // App version (must match app/build.gradle.kts versionName)
     const val VERSION = "3.9.11"
 }

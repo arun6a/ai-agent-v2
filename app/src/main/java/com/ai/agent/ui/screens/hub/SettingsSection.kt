@@ -154,7 +154,6 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     var reflection by remember { mutableStateOf(AgentThinkingSettings.isReflectionEnabled(context)) }
     var planning by remember { mutableStateOf(AgentThinkingSettings.isPlanningEnabled(context)) }
     var verification by remember { mutableStateOf(AgentThinkingSettings.isVerificationEnabled(context)) }
-    var planThenAct by remember { mutableStateOf(AgentThinkingSettings.isPlanThenActEnabled(context)) }
     var alwaysLearn by remember { mutableStateOf(AgentThinkingSettings.isAlwaysLearnEnabled(context)) }
     var knowledgeAutoRecall by remember { mutableStateOf(AgentThinkingSettings.isKnowledgeAutoRecallEnabled(context)) }
     var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
@@ -220,9 +219,6 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 AiToggleRow("Post-Action Verification",
                     "After send/delete/email, brain reads screen to confirm it worked.",
                     verification) { verification = it; AgentThinkingSettings.setVerificationEnabled(context, it); toast = "Post-action verification: $it" }
-                AiToggleRow("Plan-then-Act (v3.8.0)",
-                    "On first response to a complex task, brain states its plan (2-3 lines), then starts executing step 1. Plan stays in history so it follows step-by-step. No extra API call. Turn ON when teaching new tasks.",
-                    planThenAct) { planThenAct = it; AgentThinkingSettings.setPlanThenActEnabled(context, it); toast = "Plan-then-Act: $it" }
             }
         }
 

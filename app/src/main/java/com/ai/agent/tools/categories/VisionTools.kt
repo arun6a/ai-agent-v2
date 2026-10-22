@@ -452,12 +452,16 @@ object VisionTools {
         service: AgentAccessibilityService,
         description: String
     ): Pair<Float, Float>? {
+        // v3.9.12: Dynamic screen resolution (was hardcoded 1080x2400 — wrong for tablets)
+        val dm = context.resources.displayMetrics
+        val screenW = dm.widthPixels
+        val screenH = dm.heightPixels
         val result = analyzeScreenWithVLM(
             context,
             service,
             "Find the UI element that matches: \"$description\". " +
-            "Respond with ONLY the coordinates in format: x,y (e.g., 540,1200). " +
-            "The screen is 1080x2400 pixels. If not found, respond with: NOT_FOUND"
+            "Respond with ONLY the coordinates in format: x,y (e.g., ${screenW / 2},${screenH / 2}). " +
+            "The screen is ${screenW}x${screenH} pixels. If not found, respond with: NOT_FOUND"
         )
 
         if (result.contains("NOT_FOUND") || result.contains("error")) {
