@@ -23,7 +23,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.ai.agent.ui.components.BottomNav
+// v4.0.6: BottomNav import removed (bottom nav deleted)
 import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.components.Routes
 import com.ai.agent.ui.screens.BrowserScreen
@@ -73,32 +73,12 @@ fun AppNavigation() {
     val backstack by nav.currentBackStackEntryAsState()
     val currentRoute = backstack?.destination?.route
 
-    // Bottom bar is shown only on the four primary tabs — not on splash /
-    // onboarding / provider_settings (which are full-screen flows).
-    val showBottomBar = currentRoute in setOf(
-        Routes.CHAT, Routes.BROWSER, Routes.HUB, Routes.HUB_SETTINGS,
-    )
+    // v4.0.6: Bottom navigation bar REMOVED.
+    // Hub (Aira Lab) is now accessed via the flask icon in ChatScreen header.
+    // This gives more screen space + cleaner UX.
 
     Scaffold(
         containerColor = custom.canvas,
-        bottomBar = {
-            if (showBottomBar) {
-                BottomNav(
-                    currentRoute = currentRoute,
-                    onNavigate = { route ->
-                        // Don't re-navigate to the same destination.
-                        if (route != currentRoute) {
-                            nav.navigate(route) {
-                                // Pop back to the start destination to avoid a long stack.
-                                popUpTo(nav.graph.startDestinationId) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    },
-                )
-            }
-        },
     ) { innerPadding: PaddingValues ->
         Box(
             modifier = Modifier
@@ -226,6 +206,14 @@ fun AppNavigation() {
                 ) {
                     HubScreen(
                         initialSection = null,  // v4.0.1: open Hub Home by default
+                        onBackToChat = {
+                            // v4.0.6: Back button in Hub navigates to Chat
+                            nav.navigate(Routes.CHAT) {
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
                         onEditSkill = { skillName, isReadOnly ->
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
@@ -264,6 +252,13 @@ fun AppNavigation() {
                 ) {
                     HubScreen(
                         initialSection = HubSectionArg.SETTINGS,
+                        onBackToChat = {
+                            nav.navigate(Routes.CHAT) {
+                                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
                         onEditSkill = { skillName, isReadOnly ->
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))

@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pending
@@ -237,6 +238,7 @@ fun ChatScreen(
                 isConfigured = isConfigured,
                 ttsEnabled = state.ttsEnabled,
                 onToggleTts = { viewModel.setTtsEnabled(!state.ttsEnabled) },
+                onOpenHub = onOpenHub,
                 onOpenBrowser = onOpenBrowser,
                 onOpenBackgroundTasks = onOpenBackgroundTasks,
                 onClear = { viewModel.clearChat() },
@@ -552,6 +554,7 @@ private fun ChatTopBar(
     isConfigured: Boolean,
     ttsEnabled: Boolean,
     onToggleTts: () -> Unit,
+    onOpenHub: () -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenBackgroundTasks: () -> Unit,
     onClear: () -> Unit,
@@ -564,8 +567,16 @@ private fun ChatTopBar(
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // v2.0.7: Removed logo from header (per user request).
-                // Just "Aira" + tagline subtitle now.
+                // v4.0.6: Flask icon — opens Aira Lab (Hub)
+                IconButton(onClick = onOpenHub, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.Science,
+                        contentDescription = "Aira Lab",
+                        tint = custom.accent,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
                 Text(
                     text = "Aira",
                     style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
