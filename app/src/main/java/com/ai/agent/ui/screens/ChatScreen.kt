@@ -413,38 +413,6 @@ fun ChatScreen(
             // v2.4.0: BrowserScreen is now a separate Compose destination (Routes.BROWSER).
             // No overlay needed here. AI's browserOpen() triggers nav.navigate(Routes.BROWSER)
             // via BrowserController.setNavigationCallback (registered in AppNavigation).
-
-            // v4.0.9: Floating stop button — appears when task is running.
-            // Inspired by Sova's overlay stop button.
-            if (state.isThinking || state.isExecuting) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .background(custom.accent, RoundedCornerShape(24.dp))
-                            .clickable { viewModel.stopAgent() }
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Stop,
-                            contentDescription = "Stop task",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "Stop",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-            }
         }
     }
 

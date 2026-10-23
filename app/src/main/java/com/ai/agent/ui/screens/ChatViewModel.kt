@@ -918,6 +918,11 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // v2.2.2: Reset stop flag from notification
             com.ai.agent.service.TaskStopReceiver.reset()
 
+            // v4.0.10: Show floating Stop overlay over all apps.
+            // This lets the user stop the task even when they're in YouTube/WhatsApp/etc.
+            com.ai.agent.service.TaskStopOverlay.resetStopRequest()
+            com.ai.agent.service.TaskStopOverlay.show(context)
+
             // v2.2.2: Reset browser method lock for this new task
             lockedBrowserMethod = null
 
@@ -978,7 +983,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
             ApiUsageTracker.startNewTask()
 
-            while (iteration < MAX_ITERATIONS && !_state.value.stopRequested && !com.ai.agent.service.TaskStopReceiver.stopRequested) {
+            while (iteration < MAX_ITERATIONS && !_state.value.stopRequested && !com.ai.agent.service.TaskStopReceiver.stopRequested && !com.ai.agent.service.TaskStopOverlay.isStopRequested()) {
                 // ---- Task-level timeout (3 minutes total) ----
                 if (System.currentTimeMillis() - taskStartTime > TASK_TIMEOUT_MS) {
                     finalReply = "⏰ Task timed out after 3 minutes. Here's what I accomplished:\n$workLog"
@@ -1464,6 +1469,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
         } finally {
             // v2.2.2: Notify AgentService that task completed (updates notification)
             com.ai.agent.service.AgentService.notifyTaskCompleted()
+            // v4.0.10: Hide the floating Stop overlay (task is done)
+            com.ai.agent.service.TaskStopOverlay.hide()
             _state.update {
                 it.copy(
                     isThinking = false,
