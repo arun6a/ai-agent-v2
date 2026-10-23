@@ -1,21 +1,17 @@
 package com.ai.agent.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,54 +24,65 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ai.agent.R
-import com.ai.agent.llm.AIProvider
 import com.ai.agent.ui.components.LocalCustomColors
-import com.ai.agent.ui.theme.MonoFontFamily
 import kotlinx.coroutines.delay
 
-// ============================================================================
-// SplashScreen — v2.0.9 cold-start splash (Aira rebrand).
-// ----------------------------------------------------------------------------
-// - Canvas-color background (matches Theme.AIAgentV2.Splash so there's no flash)
-// - Aira logo (PNG, drawable/aira_logo.png) centered ~120dp
-// - "Aira" title (semibold 28sp) + "Personal AI Assistant" subtitle (gray)
-// - "v2.0.9 · build 9" mono caption below
-// - Fade-in icon, then slide-up title (AnimatedVisibility)
-// - After ~1500ms, navigates to chat (or onboarding if first-run)
-// ============================================================================
-
+/**
+ * v4.0.11: New splash/launch screen.
+ *
+ * Clean, minimal launch screen:
+ *   [hexagon logo]
+ *      Aira
+ *   AI Runs Android
+ *
+ * Shows for 1.5s then auto-navigates to Chat (or Onboarding if first run).
+ * The "AI Runs Android" tagline is the meaning of the AIRA acronym.
+ */
 @Composable
 fun SplashScreen(
     onFinished: (goToOnboarding: Boolean) -> Unit,
 ) {
     val custom = LocalCustomColors.current
-    val m3 = MaterialTheme.colorScheme
     val context = LocalContext.current
 
-    // Entrance-animation flags.
-    var showIcon by remember { mutableStateOf(false) }
-    var showTitle by remember { mutableStateOf(false) }
+    val logoVisible = remember { mutableStateOf(false) }
+    val textVisible = remember { mutableStateOf(false) }
+    val taglineVisible = remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        // Stagger the icon fade-in, then the title slide-up.
-        showIcon = true
-        delay(150)
-        showTitle = true
-        delay(1500)
+        delay(200)
+        logoVisible.value = true
+        delay(300)
+        textVisible.value = true
+        delay(300)
+        taglineVisible.value = true
+        delay(700)
 
-        // v3.5.3: Onboarding flow temporarily disabled — will be redesigned with
-        // a new permission page + getting started flow. For now, always go to chat.
-        // The onboarding code (OnboardingScreen.kt) is kept for reference.
-        onFinished(false)  // false = skip onboarding, go straight to chat
+        val needsOnboarding = !com.ai.agent.llm.AIProvider.isConfigured(context) &&
+            !com.ai.agent.accessibility.AgentAccessibilityService.isEnabled(context)
+
+        onFinished(needsOnboarding)
     }
+
+    val logoAlpha by animateFloatAsState(
+        targetValue = if (logoVisible.value) 1f else 0f,
+        animationSpec = tween(500, easing = LinearOutSlowInEasing),
+        label = "logo_alpha",
+    )
+    val textAlpha by animateFloatAsState(
+        targetValue = if (textVisible.value) 1f else 0f,
+        animationSpec = tween(500, easing = LinearOutSlowInEasing),
+        label = "text_alpha",
+    )
+    val taglineAlpha by animateFloatAsState(
+        targetValue = if (taglineVisible.value) 1f else 0f,
+        animationSpec = tween(500, easing = LinearOutSlowInEasing),
+        label = "tagline_alpha",
+    )
 
     Box(
         modifier = Modifier
@@ -87,55 +94,43 @@ fun SplashScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            // === Aira logo (PNG resource) ===
-            val iconAlpha by animateFloatAsState(
-                targetValue = if (showIcon) 1f else 0f,
-                animationSpec = tween(durationMillis = 600, easing = LinearOutSlowInEasing),
-                label = "splash-icon-fade",
-            )
-            Image(
-                painter = androidx.compose.ui.res.painterResource(R.drawable.aira_logo),
-                contentDescription = "Aira logo",
+            // Logo — hexagon shape in accent color
+            Box(
                 modifier = Modifier
-                    .size(120.dp)
-                    .alpha(iconAlpha),
+                    .size(72.dp)
+                    .alpha(logoAlpha)
+                    .background(custom.accent, RoundedCornerShape(20.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "⬡",
+                    color = Color.White,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // App name
+            Text(
+                text = "Aira",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = custom.fg2,
+                modifier = Modifier.alpha(textAlpha),
             )
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(4.dp))
 
-            // === Title — slides up + fades in ===
-            AnimatedVisibility(
-                visible = showTitle,
-                enter = fadeIn(tween(500)) +
-                    slideInVertically(
-                        animationSpec = tween(600, easing = LinearOutSlowInEasing),
-                        initialOffsetY = { it / 3 },
-                    ),
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Aira",
-                        color = m3.onSurface,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Personal AI Assistant",
-                        color = custom.fg2,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "v2.0.9 · build 9",
-                        color = custom.fg3,
-                        fontFamily = MonoFontFamily,
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
+            // Tagline — the meaning of AIRA
+            Text(
+                text = "AI Runs Android",
+                style = MaterialTheme.typography.bodyMedium,
+                color = custom.fg3,
+                modifier = Modifier.alpha(taglineAlpha),
+            )
         }
     }
 }

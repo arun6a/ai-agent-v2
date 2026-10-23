@@ -560,7 +560,7 @@ class AgentService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Aira")
+            .setContentTitle("Aira — AI Runs Android")
             .setContentText("$taskText • A11y $a11yStatus")
             .setSmallIcon(R.drawable.ic_mic)
             .addAction(R.drawable.ic_mic, "Stop Task", stopPendingIntent)
@@ -573,10 +573,10 @@ class AgentService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "AI Agent Service",
+                "Aira — AI Runs Android",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps the AI Agent running in the background"
+                description = "Keeps Aira running in the background to control your phone"
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)

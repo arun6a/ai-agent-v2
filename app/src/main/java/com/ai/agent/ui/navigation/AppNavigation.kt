@@ -89,20 +89,28 @@ fun AppNavigation() {
         ) {
             NavHost(
                 navController = nav,
-                // v4.0.9: Splash screen removed — app opens directly to Chat.
-                startDestination = Routes.CHAT,
+                // v4.0.11: Splash screen restored — shows "Aira / AI Runs Android" logo.
+                startDestination = Routes.SPLASH,
             ) {
-                // ---- Splash (removed in v4.0.9 — was a 1.5s delay before chat) ----
-                // Kept as a no-op route for backward compat (deep links might reference it).
+                // ---- Splash ----
                 composable(
                     route = Routes.SPLASH,
+                    enterTransition = { fadeIn(tween(200)) },
+                    exitTransition = { fadeOut(tween(200)) },
                 ) {
-                    // Immediately navigate to Chat.
-                    LaunchedEffect(Unit) {
-                        nav.navigate(Routes.CHAT) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
-                        }
-                    }
+                    SplashScreen(
+                        onFinished = { goToOnboarding ->
+                            if (goToOnboarding) {
+                                nav.navigate(Routes.ONBOARDING) {
+                                    popUpTo(Routes.SPLASH) { inclusive = true }
+                                }
+                            } else {
+                                nav.navigate(Routes.CHAT) {
+                                    popUpTo(Routes.SPLASH) { inclusive = true }
+                                }
+                            }
+                        },
+                    )
                 }
 
                 // ---- Onboarding ----
