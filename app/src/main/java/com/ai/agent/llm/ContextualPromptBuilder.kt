@@ -39,13 +39,19 @@ object ContextualPromptBuilder {
     private val TOOL_GROUPS = listOf(
         ToolGroup(
             name = "Screen",
-            tools = listOf("readScreen", "readScreenStructured", "tap", "clickByText", "clickElement", "type", "swipe", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput", "lockScreen"),
+            tools = listOf("readScreen", "readScreenStructured", "tap", "clickByText", "clickElement",
+                "longClick", "longClickElement", "focusElement", "paste", "edit",
+                "type", "swipe", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput", "lockScreen"),
             toolDescs = listOf(
                 "readScreen() — read all text on screen (3-tier: a11y → ML Kit → VLM)",
                 "readScreenStructured() — get JSON tree of screen elements with bounds + index (use with clickElement)",
                 "tap(x, y) — tap screen coordinates (PREFER clickElement instead — no guessing)",
                 "clickByText(text) — click element by visible text",
                 "clickElement(index) — click element by index from readScreenStructured (PREFERRED — no coordinate guessing)",
+                "longClick(x, y) / longClickElement(index) — long press (context menus, drag)",
+                "focusElement(index) — focus an element before typing (some apps need this)",
+                "paste(index) — paste clipboard into an element by index",
+                "edit(index, text, autoSubmit?) — type + optional submit in ONE call (saves API calls)",
                 "type(text) — type text into focused field",
                 "swipe(x1, y1, x2, y2) — swipe gesture",
                 "scrollDown() / scrollUp() — scroll screen",

@@ -59,6 +59,27 @@ object ToolSchemas {
         // The app taps that element's bounds center automatically.
         Schema("clickElement", "Click an element by its 1-based index from readScreenStructured(). PREFERRED over tap(x,y) — no coordinate guessing. Call readScreenStructured() first to see element indices, then clickElement(index=N) to click the Nth element.",
             mapOf("index" to Param("number", "1-based index of the element from readScreenStructured(). Example: if the first video result has index 3 in the JSON, call clickElement(index=3).", required = true))),
+        // v4.0.2: longClick — long press for context menus, drag, etc.
+        Schema("longClick", "Long press at screen coordinates (500ms hold). Use for context menus, drag-and-drop, or elements that respond to long press. Get coordinates from readScreenStructured bounds.",
+            mapOf(
+                "x" to Param("number", "X coordinate.", required = true),
+                "y" to Param("number", "Y coordinate.", required = true),
+            )),
+        Schema("longClickElement", "Long press an element by index from readScreenStructured(). Tries ACTION_LONG_CLICK first, falls back to gesture.",
+            mapOf("index" to Param("number", "1-based index from readScreenStructured().", required = true))),
+        // v4.0.2: focusElement — focus before typing
+        Schema("focusElement", "Focus an element by index. Some apps need focus before type() works. Call this if type() returns success but text doesn't appear.",
+            mapOf("index" to Param("number", "1-based index from readScreenStructured().", required = true))),
+        // v4.0.2: paste — paste clipboard into field
+        Schema("paste", "Paste clipboard content into an element by index. Focuses the element + performs ACTION_PASTE. Use after setClipboard to paste text into a field.",
+            mapOf("index" to Param("number", "1-based index of the target input field from readScreenStructured().", required = true))),
+        // v4.0.2: edit — type + optional submit in ONE call (saves API calls)
+        Schema("edit", "Edit text in an element by index. Clears existing text + types new text in ONE call. If autoSubmit=true, also submits the form/search. Saves 1 API call vs type()+submitInput(). Use for search boxes.",
+            mapOf(
+                "index" to Param("number", "1-based index of the input field from readScreenStructured().", required = true),
+                "text" to Param("string", "Text to type into the field (replaces existing text).", required = true),
+                "autoSubmit" to Param("boolean", "If true, also calls submitInput after typing (submits the search/form). Default false.", required = false),
+            )),
         Schema("type", "Type text into the currently focused input field. Use after tapping a search box or text field.",
             mapOf("text" to Param("string", "Text to type into the focused field.", required = true))),
         Schema("swipe", "Swipe from one point to another.",

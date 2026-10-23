@@ -69,6 +69,56 @@ object ScreenTools {
                 val clicked = service!!.clickElement(index)
                 ToolExecutor.ToolResult(clicked, if (clicked) "clickElement($index) → tapped" else "clickElement($index) failed (element not found — screen may have changed. Call readScreenStructured() again.)")
             }
+            // v4.0.2: longClick — long press (context menus, drag, etc.)
+            "longClick" -> {
+                val x = (call.args["x"] as? Number)?.toFloat()
+                val y = (call.args["y"] as? Number)?.toFloat()
+                if (x != null && y != null) {
+                    ToolExecutor.ToolResult(service!!.longClick(x, y), "longClick($x, $y)")
+                } else {
+                    return ToolExecutor.ToolResult(false, "missing x or y. Pass {x, y} for coordinates.")
+                }
+            }
+            "longClickElement" -> {
+                val index = (call.args["index"] as? Number)?.toInt()
+                    ?: return ToolExecutor.ToolResult(false, "missing index. Call readScreenStructured() first, then longClickElement(index=N).")
+                val clicked = service!!.longClickElement(index)
+                ToolExecutor.ToolResult(clicked, if (clicked) "longClickElement($index) → done" else "longClickElement($index) failed (element not found)")
+            }
+            // v4.0.2: focusElement — focus before typing (some apps need this)
+            "focusElement" -> {
+                val index = (call.args["index"] as? Number)?.toInt()
+                    ?: return ToolExecutor.ToolResult(false, "missing index. Call readScreenStructured() first, then focusElement(index=N).")
+                val focused = service!!.focusElement(index)
+                ToolExecutor.ToolResult(focused, if (focused) "focusElement($index) → focused" else "focusElement($index) failed")
+            }
+            // v4.0.2: paste — paste clipboard into an element by index
+            "paste" -> {
+                val index = (call.args["index"] as? Number)?.toInt()
+                    ?: return ToolExecutor.ToolResult(false, "missing index. Call readScreenStructured() first, then paste(index=N) to paste clipboard into that element.")
+                val pasted = service!!.pasteElement(index)
+                ToolExecutor.ToolResult(pasted, if (pasted) "paste($index) → pasted" else "paste($index) failed (element not found or not editable)")
+            }
+            // v4.0.2: edit — type + optional submit in ONE call (saves API calls)
+            // Replaces the type() + submitInput() 2-call pattern for search boxes.
+            "edit" -> {
+                val index = (call.args["index"] as? Number)?.toInt()
+                    ?: return ToolExecutor.ToolResult(false, "missing index. Call readScreenStructured() first, then edit(index=N, text=\"...\", autoSubmit=true).")
+                val text = call.args["text"] as? String ?: return ToolExecutor.ToolResult(false, "missing text")
+                val autoSubmit = (call.args["autoSubmit"] as? Boolean) ?: false
+                val edited = service!!.editElement(index, text, autoSubmit)
+                // If autoSubmit, also call submitInput
+                var submitted = false
+                if (edited && autoSubmit) {
+                    delay(400)
+                    submitted = service!!.submitInput()
+                    delay(800)
+                }
+                val msg = if (edited && autoSubmit) "edit($index, text) → typed + submitted"
+                    else if (edited) "edit($index, text) → typed (autoSubmit=false)"
+                    else "edit($index) failed (element not found or not editable)"
+                ToolExecutor.ToolResult(edited, msg)
+            }
             "type" -> {
                 val text = call.args["text"] as? String ?: return ToolExecutor.ToolResult(false, "missing text")
                 // First, check what app is currently foreground so we don't accidentally type

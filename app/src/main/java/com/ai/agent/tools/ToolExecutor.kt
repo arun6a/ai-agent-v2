@@ -52,8 +52,9 @@ class ToolExecutor(private val context: Context) {
          */
         fun getAvailableToolNames(): List<String> = listOf(
             // Screen
-            "readScreen", "readScreenStructured", "tap", "clickByText", "clickElement", "type", "swipe",
-            "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput",
+            "readScreen", "readScreenStructured", "tap", "clickByText", "clickElement",
+            "longClick", "longClickElement", "focusElement", "paste", "edit",
+            "type", "swipe", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput",
             "lockScreen", "takeScreenshotToGallery",
             // Apps
             "launchApp", "listInstalledApps", "getAppInfo", "forceStopApp", "uninstallApp",
@@ -235,6 +236,23 @@ class ToolExecutor(private val context: Context) {
             }
         }
 
+        // v4.0.2: CONSENT CHECK — ask user before sensitive actions.
+        // If consent is enabled in settings AND the tool is in the sensitive list,
+        // suspend + show a dialog. User must approve before execution proceeds.
+        if (com.ai.agent.llm.AgentThinkingSettings.isConsentEnabled(context) &&
+            call.name in CONSENT_TOOLS
+        ) {
+            val (description, details) = buildConsentMessage(call)
+            val approved = com.ai.agent.consent.ConsentManager.requestConsent(
+                toolName = call.name,
+                description = description,
+                details = details,
+            )
+            if (!approved) {
+                return ToolResult(false, "User declined consent for ${call.name}. The action was NOT executed.")
+            }
+        }
+
         // service is guaranteed non-null for accessibility tools (we returned early above if null)
         // For non-accessibility tools, service is null but they don't use it
         return when (call.name) {
@@ -381,6 +399,11 @@ class ToolExecutor(private val context: Context) {
             "tap" -> ScreenTools.execute(call, context, service, database)
             "clickByText" -> ScreenTools.execute(call, context, service, database)
             "clickElement" -> ScreenTools.execute(call, context, service, database)
+            "longClick" -> ScreenTools.execute(call, context, service, database)
+            "longClickElement" -> ScreenTools.execute(call, context, service, database)
+            "focusElement" -> ScreenTools.execute(call, context, service, database)
+            "paste" -> ScreenTools.execute(call, context, service, database)
+            "edit" -> ScreenTools.execute(call, context, service, database)
             "type" -> ScreenTools.execute(call, context, service, database)
             "swipe" -> ScreenTools.execute(call, context, service, database)
             "scrollDown" -> ScreenTools.execute(call, context, service, database)
@@ -880,4 +903,69 @@ class ToolExecutor(private val context: Context) {
         val success: Boolean,
         val output: String
     )
+
+    // v4.0.2: Sensitive tools that require user consent before execution.
+    // These tools change state, send data, or delete data — user should approve first.
+    private val CONSENT_TOOLS = setOf(
+        "sendSMS", "sendEmail", "makePhoneCall", "callContact",
+        "deleteFile", "deleteRule", "uninstallApp", "forceStopApp",
+        "writeFile", "replyToNotification", "setClipboard",
+        "openWhatsAppChat",  // sends a message
+        "shareToApp", "shareText", "shareFile",
+    )
+
+    /** Build a human-readable consent message for the dialog. */
+    private fun buildConsentMessage(call: LLMClient.ToolCall): Pair<String, String> {
+        val args = call.args
+        val description = when (call.name) {
+            "sendSMS" -> "Send SMS"
+            "sendEmail" -> "Send Email"
+            "makePhoneCall" -> "Make Phone Call"
+            "callContact" -> "Call Contact"
+            "deleteFile" -> "Delete File"
+            "deleteRule" -> "Delete Rule"
+            "uninstallApp" -> "Uninstall App"
+            "forceStopApp" -> "Force Stop App"
+            "writeFile" -> "Write to File"
+            "replyToNotification" -> "Reply to Notification"
+            "setClipboard" -> "Set Clipboard"
+            "openWhatsAppChat" -> "Send WhatsApp Message"
+            "shareToApp" -> "Share to App"
+            "shareText" -> "Share Text"
+            "shareFile" -> "Share File"
+            else -> call.name
+        }
+        val details = when (call.name) {
+            "sendSMS" -> {
+                val num = args["number"] ?: args["phone"] ?: "?"
+                val msg = args["message"] ?: ""
+                "To: $num\nMessage: $msg"
+            }
+            "sendEmail", "composeEmail" -> {
+                val to = args["to"] ?: args["email"] ?: "?"
+                val subj = args["subject"] ?: ""
+                "To: $to\nSubject: $subj"
+            }
+            "makePhoneCall", "callContact" -> {
+                val num = args["number"] ?: args["phone"] ?: args["name"] ?: "?"
+                "Call: $num"
+            }
+            "deleteFile" -> "Path: ${args["path"] ?: "?"}"
+            "writeFile" -> "Path: ${args["path"] ?: "?"}\nContent: ${(args["content"] ?: "").toString().take(100)}"
+            "deleteRule" -> "Rule ID: ${args["id"] ?: "?"}"
+            "uninstallApp" -> "Package: ${args["package"] ?: "?"}"
+            "forceStopApp" -> "Package: ${args["package"] ?: "?"}"
+            "replyToNotification" -> "Message: ${args["message"] ?: "?"}"
+            "setClipboard" -> "Text: ${(args["text"] ?: "").toString().take(100)}"
+            "openWhatsAppChat" -> {
+                val phone = args["phone"] ?: args["number"] ?: "?"
+                val msg = args["message"] ?: ""
+                "To: $phone\nMessage: $msg"
+            }
+            "shareText" -> "Text: ${(args["text"] ?: "").toString().take(100)}"
+            "shareFile" -> "Path: ${args["path"] ?: "?"}"
+            else -> args.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+        }
+        return description to details
+    }
 }

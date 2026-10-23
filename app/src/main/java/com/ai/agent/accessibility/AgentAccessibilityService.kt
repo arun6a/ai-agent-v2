@@ -201,6 +201,87 @@ class AgentAccessibilityService : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
+    // v4.0.2: Long click — press and hold for 500ms (context menus, drag, etc.)
+    fun longClick(x: Float, y: Float): Boolean {
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 500)).build()
+        return dispatchGesture(gesture, null, null)
+    }
+
+    /**
+     * v4.0.2: Long click an element by index (from readScreenStructured).
+     * Tries performAction(ACTION_LONG_CLICK) first, falls back to gesture.
+     */
+    fun longClickElement(index: Int): Boolean {
+        if (index < 1) return false
+        val root = rootInActiveWindow ?: return false
+        val counter = intArrayOf(0)
+        val target = findElementByIndex(root, index, counter, 15, 100)
+        if (target == null) return false
+        // Try ACTION_LONG_CLICK first
+        if (target.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)) {
+            Log.i(TAG, "longClickElement($index): ACTION_LONG_CLICK performed")
+            return true
+        }
+        // Fall back to gesture
+        val bounds = android.graphics.Rect()
+        target.getBoundsInScreen(bounds)
+        val tapped = longClick((bounds.left + bounds.right) / 2f, (bounds.top + bounds.bottom) / 2f)
+        Log.i(TAG, "longClickElement($index): gesture longClick → $tapped")
+        return tapped
+    }
+
+    /**
+     * v4.0.2: Focus an element by index (some apps need focus before typing).
+     */
+    fun focusElement(index: Int): Boolean {
+        if (index < 1) return false
+        val root = rootInActiveWindow ?: return false
+        val counter = intArrayOf(0)
+        val target = findElementByIndex(root, index, counter, 15, 100)
+        if (target == null) return false
+        val focused = target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        Log.i(TAG, "focusElement($index): ACTION_FOCUS → $focused")
+        return focused
+    }
+
+    /**
+     * v4.0.2: Paste clipboard into an element by index.
+     * Focuses the element, then performs ACTION_PASTE.
+     */
+    fun pasteElement(index: Int): Boolean {
+        if (index < 1) return false
+        val root = rootInActiveWindow ?: return false
+        val counter = intArrayOf(0)
+        val target = findElementByIndex(root, index, counter, 15, 100)
+        if (target == null) return false
+        target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val pasted = target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        Log.i(TAG, "pasteElement($index): ACTION_PASTE → $pasted")
+        return pasted
+    }
+
+    /**
+     * v4.0.2: Edit text in an element by index (clear + type + optional submit).
+     * Combines focus + clear + type into one call (saves API calls).
+     * If autoSubmit is true, also calls submitInput after typing.
+     */
+    fun editElement(index: Int, text: String, autoSubmit: Boolean): Boolean {
+        if (index < 1) return false
+        val root = rootInActiveWindow ?: return false
+        val counter = intArrayOf(0)
+        val target = findElementByIndex(root, index, counter, 15, 100)
+        if (target == null) return false
+        target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        // Clear existing text
+        val args = android.os.Bundle()
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        val typed = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        Log.i(TAG, "editElement($index): ACTION_SET_TEXT='$text' → $typed (autoSubmit=$autoSubmit)")
+        return typed
+    }
+
     /**
      * v3.9.9: Click an element by its 1-based index from readScreenStructured().
      * Re-traverses the accessibility tree (same order as readScreenStructured)

@@ -156,6 +156,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     var verification by remember { mutableStateOf(AgentThinkingSettings.isVerificationEnabled(context)) }
     var alwaysLearn by remember { mutableStateOf(AgentThinkingSettings.isAlwaysLearnEnabled(context)) }
     var knowledgeAutoRecall by remember { mutableStateOf(AgentThinkingSettings.isKnowledgeAutoRecallEnabled(context)) }
+    var consentEnabled by remember { mutableStateOf(AgentThinkingSettings.isConsentEnabled(context)) }
     var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
     var autoFallbackKeys by remember { mutableStateOf(AutoFallbackSettings.isEnabled(context)) }
     var autoFallbackModels by remember { mutableStateOf(AutoFallbackSettings.isAutoFallbackModelsEnabled(context)) }
@@ -231,6 +232,9 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 AiToggleRow("Knowledge Auto-Recall",
                     "Brain proactively searches saved docs when you ask questions. Turn OFF to save tokens.",
                     knowledgeAutoRecall) { knowledgeAutoRecall = it; AgentThinkingSettings.setKnowledgeAutoRecallEnabled(context, it); toast = "Knowledge auto-recall: $it" }
+                AiToggleRow("Consent Flow (v4.0.2)",
+                    "Asks for approval before sensitive actions (send SMS, delete file, call, etc.). Recommended ON.",
+                    consentEnabled) { consentEnabled = it; AgentThinkingSettings.setConsentEnabled(context, it); toast = "Consent flow: $it" }
             }
         }
 
@@ -347,7 +351,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 AIProvider.setVisionMode(context, "auto")
                 AIProvider.setBrowserMode(context, "auto")
                 reflection = true; planning = true; verification = true
-                alwaysLearn = true; knowledgeAutoRecall = true
+                alwaysLearn = true; knowledgeAutoRecall = true; consentEnabled = true
                 contextualPrompts = true; promptMode = "smart"; visionMode = "auto"
                 autoFallbackKeys = true; autoFallbackModels = true; autoPickCheapest = false
                 browserMode = "auto"

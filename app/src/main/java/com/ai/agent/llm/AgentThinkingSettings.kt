@@ -34,6 +34,9 @@ object AgentThinkingSettings {
     private const val KEY_ALWAYS_LEARN = "learning_always_learn_v350"  // v3.5.0: was dead switch, now persisted
     private const val KEY_KNOWLEDGE_AUTO_RECALL = "learning_knowledge_auto_recall_v350"
 
+    // === CONSENT toggles (v4.0.2) ===
+    private const val KEY_CONSENT_ENABLED = "consent_enabled_v402"
+
     // === THINKING ===
 
     /** Periodic Reflection: brain checks progress every 5 iterations. Default ON. */
@@ -99,6 +102,22 @@ object AgentThinkingSettings {
             .edit().putBoolean(KEY_KNOWLEDGE_AUTO_RECALL, enabled).apply()
     }
 
+    // === CONSENT (v4.0.2) ===
+
+    /**
+     * Consent Flow: ask user before sensitive actions (sendSMS, deleteFile, etc.)
+     * Default ON. When enabled, sensitive tools show a dialog and wait for approval.
+     * When disabled, tools execute immediately (power-user mode).
+     */
+    fun isConsentEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_CONSENT_ENABLED, true)
+
+    fun setConsentEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_CONSENT_ENABLED, enabled).apply()
+    }
+
     // === RESET ===
 
     /**
@@ -114,6 +133,7 @@ object AgentThinkingSettings {
             .putBoolean(KEY_VERIFICATION, true)
             .putBoolean(KEY_ALWAYS_LEARN, true)
             .putBoolean(KEY_KNOWLEDGE_AUTO_RECALL, true)
+            .putBoolean(KEY_CONSENT_ENABLED, true)
             .apply()
     }
 }
