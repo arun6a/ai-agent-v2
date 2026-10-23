@@ -85,6 +85,29 @@ object LogCapture {
     /** Get all logs as a single string (for copy/export). */
     fun getAllAsText(): String = buffer.joinToString("\n") { formatLine(it) }
 
+    /**
+     * v4.0.7: Get logs from the last task only.
+     * A "task" starts at a line containing "===== Agent loop started" and ends
+     * at the next "===== Agent loop started" or the end of the buffer.
+     * Returns all lines from the last task start to now.
+     */
+    fun getLastTaskAsText(): String {
+        val all = buffer.toList()
+        val lastTaskStart = all.indexOfLast { it.message.contains("===== Agent loop started") }
+        if (lastTaskStart == -1) return getAllAsText()
+        return all.drop(lastTaskStart).joinToString("\n") { formatLine(it) }
+    }
+
+    /**
+     * v4.0.7: Get the count of errors (level "E") currently in the buffer.
+     */
+    fun getErrorCount(): Int = buffer.count { it.level == "E" }
+
+    /**
+     * v4.0.7: Get the count of warnings (level "W") currently in the buffer.
+     */
+    fun getWarningCount(): Int = buffer.count { it.level == "W" }
+
     /** Get the current line count. */
     fun size(): Int = buffer.size
 }
