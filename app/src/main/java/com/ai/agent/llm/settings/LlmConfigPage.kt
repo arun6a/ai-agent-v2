@@ -28,7 +28,6 @@ internal fun LlmConfigPage() {
     val scope = rememberCoroutineScope()
     val llmModels = SavedModelsStore.getModelsByCapabilities(ModelCapability.LLM_TAGS)
     val defaultModel = SavedModelsStore.getDefaultModel(context)
-    var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
     var contextualPrompts by remember { mutableStateOf(AIProvider.isContextualPromptsEnabled(context)) }
     // v3.2.6: read once at composition so the user can see whether their pick
     // has actually propagated to the active AIProvider config LLMClient reads.

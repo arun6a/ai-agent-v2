@@ -412,11 +412,8 @@ object AIProvider {
     // === Prompt Mode (v6.3.0) ===
     // "dynamic" → auto-selects relevant tools per task (default, saves tokens)
     // "smart" → full prompt (all tools + tips + examples, ~11K tokens)
-    // "balanced" → trimmed prompt (core tools + key rules, ~1.5K tokens)
-    // "fast" → minimal prompt (tool names + 8 rules, ~750 tokens)
-    // "custom" → user-edited prompt from storage
-    private const val KEY_PROMPT_MODE = "prompt_mode"
-    val DEFAULT_PROMPT_MODE = "smart"  // v6.3.2: dynamic disabled by default, user can enable
+    // v4.0.3: Prompt mode REMOVED — only smart prompt exists now.
+    // ContextualPromptBuilder handles all prompt building (Tier 1/2/3).
 
     // v3.2.4: Default provider is now "zai_direct" (official API, no sandbox).
     // Sandbox proxy removed — users add it via Custom API key if needed.
@@ -429,14 +426,6 @@ object AIProvider {
     // Toggle in Settings → BEHAVIOR → Contextual Prompts
     private const val KEY_CONTEXTUAL_PROMPTS = "contextual_prompts_enabled"
     const val DEFAULT_CONTEXTUAL_PROMPTS = true  // ON by default — saves 85% tokens
-
-    fun getPromptMode(context: Context): String {
-        return getPrefs(context).getString(KEY_PROMPT_MODE, DEFAULT_PROMPT_MODE) ?: DEFAULT_PROMPT_MODE
-    }
-
-    fun setPromptMode(context: Context, mode: String) {
-        getPrefs(context).edit().putString(KEY_PROMPT_MODE, mode).apply()
-    }
 
     // v3.0.8: Contextual Prompts getters/setters
     fun isContextualPromptsEnabled(context: Context): Boolean {

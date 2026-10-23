@@ -51,7 +51,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ai.agent.llm.DynamicPromptBuilder
+import com.ai.agent.llm.ContextualPromptBuilder
 import com.ai.agent.ui.components.LocalCustomColors
 import com.ai.agent.ui.theme.MonoFontFamily
 import java.io.File
@@ -86,7 +86,7 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SystemPromptEditorScreen(
-    initialMode: String = "custom", // "custom" | "smart" | "balanced" | "fast" | "default"
+    initialMode: String = "smart", // v4.0.3: only smart + custom remain
     onBack: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
@@ -133,13 +133,7 @@ fun SystemPromptEditorScreen(
     // ---- Load built-in prompt whenever mode points to one ----
     LaunchedEffect(mode) {
         if (mode != "custom") {
-            val assetName = when (mode) {
-                "smart" -> "system_prompt_smart.txt"
-                "balanced" -> "system_prompt_balanced.txt"
-                "fast" -> "system_prompt_fast.txt"
-                "default" -> "system_prompt.txt"
-                else -> "system_prompt_smart.txt"
-            }
+            val assetName = "system_prompt_smart.txt"
             builtinText = try {
                 context.assets.open(assetName).bufferedReader().use { it.readText() }
             } catch (e: Exception) {
@@ -156,7 +150,7 @@ fun SystemPromptEditorScreen(
             if (!dir.exists()) dir.mkdirs()
             val file = File(dir, "system_prompt_custom.txt")
             file.writeText(customText)
-            val tokens = DynamicPromptBuilder.estimateTokens(customText)
+            val tokens = ContextualPromptBuilder.estimateTokens(customText)
             Toast.makeText(
                 context,
                 "Custom prompt saved (${customText.length} chars, ~$tokens tokens)",
@@ -202,7 +196,7 @@ fun SystemPromptEditorScreen(
     }
 
     val displayText = if (isCustom) customText else builtinText
-    val tokenEstimate = DynamicPromptBuilder.estimateTokens(displayText)
+    val tokenEstimate = ContextualPromptBuilder.estimateTokens(displayText)
 
     Scaffold(
         containerColor = custom.canvas,
@@ -258,11 +252,8 @@ fun SystemPromptEditorScreen(
 
             // ---- Mode hint ----
             val hint = when (mode) {
-                "custom" -> "Editable. Loaded as the system prompt when Prompt Mode = \"custom\"."
-                "smart" -> "Built-in Smart prompt (read-only). Default for new installs."
-                "balanced" -> "Built-in Balanced prompt (read-only)."
-                "fast" -> "Built-in Fast prompt (read-only). Shortest context."
-                "default" -> "Built-in Default prompt (read-only). Original v1 prompt."
+                "custom" -> "Editable. Your custom prompt."
+                "smart" -> "Built-in Smart prompt (read-only). The active prompt."
                 else -> ""
             }
             Text(
@@ -445,11 +436,8 @@ private fun ModeChipRow(
     val custom = LocalCustomColors.current
     data class Mode(val id: String, val label: String)
     val modes = listOf(
-        Mode("custom", "Custom"),
         Mode("smart", "Smart"),
-        Mode("balanced", "Balanced"),
-        Mode("fast", "Fast"),
-        Mode("default", "Default"),
+        Mode("custom", "Custom"),
     )
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),

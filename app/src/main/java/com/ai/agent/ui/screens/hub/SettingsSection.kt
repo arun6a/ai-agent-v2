@@ -146,7 +146,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
-    var promptMode by remember { mutableStateOf(AIProvider.getPromptMode(context)) }
+    // v4.0.3: promptMode removed — only smart prompt exists.
     var browserMode by remember { mutableStateOf(AIProvider.getBrowserMode(context)) }
     var searchMethod by remember { mutableStateOf(AIProvider.getSearchMethod(context)) }
     var visionMode by remember { mutableStateOf(AIProvider.getVisionMode(context)) }
@@ -244,12 +244,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 AiToggleRow("Contextual Prompts",
                     "Only shows brain tools relevant to the current task. Saves 85% of API tokens.",
                     contextualPrompts) { contextualPrompts = it; AIProvider.setContextualPromptsEnabled(context, it); toast = "Contextual prompts: $it" }
-                SelectorRow(
-                    label = "Prompt Mode",
-                    options = listOf("smart", "balanced", "fast", "custom"),
-                    selected = promptMode,
-                    onSelect = { promptMode = it; AIProvider.setPromptMode(context, it); toast = "Prompt mode: $it" },
-                )
+                // v4.0.3: Prompt Mode selector removed — only smart prompt exists now.
             }
         }
 
@@ -347,12 +342,11 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 AutoFallbackSettings.setAutoFallbackModelsEnabled(context, true)
                 AutoFallbackSettings.setAutoPickCheapestEnabled(context, false)
                 AIProvider.setContextualPromptsEnabled(context, true)
-                AIProvider.setPromptMode(context, "smart")
                 AIProvider.setVisionMode(context, "auto")
                 AIProvider.setBrowserMode(context, "auto")
                 reflection = true; planning = true; verification = true
                 alwaysLearn = true; knowledgeAutoRecall = true; consentEnabled = true
-                contextualPrompts = true; promptMode = "smart"; visionMode = "auto"
+                contextualPrompts = true; visionMode = "auto"
                 autoFallbackKeys = true; autoFallbackModels = true; autoPickCheapest = false
                 browserMode = "auto"
                 toast = "Reset to recommended defaults ✓"

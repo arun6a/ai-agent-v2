@@ -10,7 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.ai.agent.VoiceManager
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.ApiUsageTracker
-import com.ai.agent.llm.DynamicPromptBuilder
+import com.ai.agent.llm.ContextualPromptBuilder
 import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
@@ -572,13 +572,8 @@ class ChatViewModel(
             val isTier1 = if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.isTier1NoTools(userMessage)
             } else false
-            val basePrompt = if (contextualEnabled) {
-                val cp = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
-                LogCapture.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(cp)} tokens, tools=${contextualToolFilter?.size ?: "all"}")
-                cp
-            } else {
-                DynamicPromptBuilder.buildPrompt(context, userMessage)
-            }
+            val basePrompt = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
+            LogCapture.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(basePrompt)} tokens, tools=${contextualToolFilter?.size ?: "all"}")
             // v3.6.2: Use FTS5 recallSimilar to find the 10 most RELEVANT memories
             // for the current task, instead of taking the first 10 alphabetically.
             val allMemory = database.getAllMemory()
@@ -1114,47 +1109,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         it.copy(apiCallCount = ApiUsageTracker.getTaskCalls())
                     }
 
-                    // === Dynamic-prompt fallback ===
-                    // If AI calls tools NOT in the dynamic prompt, expand to full prompt for next call.
-                    if (iteration == 1 && AIProvider.getPromptMode(context) == "dynamic") {
-                        val availableTools = ToolExecutor.getAvailableToolNames()
-                        val unknownTools = llmResponse.toolCalls.filter { it.name !in availableTools }
-                        if (unknownTools.isNotEmpty()) {
-                            Log.w(TAG, "AI called unknown tools: ${unknownTools.map { it.name }} — expanding to full prompt")
-                            val fullPrompt = DynamicPromptBuilder.buildPrompt(context, "")
-                            // v3.6.3: if caching enabled, inject into conversation not systemPrompt.
-                            val retryResponse = if (cachingEnabled) {
-                                conversation.append("\n\n[EXPANDED PROMPT]: Using full prompt with all tools.")
-                                llmClient.chat(conversation.toString(), systemPrompt, null)
-                            } else {
-                                val allMemory = database.getAllMemory()
-                                val memStr = if (allMemory.isEmpty()) "No memories stored yet."
-                                else allMemory.entries.joinToString("\n") { "- ${it.key}: ${it.value}" }
-                                systemPrompt = "$fullPrompt\n\n## What I Remember About the User\n$memStr"
-                                llmClient.chat(conversation.toString(), systemPrompt, null)
-                            }
-                            val retryResults = executeTimed(retryResponse.toolCalls)
-                            val retrySummary = StringBuilder("Step $iteration (fallback): ${retryResponse.reply}")
-                            retryResults.forEachIndexed { i, dr ->
-                                val call = retryResponse.toolCalls[i]
-                                retrySummary.append("\n• ${call.name}(${argsStr(call.args)}) → ${if (dr.success) "✓" else "✗"}")
-                            }
-                            val callCount = ApiUsageTracker.getTaskCalls()
-                            addAiStepMessage(retrySummary.toString(), retryResponse.toolCalls, retryResults, iteration, callCount)
-                            conversation.append("\n\n[Tool results from step $iteration (fallback)]:")
-                            retryResults.forEachIndexed { i, dr ->
-                                val call = retryResponse.toolCalls[i]
-                                conversation.append("Tool: ${call.name}(${argsStr(call.args)})\n")
-                                // v3.6.4: BUG FIX — fallback path was NOT truncating tool results.
-                                // Main path uses dr.output.take(500) but fallback used full output.
-                                conversation.append("Result: ${dr.output.take(500)}\n\n")
-                            }
-                            conversation.append("\nBased on these results, decide the next step.")
-                            _state.update { it.copy(apiCallCount = callCount) }
-                            delay(300)
-                            return@withTimeoutOrNull true // continue loop
-                        }
-                    }
+                    // v4.0.3: Dynamic-prompt fallback removed (DynamicPromptBuilder deleted).
+                    // ContextualPromptBuilder now handles all prompt building.
 
                     // === If no tool calls → task complete ===
                     if (llmResponse.toolCalls.isEmpty()) {
