@@ -413,6 +413,38 @@ fun ChatScreen(
             // v2.4.0: BrowserScreen is now a separate Compose destination (Routes.BROWSER).
             // No overlay needed here. AI's browserOpen() triggers nav.navigate(Routes.BROWSER)
             // via BrowserController.setNavigationCallback (registered in AppNavigation).
+
+            // v4.0.9: Floating stop button — appears when task is running.
+            // Inspired by Sova's overlay stop button.
+            if (state.isThinking || state.isExecuting) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .background(custom.accent, RoundedCornerShape(24.dp))
+                            .clickable { viewModel.stopAgent() }
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Stop,
+                            contentDescription = "Stop task",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Stop",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -560,23 +592,23 @@ private fun ChatTopBar(
     val m3 = MaterialTheme.colorScheme
     val typography = MaterialTheme.typography
 
-    // v4.0.8: Custom Row header (was TopAppBar) — matches HubTopBar height.
-    // TopAppBar default height is 64dp; this Row with 8dp vertical padding ≈ 48dp.
+    // v4.0.9: Custom Row header — height between TopAppBar (64dp) and HubTopBar (48dp).
+    // Uses 10dp vertical padding + 20dp icons in 36dp touch targets ≈ 56dp.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(m3.surface)
             .border(1.dp, custom.border)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // v4.0.6: Flask icon — opens Aira Lab (Hub)
-        IconButton(onClick = onOpenHub, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onOpenHub, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = Icons.Outlined.Science,
                 contentDescription = "Aira Lab",
                 tint = custom.accent,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
         Spacer(Modifier.width(4.dp))
@@ -593,44 +625,44 @@ private fun ChatTopBar(
         Spacer(Modifier.weight(1f))
 
         // Action buttons
-        IconButton(onClick = onNewChat, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onNewChat, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = Icons.Outlined.AddComment,
                 contentDescription = "New chat",
                 tint = custom.fg2,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
-        IconButton(onClick = onToggleTts, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onToggleTts, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Outlined.VolumeOff,
                 contentDescription = if (ttsEnabled) "Mute AI voice" else "Enable AI voice",
                 tint = if (ttsEnabled) custom.accent else custom.fg2,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
-        IconButton(onClick = onOpenBrowser, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onOpenBrowser, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = Icons.Outlined.Public,
                 contentDescription = "Open browser",
                 tint = custom.fg2,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
-        IconButton(onClick = onOpenBackgroundTasks, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onOpenBackgroundTasks, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = if (isThinking) Icons.Filled.Pending else Icons.Outlined.History,
                 contentDescription = "Background tasks",
                 tint = if (isThinking) custom.accent else custom.fg2,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
-        IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+        IconButton(onClick = onClear, modifier = Modifier.size(36.dp)) {
             Icon(
                 imageVector = Icons.Outlined.DeleteOutline,
                 contentDescription = "Clear chat",
                 tint = custom.fg2,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
     }

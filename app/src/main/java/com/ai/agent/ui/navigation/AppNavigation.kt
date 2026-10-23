@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -88,27 +89,20 @@ fun AppNavigation() {
         ) {
             NavHost(
                 navController = nav,
-                startDestination = Routes.SPLASH,
+                // v4.0.9: Splash screen removed — app opens directly to Chat.
+                startDestination = Routes.CHAT,
             ) {
-                // ---- Splash ----
+                // ---- Splash (removed in v4.0.9 — was a 1.5s delay before chat) ----
+                // Kept as a no-op route for backward compat (deep links might reference it).
                 composable(
                     route = Routes.SPLASH,
-                    enterTransition = { fadeIn(tween(200)) },
-                    exitTransition = { fadeOut(tween(200)) },
                 ) {
-                    SplashScreen(
-                        onFinished = { goToOnboarding ->
-                            if (goToOnboarding) {
-                                nav.navigate(Routes.ONBOARDING) {
-                                    popUpTo(Routes.SPLASH) { inclusive = true }
-                                }
-                            } else {
-                                nav.navigate(Routes.CHAT) {
-                                    popUpTo(Routes.SPLASH) { inclusive = true }
-                                }
-                            }
-                        },
-                    )
+                    // Immediately navigate to Chat.
+                    LaunchedEffect(Unit) {
+                        nav.navigate(Routes.CHAT) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    }
                 }
 
                 // ---- Onboarding ----
