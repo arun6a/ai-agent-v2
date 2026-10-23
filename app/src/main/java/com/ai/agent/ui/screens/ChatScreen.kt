@@ -62,7 +62,6 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,8 +70,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -545,7 +542,6 @@ private fun formatSize(bytes: Long): String = when {
 // Top bar
 // ---------------------------------------------------------------------------
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChatTopBar(
     providerName: String,
@@ -564,78 +560,80 @@ private fun ChatTopBar(
     val m3 = MaterialTheme.colorScheme
     val typography = MaterialTheme.typography
 
-    TopAppBar(
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // v4.0.6: Flask icon — opens Aira Lab (Hub)
-                IconButton(onClick = onOpenHub, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.Outlined.Science,
-                        contentDescription = "Aira Lab",
-                        tint = custom.accent,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = "Aira",
-                    style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = m3.onSurface,
-                )
+    // v4.0.8: Custom Row header (was TopAppBar) — matches HubTopBar height.
+    // TopAppBar default height is 64dp; this Row with 8dp vertical padding ≈ 48dp.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(m3.surface)
+            .border(1.dp, custom.border)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // v4.0.6: Flask icon — opens Aira Lab (Hub)
+        IconButton(onClick = onOpenHub, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Outlined.Science,
+                contentDescription = "Aira Lab",
+                tint = custom.accent,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = "Aira",
+            style = typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = m3.onSurface,
+            fontSize = 15.sp,
+        )
+        Spacer(Modifier.width(6.dp))
+        // v3.2.7: Compact status — just the dot (no text)
+        PulsingDot(active = isThinking, color = if (isConfigured) custom.accent else custom.fg3)
 
-                Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.weight(1f))
 
-                // v3.2.7: Compact status — just the dot (no text)
-                PulsingDot(active = isThinking, color = if (isConfigured) custom.accent else custom.fg3)
-            }
-        },
-        actions = {
-            // v2.2.0 Issue 113c — New Chat button (creates a fresh session).
-            IconButton(onClick = onNewChat) {
-                Icon(
-                    imageVector = Icons.Outlined.AddComment,
-                    contentDescription = "New chat",
-                    tint = custom.fg2,
-                )
-            }
-            // v2.0.4: TTS toggle (default OFF). Emerald when enabled, gray when off.
-            IconButton(onClick = onToggleTts) {
-                Icon(
-                    imageVector = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Outlined.VolumeOff,
-                    contentDescription = if (ttsEnabled) "Mute AI voice" else "Enable AI voice",
-                    tint = if (ttsEnabled) custom.accent else custom.fg2,
-                )
-            }
-            // v2.0.7: Browser icon in header (replaced Hub icon).
-            // Hub is now reachable only via bottom nav "Aira Lab" tab.
-            IconButton(onClick = onOpenBrowser) {
-                Icon(
-                    imageVector = Icons.Outlined.Public,
-                    contentDescription = "Open browser",
-                    tint = custom.fg2,
-                )
-            }
-            // v2.2.2: Background Tasks icon — shows running task + recent activity
-            IconButton(onClick = onOpenBackgroundTasks) {
-                Icon(
-                    imageVector = if (isThinking) Icons.Filled.Pending else Icons.Outlined.History,
-                    contentDescription = "Background tasks",
-                    tint = if (isThinking) custom.accent else custom.fg2,
-                )
-            }
-            IconButton(onClick = onClear) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteOutline,
-                    contentDescription = "Clear chat",
-                    tint = custom.fg2,
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = m3.surface,
-            titleContentColor = m3.onSurface,
-        ),
-    )
+        // Action buttons
+        IconButton(onClick = onNewChat, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Outlined.AddComment,
+                contentDescription = "New chat",
+                tint = custom.fg2,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onToggleTts, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = if (ttsEnabled) Icons.Filled.VolumeUp else Icons.Outlined.VolumeOff,
+                contentDescription = if (ttsEnabled) "Mute AI voice" else "Enable AI voice",
+                tint = if (ttsEnabled) custom.accent else custom.fg2,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onOpenBrowser, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Outlined.Public,
+                contentDescription = "Open browser",
+                tint = custom.fg2,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onOpenBackgroundTasks, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = if (isThinking) Icons.Filled.Pending else Icons.Outlined.History,
+                contentDescription = "Background tasks",
+                tint = if (isThinking) custom.accent else custom.fg2,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+            Icon(
+                imageVector = Icons.Outlined.DeleteOutline,
+                contentDescription = "Clear chat",
+                tint = custom.fg2,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
 }
 
 @Composable
