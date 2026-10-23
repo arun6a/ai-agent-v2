@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -219,8 +220,11 @@ fun ChatScreen(
     }
 
     // v3.1.0: Add imePadding so keyboard doesn't cover the chat input
+    // v4.0.5: Actually apply .imePadding() (was only a comment before!)
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
         containerColor = custom.canvas,
         topBar = {
             // v3.2.7: pass isConfigured so the top bar shows "not configured"

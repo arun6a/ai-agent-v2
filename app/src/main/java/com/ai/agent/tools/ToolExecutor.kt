@@ -125,6 +125,11 @@ class ToolExecutor(private val context: Context) {
         "readFile" to listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE),
         "listFiles" to listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE),
         "writeFile" to listOf(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+        // v4.0.5: Added missing permission checks for file operations
+        "copyFile" to listOf(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+        "moveFile" to listOf(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+        "deleteFile" to listOf(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE),
+        "createDirectory" to listOf(android.Manifest.permission.MANAGE_EXTERNAL_STORAGE),
         "sendEmail" to listOf(android.Manifest.permission.READ_CONTACTS),
         "replyToNotification" to listOf("__notification_listener__"),
         // readScreen, tap, clickByText, etc. need accessibility — but they already
@@ -912,6 +917,7 @@ class ToolExecutor(private val context: Context) {
         "writeFile", "replyToNotification", "setClipboard",
         "openWhatsAppChat",  // sends a message
         "shareToApp", "shareText", "shareFile",
+        "sendAttachmentTo",  // v4.0.5: sends file to external app (data exfiltration risk)
     )
 
     /** Build a human-readable consent message for the dialog. */

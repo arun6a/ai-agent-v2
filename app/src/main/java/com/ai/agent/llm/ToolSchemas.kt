@@ -427,12 +427,12 @@ object ToolSchemas {
         "content" to Param("string", "Content to write.", required = true),
     )
     private fun map_of_copy_file() = mapOf(
-        "from" to Param("string", "Source path.", required = true),
-        "to" to Param("string", "Destination path.", required = true),
+        "source" to Param("string", "Source file path.", required = true),
+        "destination" to Param("string", "Destination file path.", required = true),
     )
     private fun map_of_move_file() = mapOf(
-        "from" to Param("string", "Source path.", required = true),
-        "to" to Param("string", "Destination path.", required = true),
+        "source" to Param("string", "Source file path.", required = true),
+        "destination" to Param("string", "Destination file path.", required = true),
     )
     private fun map_of_send_attachment() = mapOf(
         "package" to Param("string", "App package to send to.", required = true),

@@ -87,6 +87,7 @@ Memory + Knowledge:
 - recallSimilar(query) → find relevant past memories (call at task START)
 - saveToKnowledge(name, content) → save a document for future reference
 - recallKnowledge(query) → search saved documents
+- listKnowledge() → list all saved knowledge docs
 
 Research tools:
 - webSearch(query, fetchTop?) → search the web (background, no browser opens)
