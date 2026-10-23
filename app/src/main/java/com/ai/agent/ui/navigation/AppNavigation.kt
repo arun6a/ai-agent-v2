@@ -225,7 +225,7 @@ fun AppNavigation() {
                     popExitTransition = { fadeOut(tween(200)) },
                 ) {
                     HubScreen(
-                        initialSection = HubSectionArg.SKILLS,
+                        initialSection = null,  // v4.0.1: open Hub Home by default
                         onOpenProviderSettings = { nav.navigate(Routes.PROVIDER_SETTINGS) },
                         onEditSkill = { skillName, isReadOnly ->
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))

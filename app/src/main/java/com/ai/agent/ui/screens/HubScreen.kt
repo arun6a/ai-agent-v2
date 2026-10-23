@@ -22,10 +22,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -113,7 +111,7 @@ enum class HubCategory(val title: String, val sections: List<HubSection>) {
 
 @Composable
 fun HubScreen(
-    initialSection: HubSectionArg = HubSectionArg.SKILLS,
+    initialSection: HubSectionArg? = null,  // v4.0.1: null = open Hub Home (not Skills)
     onBackToChat: () -> Unit = {},
     onOpenProviderSettings: () -> Unit = {},
     onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit = { _, _ -> },
@@ -123,7 +121,7 @@ fun HubScreen(
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
-    var selectedSection by remember { mutableStateOf<HubSection?>(initialSection.toHubSection()) }
+    var selectedSection by remember { mutableStateOf<HubSection?>(initialSection?.toHubSection()) }
 
     AnimatedContent(
         targetState = selectedSection,
@@ -159,7 +157,7 @@ fun HubScreen(
 }
 
 // ============================================================================
-// Hub Home — grid of categorized section cards
+// Hub Home — list of categorized section rows
 // ============================================================================
 
 @Composable
@@ -169,9 +167,6 @@ private fun HubHome(
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
-    val configuration = LocalConfiguration.current
-    val isTablet = configuration.smallestScreenWidthDp >= 600
-    val columns = if (isTablet) 3 else 2
 
     Column(
         modifier = Modifier
@@ -180,31 +175,27 @@ private fun HubHome(
     ) {
         // ---- Top bar ----
         HubTopBar(title = "Aira Lab", onBack = onBackToChat, showBack = true)
-        // ---- Grid ----
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(columns),
+        // ---- List ----
+        LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp),
+                .fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
         ) {
             HubCategory.entries.forEach { category ->
-                // Category header — spans all columns
-                item(span = { GridItemSpan(columns) }) {
+                // Category header
+                item {
                     Text(
                         text = category.title,
                         color = custom.fg3,
                         fontFamily = MonoFontFamily,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
                     )
                 }
-                // Section cards in this category
+                // Section rows in this category
                 items(category.sections) { section ->
-                    HubCard(
+                    HubListItem(
                         section = section,
                         onClick = { onSectionClick(section) },
                     )
@@ -215,26 +206,23 @@ private fun HubHome(
 }
 
 @Composable
-private fun HubCard(
+private fun HubListItem(
     section: HubSection,
     onClick: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1.6f)
-            .background(m3.surface)
-            .border(1.dp, custom.border, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(36.dp)
                 .background(custom.accent.copy(alpha = 0.15f), RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center,
         ) {
@@ -242,13 +230,14 @@ private fun HubCard(
                 imageVector = section.icon,
                 contentDescription = section.label,
                 tint = custom.accent,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
+        Spacer(Modifier.size(14.dp))
         Text(
             text = section.label,
             color = m3.onSurface,
-            fontSize = 14.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
         )
     }
