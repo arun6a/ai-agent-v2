@@ -65,6 +65,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -424,6 +427,17 @@ fun ChatScreen(
                 viewModel.saveWorkflowAsSkill(name, desc)
                 showSaveSkillDialog = false
             },
+        )
+    }
+
+    // v4.0.4: Consent dialog — shows when a sensitive tool needs user approval.
+    // Observes ConsentManager.pendingRequest (set by ToolExecutor before sensitive actions).
+    val consentRequest = com.ai.agent.consent.ConsentManager.pendingRequest
+    if (consentRequest != null) {
+        ConsentDialog(
+            request = consentRequest,
+            onApprove = { com.ai.agent.consent.ConsentManager.resolve(true) },
+            onCancel = { com.ai.agent.consent.ConsentManager.resolve(false) },
         )
     }
 
@@ -1200,4 +1214,77 @@ private fun ChatScreenPreviewBody() {
             Box(modifier = Modifier.weight(1f))
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// v4.0.4: Consent Dialog — shows when a sensitive tool needs user approval
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun ConsentDialog(
+    request: com.ai.agent.consent.ConsentManager.ConsentRequest,
+    onApprove: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("⚠️", fontSize = 20.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "Consent Required",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = m3.onSurface,
+                )
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    text = request.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = m3.onSurface,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = request.details,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = custom.fg2,
+                    fontFamily = MonoFontFamily,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(custom.surface2, RoundedCornerShape(8.dp))
+                        .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onApprove,
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = custom.accent,
+                ),
+            ) {
+                Text("Approve", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = custom.fg2,
+                ),
+            ) {
+                Text("Cancel")
+            }
+        },
+        containerColor = m3.surface,
+        titleContentColor = m3.onSurface,
+    )
 }
