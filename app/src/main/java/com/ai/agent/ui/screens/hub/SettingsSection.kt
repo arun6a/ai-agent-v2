@@ -167,10 +167,7 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
     var fastModelId by remember { mutableStateOf(AutoFallbackSettings.getFastModelId(context)) }
     var advancedModelId by remember { mutableStateOf(AutoFallbackSettings.getAdvancedModelId(context)) }
     var healthRefresh by remember { mutableStateOf(0) }
-    // v2.0.7: Overlay toggle — persists via SharedPreferences("ai_agent_prefs","overlay_enabled")
-    val prefs = remember { context.getSharedPreferences("ai_agent_prefs", android.content.Context.MODE_PRIVATE) }
-    var overlayEnabled by remember { mutableStateOf(prefs.getBoolean("overlay_enabled", true)) }
-    var overlayPermGranted by remember { mutableStateOf(android.provider.Settings.canDrawOverlays(context)) }
+    // v4.0.13: Overlay vars removed (overlay permission is in Permissions page now)
     var toast by remember { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -186,40 +183,21 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             )
         }
 
-        // v3.5.1: AI BEHAVIOR sections (merged from BrainBehaviorPage + SmartRoutingPage)
-
-        // ===== MODEL SLOTS =====
-        item {
-            SettingsGroup(title = "MODEL SLOTS") {
-                ModelSlotRow("Fast/Cheap (Tier 1)", allModels, fastModelId, defaultModel?.id) { id ->
-                    fastModelId = id
-                    AutoFallbackSettings.setFastModelId(context, id)
-                    toast = "Fast/Cheap model set"
-                }
-                ModelSlotRow("Default (Tier 2)", allModels, defaultModel?.id, defaultModel?.id) { id ->
-                    SavedModelsStore.setDefaultModel(context, id)
-                    toast = "Default model set"
-                }
-                ModelSlotRow("Advanced (Tier 3)", allModels, advancedModelId, defaultModel?.id) { id ->
-                    advancedModelId = id
-                    AutoFallbackSettings.setAdvancedModelId(context, id)
-                    toast = "Advanced model set"
-                }
-            }
-        }
-
-        // ===== THINKING =====
+        // ===== THINKING (merged PROMPT → Contextual Prompts here) =====
         item {
             SettingsGroup(title = "THINKING") {
                 AiToggleRow("Periodic Reflection",
                     "Every 5 steps, brain asks 'am I making progress?' If stuck, switches approach.",
                     reflection) { reflection = it; AgentThinkingSettings.setReflectionEnabled(context, it); toast = "Periodic reflection: $it" }
                 AiToggleRow("Task Planning",
-                    "For complex tasks, brain creates a step-by-step plan before starting. Adds 2-3s. Plan is advisory — brain adapts if reality differs.",
+                    "For complex tasks, brain creates a step-by-step plan before starting. Adds 2-3s.",
                     planning) { planning = it; AgentThinkingSettings.setPlanningEnabled(context, it); toast = "Task planning: $it" }
                 AiToggleRow("Post-Action Verification",
                     "After send/delete/email, brain reads screen to confirm it worked.",
                     verification) { verification = it; AgentThinkingSettings.setVerificationEnabled(context, it); toast = "Post-action verification: $it" }
+                AiToggleRow("Contextual Prompts",
+                    "Only shows brain tools relevant to the current task. Saves 85% of API tokens.",
+                    contextualPrompts) { contextualPrompts = it; AIProvider.setContextualPromptsEnabled(context, it); toast = "Contextual prompts: $it" }
             }
         }
 
@@ -232,19 +210,9 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 AiToggleRow("Knowledge Auto-Recall",
                     "Brain proactively searches saved docs when you ask questions. Turn OFF to save tokens.",
                     knowledgeAutoRecall) { knowledgeAutoRecall = it; AgentThinkingSettings.setKnowledgeAutoRecallEnabled(context, it); toast = "Knowledge auto-recall: $it" }
-                AiToggleRow("Consent Flow (v4.0.2)",
+                AiToggleRow("Consent Flow",
                     "Asks for approval before sensitive actions (send SMS, delete file, call, etc.). Recommended ON.",
                     consentEnabled) { consentEnabled = it; AgentThinkingSettings.setConsentEnabled(context, it); toast = "Consent flow: $it" }
-            }
-        }
-
-        // ===== PROMPT =====
-        item {
-            SettingsGroup(title = "PROMPT") {
-                AiToggleRow("Contextual Prompts",
-                    "Only shows brain tools relevant to the current task. Saves 85% of API tokens.",
-                    contextualPrompts) { contextualPrompts = it; AIProvider.setContextualPromptsEnabled(context, it); toast = "Contextual prompts: $it" }
-                // v4.0.3: Prompt Mode selector removed — only smart prompt exists now.
             }
         }
 
@@ -256,6 +224,28 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                     options = listOf("auto", "mlkit", "vlm"),
                     selected = visionMode,
                     onSelect = { visionMode = it; AIProvider.setVisionMode(context, it); toast = "Vision mode: $it" },
+                )
+            }
+        }
+
+        // ===== WEB (merged BROWSER + SEARCH METHOD) =====
+        item {
+            SettingsGroup(title = "WEB") {
+                SelectorRow(
+                    label = "Browser Mode",
+                    options = listOf("auto", "in_app", "chrome"),
+                    selected = browserMode,
+                    onSelect = { browserMode = it; AIProvider.setBrowserMode(context, it); toast = "Browser mode: $it" },
+                )
+                SelectorRow(
+                    label = "Search Method",
+                    options = listOf("duckduckgo", "google", "bing", "google_app"),
+                    selected = searchMethod,
+                    onSelect = {
+                        searchMethod = it
+                        AIProvider.setSearchMethod(context, it)
+                        toast = "Search method: $it"
+                    },
                 )
             }
         }
@@ -275,15 +265,23 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             }
         }
 
-        // ===== BROWSER =====
+        // ===== MODEL SLOTS =====
         item {
-            SettingsGroup(title = "BROWSER") {
-                SelectorRow(
-                    label = "Browser Mode",
-                    options = listOf("auto", "in_app", "chrome"),
-                    selected = browserMode,
-                    onSelect = { browserMode = it; AIProvider.setBrowserMode(context, it); toast = "Browser mode: $it" },
-                )
+            SettingsGroup(title = "MODEL SLOTS") {
+                ModelSlotRow("Fast/Cheap (Tier 1)", allModels, fastModelId, defaultModel?.id) { id ->
+                    fastModelId = id
+                    AutoFallbackSettings.setFastModelId(context, id)
+                    toast = "Fast/Cheap model set"
+                }
+                ModelSlotRow("Default (Tier 2)", allModels, defaultModel?.id, defaultModel?.id) { id ->
+                    SavedModelsStore.setDefaultModel(context, id)
+                    toast = "Default model set"
+                }
+                ModelSlotRow("Advanced (Tier 3)", allModels, advancedModelId, defaultModel?.id) { id ->
+                    advancedModelId = id
+                    AutoFallbackSettings.setAdvancedModelId(context, id)
+                    toast = "Advanced model set"
+                }
             }
         }
 
@@ -334,7 +332,20 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             }
         }
 
-        // ===== RESET DEFAULTS =====
+        // ===== APPEARANCE =====
+        item {
+            SettingsGroup(title = "APPEARANCE") {
+                ThemeSelectorRow(
+                    current = ThemeManager.mode,
+                    onSelect = {
+                        ThemeManager.setMode(context, it)
+                        toast = "Theme: $it"
+                    },
+                )
+            }
+        }
+
+        // ===== RESET DEFAULTS (at very bottom) =====
         item {
             TextButton(onClick = {
                 AgentThinkingSettings.resetToDefaults(context)
@@ -354,90 +365,6 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                 Text("Reset to recommended defaults", color = custom.accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
-
-        item {
-            SettingsGroup(title = "SEARCH METHOD") {
-                SelectorRow(
-                    label = "Search Method",
-                    options = listOf("duckduckgo", "google", "bing", "google_app"),
-                    selected = searchMethod,
-                    onSelect = {
-                        searchMethod = it
-                        AIProvider.setSearchMethod(context, it)
-                        toast = "Search method: $it"
-                    },
-                )
-            }
-        }
-        // v3.5.0: VISION MODE + BEHAVIOR groups removed — moved to Brain Behavior page.
-        // v3.5.2: Floating overlay — keep only the permission grant button.
-        // The overlay toggle/pipeline will be added in a future version.
-        item {
-            SettingsGroup(title = "OVERLAY PERMISSION") {
-                if (!overlayPermGranted) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(custom.accent.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
-                            .border(1.dp, custom.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                            .clickable {
-                                val intent = android.content.Intent(
-                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    android.net.Uri.parse("package:${context.packageName}"),
-                                )
-                                context.startActivity(intent)
-                                toast = "Grant overlay permission in Settings"
-                            }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Warning,
-                            contentDescription = null,
-                            tint = custom.accent,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Grant overlay permission",
-                                color = m3.onSurface,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = "Required for the floating button to appear",
-                                color = custom.fg3,
-                                fontSize = 11.sp,
-                            )
-                        }
-                        Text(text = "Open →", color = custom.accent, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                    }
-                } else {
-                    // Permission granted — show simple status.
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("✓", color = custom.accent, fontSize = 12.sp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Overlay permission granted", color = m3.onSurface, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-        item {
-            SettingsGroup(title = "APPEARANCE") {
-                ThemeSelectorRow(
-                    current = ThemeManager.mode,
-                    onSelect = {
-                        ThemeManager.setMode(context, it)
-                        toast = "Theme: $it"
-                    },
-                )
-            }
-        }
-        // v3.5.2: AboutCard removed — not needed in Settings.
     }
 
     LaunchedEffect(toast) {
