@@ -11,5 +11,5 @@ package com.ai.agent
  */
 object Config {
     // App version (must match app/build.gradle.kts versionName)
-    const val VERSION = "4.0.14"
+    const val VERSION = "4.0.15"
 }

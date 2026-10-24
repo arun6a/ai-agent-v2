@@ -317,7 +317,7 @@ internal fun SkillsSection(
                 Toast.makeText(
                     context,
                     if (isUser) "Skill deleted: ${skill.name}"
-                    else "Built-in skill hidden: ${skill.name}",
+                    else "Built-in skill deleted: ${skill.name}",
                     Toast.LENGTH_SHORT,
                 ).show()
                 deleteSkill = null
@@ -433,7 +433,7 @@ private fun SkillDeleteConfirmDialog(
         containerColor = m3.surface,
         title = {
             Text(
-                text = if (isUserCreated) "Delete skill?" else "Hide built-in skill?",
+                text = "Delete skill?",
                 color = m3.onSurface,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
@@ -444,7 +444,7 @@ private fun SkillDeleteConfirmDialog(
                 text = if (isUserCreated)
                     "Permanently delete \"$skillName\"? This cannot be undone."
                 else
-                    "This is a built-in skill. Deleting will hide it from the list " +
+                    "This is a built-in skill. Deleting will remove it from the list " +
                         "(original file in assets remains). Continue?",
                 color = custom.fg2,
                 fontSize = 13.sp,
@@ -453,7 +453,7 @@ private fun SkillDeleteConfirmDialog(
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = onConfirm) {
                 Text(
-                    text = if (isUserCreated) "Delete" else "Hide",
+                    text = "Delete",
                     color = custom.error,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
