@@ -259,25 +259,26 @@ internal fun SkillsSection(
                     },
                 )
             }
+        }
 
-            // v4.0.14: Restore hidden skills button — shows if any .deleted_ markers exist
-            if (hiddenCount > 0) {
-                item {
-                    TextButton(
-                        onClick = {
-                            val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
-                            dir.listFiles { f -> f.name.startsWith(".deleted_") }?.forEach { it.delete() }
-                            toast = "Restored $hiddenCount hidden skill(s)"
-                            reload()
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    ) {
-                        Text(
-                            "↻ Restore $hiddenCount hidden skill(s)",
-                            color = custom.fg3,
-                            fontSize = 11.sp,
-                        )
-                    }
+        // v4.0.14: Restore hidden skills — OUTSIDE the if/else so it always shows.
+        // (Previously inside else block — didn't show when all skills were hidden.)
+        if (hiddenCount > 0) {
+            item {
+                TextButton(
+                    onClick = {
+                        val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+                        dir.listFiles { f -> f.name.startsWith(".deleted_") }?.forEach { it.delete() }
+                        toast = "Restored $hiddenCount hidden skill(s)"
+                        reload()
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                ) {
+                    Text(
+                        "↻ Restore $hiddenCount hidden skill(s)",
+                        color = custom.fg3,
+                        fontSize = 11.sp,
+                    )
                 }
             }
         }
