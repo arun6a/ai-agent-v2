@@ -53,6 +53,18 @@ class SkillManager(private val context: Context) {
 
     fun loadSkills(): List<Skill> {
         val loaded = mutableListOf<Skill>()
+
+        // v4.0.14: Check for .deleted_ marker files — user may have hidden built-in skills.
+        // If a marker exists, skip that skill (both from assets and auto-injection).
+        val userSkillsDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+        val deletedMarkers: Set<String> = if (userSkillsDir.exists()) {
+            userSkillsDir.listFiles { f -> f.name.startsWith(".deleted_") }
+                ?.map { it.name.removePrefix(".deleted_") }?.toSet() ?: emptySet()
+        } else emptySet()
+        if (deletedMarkers.isNotEmpty()) {
+            Log.i(TAG, "Hidden skills (markers found): $deletedMarkers")
+        }
+
         // v6.1.0: Load from assets (built-in) + user storage (created via chat)
         try {
             val assetFiles = context.assets.list(SKILLS_DIR) ?: emptyArray()
@@ -60,6 +72,11 @@ class SkillManager(private val context: Context) {
 
             for (fileName in assetFiles) {
                 if (!fileName.endsWith(".md")) continue
+                // v4.0.14: Skip hidden built-in skills (user pressed "Hide")
+                if (fileName in deletedMarkers) {
+                    Log.i(TAG, "Skipping hidden built-in skill: $fileName")
+                    continue
+                }
                 try {
                     val content = InputStreamReader(context.assets.open("$SKILLS_DIR/$fileName")).readText()
                     val skill = parseSkill(content, fileName)
@@ -77,7 +94,7 @@ class SkillManager(private val context: Context) {
 
         // v6.1.0: Load user-created skills from storage
         try {
-            val userSkillsDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+            // v4.0.14: userSkillsDir already declared above (for deletedMarkers check)
             if (userSkillsDir.exists()) {
                 val userFiles = userSkillsDir.listFiles { f -> f.extension == "md" } ?: emptyArray()
                 Log.i(TAG, "Found ${userFiles.size} user skill files")

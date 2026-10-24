@@ -143,11 +143,13 @@ internal fun SkillsSection(
 
     var skills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
+    var hiddenCount by remember { mutableStateOf(0) }  // v4.0.14: track hidden skills for restore button
 
     // Long-press menu state — when non-null, an AlertDialog is shown.
     var menuSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
     // Delete-confirmation dialog state.
     var deleteSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
+    var toast by remember { mutableStateOf<String?>(null) }
 
     fun reload() {
         val allSkills = try {
@@ -178,6 +180,7 @@ internal fun SkillsSection(
             userDir.listFiles { f -> f.name.startsWith(".deleted_") }
                 ?.map { it.name.removePrefix(".deleted_") }?.toSet() ?: emptySet()
         } else emptySet()
+        hiddenCount = deletedMarkers.size  // v4.0.14: update for restore button
 
         // associateBy keeps the LAST entry per fileName — since SkillManager loads
         // assets first then user files, user-owned overrides win on conflict.
@@ -256,6 +259,27 @@ internal fun SkillsSection(
                     },
                 )
             }
+
+            // v4.0.14: Restore hidden skills button — shows if any .deleted_ markers exist
+            if (hiddenCount > 0) {
+                item {
+                    TextButton(
+                        onClick = {
+                            val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+                            dir.listFiles { f -> f.name.startsWith(".deleted_") }?.forEach { it.delete() }
+                            toast = "Restored $hiddenCount hidden skill(s)"
+                            reload()
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    ) {
+                        Text(
+                            "↻ Restore $hiddenCount hidden skill(s)",
+                            color = custom.fg3,
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -300,6 +324,14 @@ internal fun SkillsSection(
             },
             onDismiss = { deleteSkill = null },
         )
+    }
+
+    // v4.0.14: Toast handler
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            toast = null
+        }
     }
 }
 

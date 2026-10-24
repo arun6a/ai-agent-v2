@@ -855,6 +855,21 @@ class ToolExecutor(private val context: Context) {
      * If the LLM already used named args (proper JSON), this is a no-op.
      */
     private fun normalizePositionalArgs(call: LLMClient.ToolCall): LLMClient.ToolCall {
+        // v4.0.14: Alias normalization — if the LLM used a common wrong key name,
+        // remap it to the expected key before anything else.
+        val argAliases = mapOf(
+            "app" to "package",      // launchApp(app=...) → launchApp(package=...)
+            "pkg" to "package",      // launchApp(pkg=...) → launchApp(package=...)
+            "name" to "package",     // when brain confuses launchApp(name=...) with package
+        )
+        var remappedArgs = call.args.toMutableMap()
+        for ((alias, canonical) in argAliases) {
+            if (alias in remappedArgs && canonical !in remappedArgs) {
+                remappedArgs[canonical] = remappedArgs.remove(alias)!!
+            }
+        }
+        val call = LLMClient.ToolCall(call.name, remappedArgs)
+
         // Only normalize if there are positional args (numeric string keys)
         val hasPositional = call.args.keys.any { it.toIntOrNull() != null }
         if (!hasPositional) return call

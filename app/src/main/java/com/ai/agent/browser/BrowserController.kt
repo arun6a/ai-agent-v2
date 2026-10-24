@@ -90,11 +90,24 @@ object BrowserController {
         Log.i(TAG, "Opening URL (visible, BrowserScreen): $url")
         val finalUrl = if (!url.startsWith("http")) "https://$url" else url
 
-        // v5.0.9: If browser is already open with the same URL, don't reload
-        val currentUrl = browserScreenWebView?.url
-        if (currentUrl != null && currentUrl.contains(finalUrl.removePrefix("https://").removePrefix("http://").take(30))) {
+        // v4.0.14: Fix thread crash — WebView.url must be called on main thread.
+        // Was: val currentUrl = browserScreenWebView?.url (crashed on IO thread)
+        // Now: check on main thread, then decide whether to reload.
+        var sameUrl = false
+        val checkDeferred = CompletableDeferred<Boolean>()
+        handler.post {
+            val currentUrl = browserScreenWebView?.url
+            sameUrl = currentUrl != null && currentUrl.contains(finalUrl.removePrefix("https://").removePrefix("http://").take(30))
+            checkDeferred.complete(sameUrl)
+        }
+        try {
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeoutOrNull(2000) { checkDeferred.await() }
+            }
+        } catch (_: Exception) {}
+
+        if (sameUrl) {
             Log.i(TAG, "Same URL already loaded — just navigating to BrowserScreen, no reload")
-            // v2.4.1: Post to main thread (called from background IO thread)
             handler.post { navigationCallback?.invoke() }
             return
         }
