@@ -107,6 +107,10 @@ class AgentService : Service() {
         // Same lesson as BrowserActivity → BrowserScreen: use the component MIUI can't kill.
         com.ai.agent.rules.RuleTriggerManager.registerAll(this)
 
+        // v4.0.17: Register programmatic receivers for Android 14+ compatibility.
+        // Android 14 blocks manifest-declared receivers for some actions.
+        registerProgrammaticReceivers()
+
         // v3.0.0: Schedule all time rules (in case app was killed + restarted)
         try {
             com.ai.agent.rules.RuleScheduler(this).scheduleAllTimeRules()

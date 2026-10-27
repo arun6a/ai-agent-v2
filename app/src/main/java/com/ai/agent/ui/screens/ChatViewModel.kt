@@ -1586,12 +1586,12 @@ ALWAYS state index + text + reason before clicking. No exceptions.
         )
         _state.update { s -> s.copy(messages = s.messages + msg) }
         // v2.2.1: Save step messages to DB so they persist across app restarts.
-        // Previously only the final reply was saved — steps were lost on reopen.
+        // v4.0.17: Fixed — was saving only header, now saves header + text (brain's reply).
         try {
             database.addConversationToSession(
                 _state.value.currentSessionId,
                 "ai_step",
-                header.take(2000),  // truncate to avoid DB bloat
+                "$header\n$text".take(2000),  // save full step text, not just header
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to save step message: ${e.message}")

@@ -190,6 +190,7 @@ class ToolExecutor(private val context: Context) {
             "openSettings", "openAppSettings",
             "wait", "waitAndContinue", "localLLM",
             "executeSkill", "listSkills",
+            "createSkill", "deleteSkill", "getSkill",  // v4.0.17: These touch files, not accessibility
             "recallSimilar", "searchMemory",
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "listAttachments", "readAttachment", "sendAttachmentTo",
@@ -198,7 +199,8 @@ class ToolExecutor(private val context: Context) {
             "listAppActivities", "openWhatsAppChat", "openYouTubeVideo", "openMapsLocation",
             "playSpotify", "openInstagramProfile", "openTelegramChat",
             "openGoogleSearch", "shareToApp", "openContact",
-            "mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto"
+            "mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto",
+            "forceStopApp", "uninstallApp",  // v4.0.17: Use ActivityManager, not accessibility
         )
 
         // For non-accessibility tools, skip the service check entirely.

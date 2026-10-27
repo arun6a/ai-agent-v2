@@ -434,11 +434,11 @@ fun ChatScreen(
     }
 
     // v4.0.4: Consent dialog — shows when a sensitive tool needs user approval.
-    // Observes ConsentManager.pendingRequest (set by ToolExecutor before sensitive actions).
-    val consentRequest = com.ai.agent.consent.ConsentManager.pendingRequest
+    // v4.0.17: Observe ConsentManager via StateFlow so Compose recomposes when request changes.
+    val consentRequest by com.ai.agent.consent.ConsentManager.pendingRequestFlow.collectAsState()
     if (consentRequest != null) {
         ConsentDialog(
-            request = consentRequest,
+            request = consentRequest!!,
             onApprove = { com.ai.agent.consent.ConsentManager.resolve(true) },
             onCancel = { com.ai.agent.consent.ConsentManager.resolve(false) },
         )
