@@ -153,11 +153,14 @@ class ToolExecutor(private val context: Context) {
         return results
     }
 
-    private suspend fun executeTool(call: LLMClient.ToolCall): ToolResult {
+    private suspend fun executeTool(rawCall: LLMClient.ToolCall): ToolResult {
+        // v4.0.16: Normalize tool name for case-insensitive matching.
+        // Brain sometimes sends "createrule" instead of "createRule".
+        var call = LLMClient.ToolCall(rawCall.name.trim().lowercase().replaceFirstChar { it.uppercase() }, rawCall.args)
         // Normalize positional args (0, 1, 2...) to named args for tools that the LLM
         // wrote as plain text (e.g., "tap(970, 180)" → args={"0":970, "1":180}).
         // This converts them to the expected named format ({"x":970, "y":180}).
-        val call = normalizePositionalArgs(call)
+        call = normalizePositionalArgs(call)
 
         // Tools that DON'T need accessibility — browser, web, device, memory, rules, etc.
         // These work even without accessibility enabled.

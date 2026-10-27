@@ -409,15 +409,21 @@ class LLMClient(private val context: Context) {
             // and parseResponse() handles it. This saves ~22% of prompt tokens
             // on every Tier 3 call.
             //
-            // The old code was:
-            //   if (providerId in setOf(...)) {
-            //       val tools = buildToolsArray(toolFilter)
-            //       if (tools.length() > 0) { put("tools", tools); put("tool_choice", "auto") }
-            //   }
-            //
-            // If tool-calling reliability degrades, re-enable by uncommenting the
-            // block above. But test first — the JSON reply path has been working
-            // reliably since v3.0.0.
+            // v4.0.16: RE-ENABLED for providers with native function calling.
+            // The text parser (extractToolCallsFromText) breaks on values with
+            // spaces/commas (e.g., createRule(name=WhatsApp Auto Reply, action=reply: I'm busy, will get back!)).
+            // Native function calling avoids this entirely — the model returns
+            // structured tool_calls in the response, not text JSON.
+            // Only enabled for providers that support it (OpenRouter, Groq, OpenAI, etc.)
+            // Z.AI proxy/direct don't support tools array → still uses text JSON path.
+            if (providerId in setOf("openrouter", "groq", "openai", "together", "deepinfra",
+                    "fireworks", "cerebras", "mistral", "apikeys_in", "cline", "custom")) {
+                val tools = buildToolsArray(toolFilter)
+                if (tools.length() > 0) {
+                    put("tools", tools)
+                    put("tool_choice", "auto")
+                }
+            }
             if (providerId == "groq") {
                 put("response_format", JSONObject().put("type", "json_object"))
             }
