@@ -182,9 +182,50 @@ class LLMClient(private val context: Context) {
                     }
                 }
 
-                // v2.1.1: Handle Cline 402 (insufficient credits) + other payment-required errors.
+                // v4.0.31: Handle 402 (insufficient credits) — DON'T just give up.
+                // OpenRouter free tier often returns "can only afford N tokens" — we
+                // extract that number + retry with a lower max_tokens that fits the budget.
+                // Also handles "Prompt tokens limit exceeded: 15897 > 5408" — prompt too large.
                 if (response.code == 402) {
-                    LogCapture.w("LLMClient", "Payment required (402): $responseBody")
+                    LogCapture.w("LLMClient", "Payment required (402): ${responseBody.take(300)}")
+
+                    // v4.0.31: Try to extract "can only afford N tokens" from the error.
+                    val affordMatch = Regex("""can only afford (\d+)""").find(responseBody)
+                    if (affordMatch != null && attempt < 3) {
+                        val affordableTokens = affordMatch.groupValues[1].toInt()
+                        // Retry with max_tokens = affordable amount (minus a small buffer)
+                        val retryMaxTokens = maxOf(100, affordableTokens - 50)
+                        LogCapture.w("LLMClient", "402: can only afford $affordableTokens tokens — retrying with max_tokens=$retryMaxTokens")
+                        // Rebuild the request with the lower max_tokens
+                        val retryBody = buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, retryMaxTokens)
+                        val retryRequest = requestBuilder.post(retryBody.toRequestBody(jsonMediaType)).build()
+                        val retryResponse = client.newCall(retryRequest).execute()
+                        val retryResponseBody = retryResponse.body?.string() ?: ""
+                        if (retryResponse.isSuccessful) {
+                            val llmResponse = parseOpenAIResponse(retryResponseBody)
+                            Log.i("LLMClient", "402 retry succeeded with max_tokens=$retryMaxTokens")
+                            return@withContext llmResponse
+                        }
+                        LogCapture.w("LLMClient", "402 retry also failed: ${retryResponse.code}")
+                    }
+
+                    // v4.0.31: Check for "Prompt tokens limit exceeded" — prompt is too large.
+                    // This happens when Tier 3 sends 15K+ tokens but free tier allows only 5408.
+                    val promptLimitMatch = Regex("""Prompt tokens limit exceeded: (\d+) > (\d+)""").find(responseBody)
+                    if (promptLimitMatch != null) {
+                        val sent = promptLimitMatch.groupValues[1]
+                        val max = promptLimitMatch.groupValues[2]
+                        return@withContext LLMResponse(
+                            "⚠️ The system prompt ($sent tokens) is too large for your OpenRouter free tier limit ($max tokens).\n\n" +
+                                "Fixes:\n" +
+                                "• Switch to a provider with a higher token limit (Groq, Together, or a paid OpenRouter account)\n" +
+                                "• Use simpler messages so Tier 2 (contextual) is used instead of Tier 3 (all tools)\n" +
+                                "• Disable Contextual Prompts in Settings → Thinking to always send fewer tools\n" +
+                                "• Add credits at openrouter.ai/settings/credits to raise the limit",
+                            emptyList()
+                        )
+                    }
+
                     return@withContext LLMResponse(
                         "⚠️ Insufficient credits on ${provider.name}.\n\n" +
                                 responseBody.take(300).let {

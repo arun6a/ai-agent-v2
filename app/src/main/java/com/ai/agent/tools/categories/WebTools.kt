@@ -252,12 +252,44 @@ object WebTools {
                         }
                     } else {
                         // HTML parsing — extract results based on search engine
+                        // v4.0.31: Updated Bing parser per Gemini's recommendation.
+                        // Bing now uses: <li class="b_algo"><a href="URL"><h2>TITLE</h2></a>
+                        //   <p class="b_lineclamp3">SNIPPET</p>
                         val resultPattern = when (parseMode) {
                             "google" -> Regex("""<h3[^>]*>(.*?)</h3>.*?<a[^>]*href="/url\?q=([^&]+)""", RegexOption.DOT_MATCHES_ALL)
-                            "bing" -> Regex("""<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL)
+                            // v4.0.31: Gemini's recommended Bing regex — matches b_algo blocks
+                            "bing" -> Regex(
+                                """<li class="b_algo">.*?<a[^>]*href="([^"]+)".*?<h2>(.*?)</h2>.*?<p class="b_lineclamp3">(.*?)</p>""",
+                                setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+                            )
                             else -> Regex("""<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?<a[^>]*class="result__snippet"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL)
                         }
-                        val matches = resultPattern.findAll(body).take(8)
+                        var matches = resultPattern.findAll(body).take(8).toList()
+
+                        // v4.0.31: Google CAPTCHA fallback — if Google returned 0 results,
+                        // try Bing automatically (Google blocks automated requests now).
+                        if (matches.isEmpty() && parseMode == "google") {
+                            Log.w("WebTools", "Google returned 0 results (likely CAPTCHA block) — falling back to Bing")
+                            val bingUrl = "https://www.bing.com/search?q=$encodedQuery&setlang=en"
+                            val (bingBody, _) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val c = okhttp3.OkHttpClient.Builder()
+                                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                    .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                    .build()
+                                val r = okhttp3.Request.Builder()
+                                    .url(bingUrl)
+                                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                                    .build()
+                                val resp = c.newCall(r).execute()
+                                (resp.body?.string() ?: "") to resp.code
+                            }
+                            val bingPattern = Regex(
+                                """<li class="b_algo">.*?<a[^>]*href="([^"]+)".*?<h2>(.*?)</h2>.*?<p class="b_lineclamp3">(.*?)</p>""",
+                                setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+                            )
+                            matches = bingPattern.findAll(bingBody).take(8).toList()
+                        }
+
                         var count = 0
                         for (match in matches) {
                             count++
@@ -267,8 +299,17 @@ object WebTools {
                             if (uddgMatch != null) {
                                 url = java.net.URLDecoder.decode(uddgMatch.groupValues[1], "UTF-8")
                             }
-                            val title = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
-                            val snippet = if (match.groupValues.size > 3) match.groupValues[3].replace(Regex("<[^>]+>"), "").trim() else ""
+                            // v4.0.31: Strip HTML tags + decode entities (Gemini recommended)
+                            val title = match.groupValues[2]
+                                .replace(Regex("<[^>]+>"), "")
+                                .let { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }
+                                .trim()
+                            val snippet = if (match.groupValues.size > 3) {
+                                match.groupValues[3]
+                                    .replace(Regex("<[^>]+>"), "")
+                                    .let { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }
+                                    .trim()
+                            } else ""
                             results.append("$count. $title\n   $snippet\n   $url\n\n")
                             if (count <= maxOf(1, fetchTop) && url.startsWith("http")) urlsToFetch.add(url)
                         }
