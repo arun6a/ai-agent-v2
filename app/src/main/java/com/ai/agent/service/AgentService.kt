@@ -117,6 +117,42 @@ class AgentService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to schedule time rules", e)
         }
+
+        // v4.0.24: Ensure NotificationListener is connected.
+        // After APK updates, Android may silently unbind the listener without
+        // calling onListenerDisconnected. This proactively requests rebind.
+        com.ai.agent.rules.NotificationListener.ensureConnected(this)
+
+        // v4.0.24: Start a periodic health check for NotificationListener.
+        // Every 60s, check if the listener is connected. If not, request rebind.
+        // This catches silent disconnections that happen during the app's lifetime.
+        startNotificationListenerHealthCheck()
+    }
+
+    /**
+     * v4.0.24: Periodic health check for NotificationListener.
+     * Every 60 seconds, checks if the listener is connected. If not, requests rebind.
+     * This catches cases where Android silently kills the listener.
+     */
+    private var healthCheckHandler: android.os.Handler? = null
+    private var healthCheckRunnable: Runnable? = null
+
+    private fun startNotificationListenerHealthCheck() {
+        healthCheckHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        healthCheckRunnable = object : Runnable {
+            override fun run() {
+                try {
+                    com.ai.agent.rules.NotificationListener.ensureConnected(this@AgentService)
+                } catch (e: Exception) {
+                    Log.e(TAG, "NotificationListener health check failed", e)
+                }
+                // Check again in 60 seconds
+                healthCheckHandler?.postDelayed(this, 60_000L)
+            }
+        }
+        // Start the first check after 10 seconds (let the service settle)
+        healthCheckHandler?.postDelayed(healthCheckRunnable!!, 10_000L)
+        Log.i(TAG, "✅ NotificationListener health check started (every 60s)")
     }
 
     /**
@@ -612,6 +648,10 @@ class AgentService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // v4.0.24: Stop the health check handler
+        healthCheckRunnable?.let { healthCheckHandler?.removeCallbacks(it) }
+        healthCheckHandler = null
+        healthCheckRunnable = null
         // v3.0.0: RuleEngine no longer needs stop() (it's an object, not a class)
         overlayManager?.destroy()
         overlayManager = null

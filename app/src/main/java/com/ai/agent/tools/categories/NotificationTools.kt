@@ -46,13 +46,26 @@ object NotificationTools {
     /**
      * Reply to a notification via NotificationListener's replyToNotification method.
      * Sends a message directly through the notification (no app opening needed).
+     *
+     * v4.0.24: If NotificationListener.instance is null (disconnected), try to
+     * rebind it via requestRebind before giving up. This handles the case where
+     * Android killed the listener silently (no onListenerDisconnected callback).
      */
     private fun replyViaNotification(context: Context, packageName: String, replyText: String): Boolean {
         val listener = com.ai.agent.rules.NotificationListener.instance
         if (listener != null) {
             return listener.replyToNotification(packageName, replyText)
         }
-        Log.w(TAG, "replyViaNotification: NotificationListener not connected — use openWhatsAppChat instead")
+        // v4.0.24: Listener not connected — try to rebind it.
+        Log.w(TAG, "NotificationListener not connected — requesting rebind before giving up")
+        com.ai.agent.rules.NotificationListener.ensureConnected(context)
+        // Check again after rebind request (rebind is async, but sometimes instant)
+        val listenerRetry = com.ai.agent.rules.NotificationListener.instance
+        if (listenerRetry != null) {
+            Log.i(TAG, "NotificationListener reconnected after rebind request — retrying reply")
+            return listenerRetry.replyToNotification(packageName, replyText)
+        }
+        Log.w(TAG, "replyViaNotification: NotificationListener still not connected after rebind — use openWhatsAppChat instead")
         return false
     }
 }
