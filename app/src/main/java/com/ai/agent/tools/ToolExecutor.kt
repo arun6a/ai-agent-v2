@@ -865,13 +865,35 @@ class ToolExecutor(private val context: Context) {
      * If the LLM already used named args (proper JSON), this is a no-op.
      */
     private fun normalizePositionalArgs(call: LLMClient.ToolCall): LLMClient.ToolCall {
-        // v4.0.14: Alias normalization — if the LLM used a common wrong key name,
+        // v4.0.20: Alias normalization — if the LLM used a common wrong key name,
         // remap it to the expected key before anything else.
-        val argAliases = mapOf(
-            "app" to "package",      // launchApp(app=...) → launchApp(package=...)
-            "pkg" to "package",      // launchApp(pkg=...) → launchApp(package=...)
-            "name" to "package",     // when brain confuses launchApp(name=...) with package
+        //
+        // CRITICAL FIX (v4.0.20): The old code applied "name" → "package" GLOBALLY,
+        // which stole the `name` argument from createRule, createSkill, deleteSkill,
+        // getSkill, executeSkill, searchContacts, saveToKnowledge — all of which
+        // legitimately use `name` as a parameter. This caused "missing name" errors
+        // and broke Aira's rules + skills system entirely.
+        //
+        // Now: "name" → "package" is ONLY applied to tools that actually take a
+        // `package` parameter (launchApp, searchInApp, etc.). The safe aliases
+        // ("app", "pkg") remain global since no tool uses those as real params.
+        val toolsWithPackageArg = setOf(
+            "launchApp", "searchInApp", "forceStopApp", "uninstallApp",
+            "getAppInfo", "openActivity", "openAppWithData", "searchInChrome"
         )
+        val argAliases = if (call.name in toolsWithPackageArg) {
+            mapOf(
+                "app" to "package",
+                "pkg" to "package",
+                "name" to "package",   // only for package-taking tools
+            )
+        } else {
+            mapOf(
+                "app" to "package",
+                "pkg" to "package",
+                // NO "name" alias here — would break createRule/createSkill/etc.
+            )
+        }
         var remappedArgs = call.args.toMutableMap()
         for ((alias, canonical) in argAliases) {
             if (alias in remappedArgs && canonical !in remappedArgs) {

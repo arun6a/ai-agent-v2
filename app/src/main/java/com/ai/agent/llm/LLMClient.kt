@@ -379,10 +379,27 @@ class LLMClient(private val context: Context) {
         toolFilter: List<String>? = null,
         maxTokens: Int = 3000,  // v3.8.18: increased for chain-of-thought reasoning
     ): String {
+        val supportsNativeTools = providerId in setOf(
+            "openrouter", "groq", "openai", "together", "deepinfra",
+            "fireworks", "cerebras", "mistral", "apikeys_in", "cline", "custom"
+        ) || (providerId == "zai_direct" && model.contains("/"))
+
+        // v4.0.20: Resolve the prompt/tools conflict.
+        // The system prompt says "ALWAYS respond in valid JSON only" but when we
+        // send the tools array + tool_choice=auto, the API tells the model to use
+        // native tool_calls. These contradict — models get confused.
+        // Fix: when native tools are sent, replace the JSON Response Format section
+        // with a native function calling instruction.
+        val effectivePrompt = if (supportsNativeTools) {
+            adaptPromptForNativeTools(systemPrompt)
+        } else {
+            systemPrompt
+        }
+
         val messages = JSONArray()
         messages.put(JSONObject().apply {
             put("role", "system")
-            put("content", systemPrompt)
+            put("content", effectivePrompt)
         })
         messages.put(JSONObject().apply {
             put("role", "user")
@@ -401,30 +418,8 @@ class LLMClient(private val context: Context) {
             if (providerId == "zai" || providerId == "zai_direct") {
                 put("thinking", JSONObject().put("type", "enabled"))
             }
-            // v3.6.4: REMOVED tools array — was sending 4,750 tokens of junk
-            // descriptions on Tier 3 (95 tools × ~50 tokens each, all with the
-            // same generic "Execute the X tool on the Android phone" description
-            // + empty parameters). The system prompt already has full tool
-            // descriptions — the brain replies with JSON {"reply":"","tool_calls":[]}
-            // and parseResponse() handles it. This saves ~22% of prompt tokens
-            // on every Tier 3 call.
-            //
             // v4.0.16: RE-ENABLED for providers with native function calling.
-            // The text parser (extractToolCallsFromText) breaks on values with
-            // spaces/commas (e.g., createRule(name=WhatsApp Auto Reply, action=reply: I'm busy, will get back!)).
-            // Native function calling avoids this entirely — the model returns
-            // structured tool_calls in the response, not text JSON.
-            // v4.0.19: Also check endpoint URL — bindings can use zai_direct providerId
-            // but route to OpenRouter/Groq/etc. Check both providerId AND endpoint.
-            // Note: endpoint is not available in buildOpenAIRequest scope, so we
-            // check providerId here. The caller (chat()) can also pass the endpoint.
-            // For now, we check if providerId is zai_direct AND the model name
-            // looks like an OpenRouter model (contains "/").
-            val supportsNativeTools = providerId in setOf(
-                "openrouter", "groq", "openai", "together", "deepinfra",
-                "fireworks", "cerebras", "mistral", "apikeys_in", "cline", "custom"
-            ) || (providerId == "zai_direct" && model.contains("/"))  // OpenRouter models have "/" in name
-            // Z.AI proxy/direct don't support tools array → still uses text JSON path.
+            // v4.0.20: supportsNativeTools is now computed at the top of this function.
             if (supportsNativeTools) {
                 val tools = buildToolsArray(toolFilter)
                 if (tools.length() > 0) {
@@ -432,12 +427,50 @@ class LLMClient(private val context: Context) {
                     put("tool_choice", "auto")
                 }
             }
-            if (providerId == "groq") {
+            // v4.0.20: Only force JSON response format for Groq when NOT using native
+            // tools. When native tools are active, we want tool_calls in the response
+            // (not JSON in content). Forcing json_object would conflict with tool_calls.
+            if (providerId == "groq" && !supportsNativeTools) {
                 put("response_format", JSONObject().put("type", "json_object"))
             }
         }
 
         return body.toString()
+    }
+
+    /**
+     * v4.0.20: Adapt the system prompt for native function calling.
+     *
+     * The base prompt says "ALWAYS respond in valid JSON only" with
+     * {"reply":"...","tool_calls":[...]} format. But when we send the tools array
+     * + tool_choice=auto, the API expects the model to return native tool_calls in
+     * the message object, NOT JSON in content. These two instructions conflict.
+     *
+     * This function replaces the JSON Response Format section with a native
+     * function calling instruction that tells the model:
+     * - Put reasoning/planning in the text reply
+     * - Call tools via the tool_calls array (API handles format)
+     * - Use the "complete" tool to signal task completion
+     */
+    private fun adaptPromptForNativeTools(prompt: String): String {
+        // The native function calling instruction that replaces the JSON section.
+        val nativeSection = """## Response Format
+You have native function calling enabled. Tool definitions are provided via the
+tools array. Call tools using the standard tool_calls format.
+
+- Put your FULL reasoning + plan in your text reply (can be very long — think deeply)
+- Call tools via the tool_calls array — the API handles the JSON format for you
+- Do NOT write tool calls as JSON text in your reply — use the native format
+- To COMPLETE a task: call the "complete" tool with {success: true/false, reason: "..."}
+- If no tools are needed (just answering a question): reply with text only, no tool_calls
+- You can call MULTIPLE tools in one reply (batch read-only tools for efficiency)"""
+
+        // Replace the "## Response Format" section (from the header to end of prompt).
+        val marker = "## Response Format"
+        val markerIdx = prompt.indexOf(marker)
+        if (markerIdx < 0) return prompt  // no Response Format section — leave as-is
+
+        return prompt.substring(0, markerIdx) + nativeSection
     }
 
     /**
@@ -539,7 +572,10 @@ class LLMClient(private val context: Context) {
                         args[key] = argsJson.get(key)
                     }
                 } catch (e: Exception) {
-                    Log.w("LLMClient", "Could not parse tool args: $argsStr")
+                    // v4.0.20: Model returned non-JSON arguments (e.g., "name=foo, action=bar")
+                    // Parse as key=value pairs, handling values with colons/commas
+                    Log.w("LLMClient", "Args not JSON, trying key=value parse: $argsStr")
+                    parseArgsAsKeyValue(argsStr, args)
                 }
                 if (name.isNotEmpty()) {
                     toolCalls.add(ToolCall(name, args))
@@ -731,25 +767,10 @@ class LLMClient(private val context: Context) {
                 continue
             }
 
-            // Parse the args string: "package=com.google.android.youtube, query=BLACKPINK"
-            // or: "970, 180" (positional args for tap, swipe, etc.)
-            // or: "text=hello, count=3"
+            // v4.0.20: Use the robust arg parser (handles commas/colons inside values).
+            // Was: naive split(",") which broke values like action=reply: Hi Mom, I'll call back
             val args = mutableMapOf<String, Any>()
-            val parts = argsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            for ((index, part) in parts.withIndex()) {
-                val eqIdx = part.indexOf('=')
-                if (eqIdx > 0) {
-                    val key = part.substring(0, eqIdx).trim().lowercase()
-                    val value = part.substring(eqIdx + 1).trim().trim('"').trim('\'')
-                    args[key] = value
-                } else {
-                    // Positional arg — use generic key based on position
-                    // For tap(x, y): args[0]=x, args[1]=y
-                    val value = part.trim('"').trim('\'')
-                    // Try to convert to number if it looks like one
-                    args[index.toString()] = value.toIntOrNull() ?: value
-                }
-            }
+            parseArgsAsKeyValue(argsStr, args)
 
             if (args.isNotEmpty() || toolName in setOf("submitinput", "pressenter", "pressback", "presshome", "readscreen", "readscreens", "recallall")) {
                 calls.add(ToolCall(toolName, args))
@@ -757,6 +778,92 @@ class LLMClient(private val context: Context) {
         }
 
         return calls
+    }
+
+    /**
+     * v4.0.20: Robust key=value parser for tool call arguments.
+     *
+     * Handles values containing commas, colons, and spaces — which the old naive
+     * split(",") approach broke. Used by:
+     *   1. Native function calling fallback (when model returns non-JSON args)
+     *   2. Text tool call extraction (extractToolCallsFromText)
+     *
+     * A comma is treated as a separator ONLY when followed by a `key=` pattern.
+     * Otherwise it's part of the current value.
+     *
+     * Examples:
+     *   "name=WhatsApp Auto-Reply, triggerType=notification, action=reply: Hi, I'm busy"
+     *     → {name: "WhatsApp Auto-Reply", triggerType: "notification", action: "reply: Hi, I'm busy"}
+     *   "970, 180"
+     *     → {"0": 970, "1": 180}  (positional args)
+     */
+    private fun parseArgsAsKeyValue(argsStr: String, out: MutableMap<String, Any>) {
+        val s = argsStr.trim()
+        if (s.isEmpty()) return
+
+        // Split on commas, but only when the comma is followed by key= pattern.
+        val parts = mutableListOf<String>()
+        val current = StringBuilder()
+        var inQuotes = false
+        var quoteChar = '"'
+        var i = 0
+
+        while (i < s.length) {
+            val c = s[i]
+            when {
+                (c == '"' || c == '\'') && (!inQuotes || c == quoteChar) -> {
+                    if (inQuotes) inQuotes = false else { inQuotes = true; quoteChar = c }
+                    current.append(c)
+                }
+                c == ',' && !inQuotes -> {
+                    // Look ahead: is the remainder "word=" (a new key=value pair)?
+                    val remainder = s.substring(i + 1).trimStart()
+                    val nextKeyMatch = Regex("^([a-zA-Z_][a-zA-Z0-9_]*)\\s*=").find(remainder)
+                    if (nextKeyMatch != null) {
+                        parts.add(current.toString().trim())
+                        current.clear()
+                    } else {
+                        current.append(c)
+                    }
+                }
+                else -> current.append(c)
+            }
+            i++
+        }
+        if (current.toString().trim().isNotEmpty()) {
+            parts.add(current.toString().trim())
+        }
+
+        for ((index, part) in parts.withIndex()) {
+            val eqIdx = part.indexOf('=')
+            if (eqIdx > 0) {
+                // v4.0.20: Preserve key case — tool handlers expect camelCase
+                // (triggerType, not triggertype). Was lowercasing which broke matching.
+                val key = part.substring(0, eqIdx).trim()
+                var value = part.substring(eqIdx + 1).trim()
+                // Strip surrounding quotes
+                if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) ||
+                        (value.startsWith('\'') && value.endsWith('\'')))) {
+                    value = value.substring(1, value.length - 1)
+                }
+                out[key] = coerceValue(value)
+            } else {
+                // Positional arg — use generic key based on position
+                val value = part.trim().trim('"').trim('\'')
+                out[index.toString()] = coerceValue(value)
+            }
+        }
+    }
+
+    /**
+     * v4.0.20: Coerce a string value to its native type (Int, Long, Boolean, or String).
+     */
+    private fun coerceValue(s: String): Any {
+        s.toIntOrNull()?.let { return it }
+        s.toLongOrNull()?.let { return it }
+        if (s == "true") return true
+        if (s == "false") return false
+        return s
     }
 
     /**

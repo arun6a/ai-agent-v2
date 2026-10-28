@@ -161,44 +161,25 @@ object RuleEngine {
             val toolExecutor = com.ai.agent.tools.ToolExecutor(context)
             val db = AgentDatabase(context)
 
-            // v3.0.4: FULL system prompt with tools + rules for autonomous execution
-            val systemPrompt = """You are an AI agent executing a RULE that fired automatically on the user's phone.
-Execute the rule action by calling the appropriate tool(s). You can call multiple tools in sequence.
+            // v4.0.20: Use the REAL system prompt (ContextualPromptBuilder) instead
+            // of a 200-line inline mini-prompt with only 25 hardcoded tools.
+            // The real prompt has all 137 tools + rules/skills sections + the
+            // proper Response Format section. This gives smart rules the same
+            // brain power as interactive chat.
+            val basePrompt = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(
+                context, rule.action  // use the rule action as the "user message" for tier selection
+            )
+            val systemPrompt = """$basePrompt
 
-Work in a LOOP: call tools → see results → decide next step → repeat until done.
-When the task is complete, reply with a summary and NO tool_calls.
+## Current Task: Rule Execution
+You are executing a RULE that fired automatically on the user's phone.
+The rule was created earlier and its trigger condition just fired.
 
-Available tools:
-- speak(text) — speak text aloud via TTS
-- sendSMS(num, msg) — send SMS
-- replyToNotification(package, message) — reply to WhatsApp/Telegram notification
-- setBrightness(level) — set screen brightness (0-100 percent)
-- setVolume(level) — set media volume (0-15)
-- toggleFlashlight() — toggle flashlight
-- openWhatsAppChat(phone, msg?) — open WhatsApp chat
-- makePhoneCall(num) — make a phone call
-- setAlarm(hour, minute) — set alarm
-- setTimer(seconds, message) — set timer
-- getCurrentTime() — get current time
-- getWeather() — get weather
-- remember(key, value) — save to memory
-- recall(key) — recall from memory
-- recallSimilar(query) — semantic search memory
-- webSearch(query, fetchTop=0) — search the web. fetchTop=3 gets top 3 pages' full text.
-- fetchPageText(url) — fetch a URL and return clean text
-- writeFile(path, content) — write text to a file on the phone
-- readFile(path) — read a text file
-- sendEmail(to, subject, body) — send an email
-- composeEmail(to, subject, body) — open email composer
-- getCalendarEvents() — get today's calendar events
-- getBatteryLevel() — get battery percentage
-- getCurrentLocation() — get GPS location
+Execute the rule action by calling the appropriate tool(s). Work in a LOOP:
+call tools → see results → decide next step → repeat until done.
 
-Response format: {"reply":"short msg","tool_calls":[{"name":"...","args":{...}}]}
-Complete (no more tools): {"reply":"Done!","tool_calls":[]}
-
-IMPORTANT: After each tool call, you'll see the results. Use them to decide the next step.
-If a tool fails, try a different approach. Maximum 10 rounds."""
+When the task is complete, call complete(success=true, reason="...").
+If the task is impossible, call complete(success=false, reason="...")."""
 
             // Build conversation for agent loop
             val conversation = StringBuilder()
@@ -211,22 +192,22 @@ If a tool fails, try a different approach. Maximum 10 rounds."""
 
             Log.i(TAG, "Calling LLM for smart rule: ${rule.name}")
 
+            // v4.0.20: Compute contextual tool filter so we don't send 137 tool
+            // definitions when the rule only needs 5 tools.
+            val contextualEnabled = com.ai.agent.llm.AIProvider.isContextualPromptsEnabled(context)
+            val toolFilter = if (contextualEnabled) {
+                com.ai.agent.llm.ContextualPromptBuilder.getRelevantToolNames(rule.action)
+            } else null
+
             // AGENT LOOP — max 10 rounds
             val maxIterations = 10
-            // v3.0.7: Prompt Caching — iteration 1 sends full prompt, iterations 2+ use tiny prompt
-            val cachingEnabled = com.ai.agent.llm.AIProvider.isPromptCachingEnabled(context)
             for (iteration in 1..maxIterations) {
                 Log.i(TAG, "--- Smart rule iteration $iteration/${maxIterations} ---")
 
-                // v3.0.7: Use continuation prompt for iterations 2+ if caching is enabled
-                val activePrompt = if (cachingEnabled && iteration > 1) {
-                    Log.d(TAG, "Prompt caching: using continuation prompt (iteration $iteration)")
-                    com.ai.agent.llm.AIProvider.getContinuationPrompt()
-                } else {
-                    systemPrompt
-                }
-
-                val response = llmClient.chat(conversation.toString(), activePrompt)
+                // v4.0.20: Use chatWithFailover (was chat()) for multi-binding
+                // failover. If the active binding fails (quota/auth), this
+                // automatically tries the next healthy binding.
+                val response = llmClient.chatWithFailover(conversation.toString(), systemPrompt, toolFilter)
 
                 Log.i(TAG, "LLM reply: ${response.reply.take(100)}")
                 Log.i(TAG, "LLM tool calls: ${response.toolCalls.size}")
@@ -235,6 +216,18 @@ If a tool fails, try a different approach. Maximum 10 rounds."""
                 if (response.toolCalls.isEmpty()) {
                     Log.i(TAG, "✅ Smart rule complete: ${rule.name}")
                     db.logAction("Smart rule '${rule.name}' completed: ${response.reply.take(200)}")
+                    break
+                }
+
+                // v4.0.20: If the model called "complete", stop the loop.
+                if (response.toolCalls.any { it.name == "complete" }) {
+                    val completeCall = response.toolCalls.find { it.name == "complete" }
+                    val success = completeCall?.args?.get("success") as? Boolean ?: true
+                    val reason = completeCall?.args?.get("reason") as? String ?: ""
+                    Log.i(TAG, "✅ Smart rule ${if (success) "completed" else "failed"}: ${rule.name} — $reason")
+                    db.logAction("Smart rule '${rule.name}' ${if (success) "completed" else "failed"}: $reason")
+                    // Execute the complete tool (sets the flag) + any sibling calls
+                    val results = toolExecutor.executeTools(response.toolCalls)
                     break
                 }
 
@@ -254,7 +247,6 @@ If a tool fails, try a different approach. Maximum 10 rounds."""
                                 ?: response.toolCalls[i].args["arg1"] as? String ?: ""
                             if (pkg.isNotEmpty() && msg.isNotEmpty()) {
                                 val convKey = if (triggerContext.contains("notification from")) {
-                                    // Extract package from trigger context
                                     val match = Regex("notification from ([^:]+)").find(triggerContext)
                                     match?.groupValues?.get(1) ?: pkg
                                 } else pkg
@@ -272,7 +264,7 @@ If a tool fails, try a different approach. Maximum 10 rounds."""
                     conversation.append("\nTool: ${call.name}(${call.args})")
                     conversation.append("\nResult: ${if (result.success) "✓" else "✗"} ${result.output.take(500)}")
                 }
-                conversation.append("\n\nBased on these results, decide the next step. If done, reply with no tool_calls.")
+                conversation.append("\n\nBased on these results, decide the next step. If done, call complete(success=true).")
 
                 // If last iteration, force stop
                 if (iteration == maxIterations) {
