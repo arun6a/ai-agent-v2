@@ -339,6 +339,20 @@ object ToolSchemas {
                 "success" to Param("boolean", "true if task succeeded, false if it failed or is impossible.", required = true),
                 "reason" to Param("string", "Why the task is complete. Include what you see on screen as proof (e.g., 'Video playing at 9:07, 212M views').", required = true),
             )),
+        // v4.0.26: Custom tool management — lets the AI create new tools at runtime.
+        Schema("createCustomTool", "Create a NEW custom tool at runtime. Use when you need a tool that doesn't exist (e.g., call a custom API, run a specific shell command). The tool persists across app restarts. Two handler types: 'shell' (runs a shell command with {param} substitution) or 'http' (makes an HTTP GET/POST with {param} substitution in URL+body). Example: createCustomTool(name='check_server', description='Check server status', handlerType='http', handler='{\"method\":\"GET\",\"url\":\"https://myserver.com/health\"}', parameters=[]). After creating, call the tool by its name directly.",
+            mapOf(
+                "name" to Param("string", "Tool name (lowercase, underscore). Example: 'check_server_status'. Must not conflict with built-in tools.", required = true),
+                "description" to Param("string", "What this tool does. Be specific — this is what the AI sees in the tool list.", required = true),
+                "handlerType" to Param("string", "Type of handler: 'shell' (runs shell command) or 'http' (makes HTTP request).", required = true),
+                "handler" to Param("string", "For 'shell': the command with {param} placeholders (e.g., 'curl -s https://api.com?q={query}'). For 'http': JSON config like '{\"method\":\"GET\",\"url\":\"https://...\",\"headers\":{\"Authorization\":\"Bearer xxx\"}}'. Use {param} placeholders in URL/body.", required = true),
+                "parameters" to Param("string", "Comma-separated parameter names (e.g., 'query,limit'). These are substituted into the handler's {param} placeholders.", required = false),
+            )),
+        Schema("listCustomTools", "List all custom tools you've created. Shows name, description, handler type, and handler for each."),
+        Schema("deleteCustomTool", "Delete a custom tool by name.",
+            mapOf(
+                "name" to Param("string", "Name of the custom tool to delete.", required = true),
+            )),
     )
 
     // -----------------------------------------------------------------------
@@ -530,6 +544,115 @@ object ToolSchemas {
                 .put("type", "function")
                 .put("function", function)
             tools.put(tool)
+        }
+        // v4.0.26: Append custom tools (created via createCustomTool) to the array.
+        // These are loaded from CustomToolStore and added dynamically.
+        try {
+            val customTools = com.ai.agent.tools.custom.CustomToolStore.load(android.app.Application())
+            for (ct in customTools) {
+                if (filter != null && ct.name !in filter) continue
+                val properties = JSONObject()
+                val required = JSONArray()
+                for (paramName in ct.parameters) {
+                    properties.put(paramName, JSONObject()
+                        .put("type", "string")
+                        .put("description", "Parameter: $paramName"))
+                    required.put(paramName)
+                }
+                val parameters = JSONObject()
+                    .put("type", "object")
+                    .put("properties", properties)
+                    .put("additionalProperties", false)
+                if (required.length() > 0) {
+                    parameters.put("required", required)
+                }
+                val function = JSONObject()
+                    .put("name", ct.name)
+                    .put("description", "(Custom Tool) ${ct.description}")
+                    .put("parameters", parameters)
+                val tool = JSONObject()
+                    .put("type", "function")
+                    .put("function", function)
+                tools.put(tool)
+            }
+        } catch (e: Exception) {
+            // CustomToolStore.load needs a Context — but buildToolsArray is called from
+            // LLMClient which has a context. The static call above won't work, so custom
+            // tools are added via the context-aware overload below.
+        }
+        return tools
+    }
+
+    /**
+     * v4.0.26: Context-aware buildToolsArray — includes custom tools from storage.
+     * This is the preferred call path — pass the app context to include custom tools.
+     */
+    fun buildToolsArray(filter: List<String>? = null, context: android.content.Context? = null): JSONArray {
+        val tools = JSONArray()
+        for (schema in SCHEMAS) {
+            if (filter != null && schema.name !in filter) continue
+            val function = JSONObject()
+                .put("name", schema.name)
+                .put("description", schema.description)
+
+            val properties = JSONObject()
+            val required = JSONArray()
+            for ((pname, param) in schema.params) {
+                val propObj = JSONObject()
+                    .put("type", param.type)
+                    .put("description", param.description)
+                properties.put(pname, propObj)
+                if (param.required) required.put(pname)
+            }
+
+            val parameters = JSONObject()
+                .put("type", "object")
+                .put("properties", properties)
+                .put("additionalProperties", false)
+            if (required.length() > 0) {
+                parameters.put("required", required)
+            }
+
+            function.put("parameters", parameters)
+
+            val tool = JSONObject()
+                .put("type", "function")
+                .put("function", function)
+            tools.put(tool)
+        }
+        // v4.0.26: Append custom tools if context is provided.
+        if (context != null) {
+            try {
+                val customTools = com.ai.agent.tools.custom.CustomToolStore.load(context)
+                for (ct in customTools) {
+                    if (filter != null && ct.name !in filter) continue
+                    val properties = JSONObject()
+                    val required = JSONArray()
+                    for (paramName in ct.parameters) {
+                        properties.put(paramName, JSONObject()
+                            .put("type", "string")
+                            .put("description", "Parameter: $paramName"))
+                        required.put(paramName)
+                    }
+                    val parameters = JSONObject()
+                        .put("type", "object")
+                        .put("properties", properties)
+                        .put("additionalProperties", false)
+                    if (required.length() > 0) {
+                        parameters.put("required", required)
+                    }
+                    val function = JSONObject()
+                        .put("name", ct.name)
+                        .put("description", "(Custom Tool) ${ct.description}")
+                        .put("parameters", parameters)
+                    val tool = JSONObject()
+                        .put("type", "function")
+                        .put("function", function)
+                    tools.put(tool)
+                }
+            } catch (e: Exception) {
+                // Ignore — custom tools are optional
+            }
         }
         return tools
     }

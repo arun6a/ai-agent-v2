@@ -94,6 +94,22 @@ Research tools:
 - fetchPageText(url) → read a web page's content
 - listInstalledApps() → see what apps are installed
 
+## Custom Tools (CREATE NEW TOOLS AT RUNTIME)
+If you need a tool that doesn't exist, you can CREATE it:
+- createCustomTool(name, description, handlerType, handler, parameters?)
+  - handlerType="shell": runs a shell command with {param} substitution
+    Example: createCustomTool(name="get_ip", description="Get device IP address",
+      handlerType="shell", handler="ip addr show wlan0 | grep 'inet '")
+  - handlerType="http": makes an HTTP request with {param} substitution
+    Example: createCustomTool(name="check_server", description="Check server status",
+      handlerType="http", handler='{"method":"GET","url":"https://myserver.com/health"}')
+    With params: createCustomTool(name="send_webhook", description="Send webhook",
+      handlerType="http", handler='{"method":"POST","url":"https://hook.example.com/send","body":"{\"msg\":\"{message}\"}"}',
+      parameters="message")
+- listCustomTools() → list tools you've created
+- deleteCustomTool(name) → delete a custom tool
+Custom tools persist across app restarts. After creating, call the tool by its name directly.
+
 ## Search Flow (universal — all apps with search)
 1. Use searchInApp shortcut if available (1 call — best option)
 2. OR manually: tap search icon → type query → submitInput() → wait → readScreen

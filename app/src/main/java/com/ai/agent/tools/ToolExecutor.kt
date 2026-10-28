@@ -107,8 +107,19 @@ class ToolExecutor(private val context: Context) {
             // v3.7.0: Action chains
             "actionChain",
             // v3.9.6: Completion tool
-            "complete"
+            "complete",
+            // v4.0.26: Custom tool management
+            "createCustomTool", "listCustomTools", "deleteCustomTool"
         )
+    }
+
+    /**
+     * v4.0.26: Get all available tool names INCLUDING custom tools.
+     * Custom tools are loaded from CustomToolStore and appended to the built-in list.
+     * Called by ToolSchemas to build the tools array for native function calling.
+     */
+    fun getAllToolNames(context: Context): List<String> {
+        return getAvailableToolNames() + com.ai.agent.tools.custom.CustomToolStore.getToolNames(context)
     }
 
     // v3.6.0: Tool → required permission mapping for auto-detection.
@@ -222,11 +233,18 @@ class ToolExecutor(private val context: Context) {
             "mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto",
             "forceStopApp", "uninstallApp",  // v4.0.17: Use ActivityManager, not accessibility
             "complete",  // v4.0.19: Just sets a flag, doesn't need accessibility
+            // v4.0.26: Custom tool management + custom tools don't need accessibility
+            "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
         )
+
+        // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
+        // Check if this is a custom tool — if so, skip accessibility.
+        val isCustomTool = com.ai.agent.tools.custom.CustomToolStore.get(context, call.name) != null
+        val noAccessibility = noAccessibilityNeeded || isCustomTool
 
         // For non-accessibility tools, skip the service check entirely.
         // These tools don't reference `service` in the when block below.
-        val service: AgentAccessibilityService? = if (noAccessibilityNeeded) {
+        val service: AgentAccessibilityService? = if (noAccessibility) {
             null  // not needed — these tools don't use it
         } else {
             waitForAccessibilityService()
@@ -628,6 +646,10 @@ class ToolExecutor(private val context: Context) {
             // ==================== SKILLS ====================
             "executeSkill" -> SkillTools.execute(call, context, service, database)
             "listSkills" -> SkillTools.execute(call, context, service, database)
+            // v4.0.26: Custom tool management
+            "createCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+            "listCustomTools" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+            "deleteCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> RuleTools.execute(call, context, service, database)
             "listRules" -> RuleTools.execute(call, context, service, database)
@@ -682,7 +704,15 @@ class ToolExecutor(private val context: Context) {
                 ToolResult(true, "TASK_COMPLETE:$success:$reason")
             }
 
-            else -> ToolResult(false, "unknown tool: ${call.name}")
+            else -> {
+                // v4.0.26: Check if this is a custom tool (created via createCustomTool)
+                val customTool = com.ai.agent.tools.custom.CustomToolStore.get(context, call.name)
+                if (customTool != null) {
+                    com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+                } else {
+                    ToolResult(false, "unknown tool: ${call.name}")
+                }
+            }
         }
     }
 

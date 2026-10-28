@@ -12,8 +12,8 @@ android {
         applicationId = "com.ai.agent.v2"
         minSdk = 24
         targetSdk = 34
-        versionCode = 154
-        versionName = "4.0.25"
+        versionCode = 155
+        versionName = "4.0.26"
     }
 
     buildTypes {

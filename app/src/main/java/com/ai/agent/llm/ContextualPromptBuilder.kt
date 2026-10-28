@@ -34,6 +34,10 @@ object ContextualPromptBuilder {
         "recall(key)" to "recall from memory",
         // v3.9.6: complete tool — ALWAYS available so brain can signal task completion
         "complete(success, reason)" to "call when task is DONE. Verify via readScreen first. success=true/false + reason why.",
+        // v4.0.26: Custom tool management — ALWAYS available so brain can create tools
+        "createCustomTool(name, description, handlerType, handler, parameters?)" to "create a NEW custom tool at runtime (shell command or HTTP endpoint). Use when no existing tool fits.",
+        "listCustomTools()" to "list all custom tools you've created",
+        "deleteCustomTool(name)" to "delete a custom tool by name",
     )
 
     private val TOOL_GROUPS = listOf(

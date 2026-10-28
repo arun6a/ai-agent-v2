@@ -500,7 +500,8 @@ tools array. Call tools using the standard tool_calls format.
         // v3.7.3: Use real parameter schemas from ToolSchemas (was empty {} before).
         // The brain can now SEE what parameters each tool needs instead of guessing.
         // Covers all 130 tools — see ToolSchemas.kt for the full registry.
-        return com.ai.agent.llm.ToolSchemas.buildToolsArray(filter)
+        // v4.0.26: Pass context so custom tools (created via createCustomTool) are included.
+        return com.ai.agent.llm.ToolSchemas.buildToolsArray(filter, context)
     }
 
     /**
