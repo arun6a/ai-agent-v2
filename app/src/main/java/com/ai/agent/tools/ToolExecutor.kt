@@ -141,14 +141,30 @@ class ToolExecutor(private val context: Context) {
     /**
      * Execute a list of tool calls sequentially.
      * Returns a list of results (one per tool call).
+     *
+     * v4.0.25: Deduplicate identical tool calls. The model sometimes returns the
+     * same tool call 40+ times in one reply (a generation loop). Executing it
+     * once is enough — duplicates are skipped with a warning.
      */
     suspend fun executeTools(toolCalls: List<LLMClient.ToolCall>): List<ToolResult> {
         val results = mutableListOf<ToolResult>()
+        val seen = mutableSetOf<String>()  // dedup signature: "name|args"
+        var skipped = 0
         for (call in toolCalls) {
+            // v4.0.25: Dedup — skip if exact same tool+args already executed in this batch.
+            val sig = "${call.name}|${call.args.toSortedMap()}"
+            if (sig in seen) {
+                skipped++
+                continue
+            }
+            seen.add(sig)
             val result = executeTool(call)
             results.add(result)
             val status = if (result.success) "✓" else "✗"
             LogCapture.i(TAG, "tool: ${call.name}(${call.args.entries.joinToString(", ") { "${it.key}=${it.value}" }}) → $status ${result.output.take(80)}")
+        }
+        if (skipped > 0) {
+            LogCapture.w(TAG, "Skipped $skipped duplicate tool call(s) in this batch (model returned same call $skipped extra times)")
         }
         return results
     }
@@ -984,10 +1000,14 @@ class ToolExecutor(private val context: Context) {
 
     // v4.0.2: Sensitive tools that require user consent before execution.
     // These tools change state, send data, or delete data — user should approve first.
+    // v4.0.25: REMOVED replyToNotification from consent list. Rule-triggered auto-replies
+    // (WhatsApp, Telegram) should send INSTANTLY without a confirmation popup. The user
+    // already consented by creating the rule. Keeping it in consent list made auto-reply
+    // rules unusable (popup appeared, notification expired before user could approve).
     private val CONSENT_TOOLS = setOf(
         "sendSMS", "sendEmail", "makePhoneCall", "callContact",
         "deleteFile", "deleteRule", "uninstallApp", "forceStopApp",
-        "writeFile", "replyToNotification", "setClipboard",
+        "writeFile", "setClipboard",
         "openWhatsAppChat",  // sends a message
         "shareToApp", "shareText", "shareFile",
         "sendAttachmentTo",  // v4.0.5: sends file to external app (data exfiltration risk)

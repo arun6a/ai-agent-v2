@@ -192,11 +192,23 @@ class NotificationListener : NotificationListenerService() {
                     lastReplyTime[packageName] = System.currentTimeMillis()
                     Log.i(TAG, "Smart rule — executing via RuleEngine (with conversation memory)")
                     // v3.0.5: Pass conversation history so AI remembers previous messages
+                    // v4.0.25: Explicitly tell the LLM to ANALYZE the incoming message
+                    // + reply intelligently (not just a canned response). The user's rule
+                    // action is natural language like "Reply in Tamil as my assistant".
                     val history = ConversationMemory.getHistoryForPrompt(this, convKey)
                     RuleEngine.execute(this, rule,
-                        "notification from $packageName: $title — $text\n\n" +
-                        "CONVERSATION HISTORY:\n$history\n\n" +
-                        "Reply to the latest message. Use replyToNotification(package, message) to send your reply."
+                        "📩 INCOMING NOTIFICATION from $packageName:\n" +
+                        "  Title: $title\n" +
+                        "  Message: $text\n" +
+                        (if (bigText.isNotEmpty() && bigText != text) "  Full text: $bigText\n" else "") +
+                        "\n📜 CONVERSATION HISTORY (last 10 exchanges with this contact):\n$history\n\n" +
+                        "🤖 YOUR TASK:\n" +
+                        "1. Read the incoming message carefully — understand what the sender is saying\n" +
+                        "2. Consider the conversation history — has this topic come up before?\n" +
+                        "3. Reply APPROPRIATELY based on the rule action below — don't just send a canned response\n" +
+                        "4. Use replyToNotification(package=\"$packageName\", message=\"your reply\") to send the reply\n" +
+                        "5. After sending the reply, call complete(success=true, reason=\"...\")\n\n" +
+                        "IMPORTANT: Reply to the SPECIFIC message they sent, not a generic greeting."
                     )
                 }
             }
