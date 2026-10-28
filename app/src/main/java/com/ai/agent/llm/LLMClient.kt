@@ -89,11 +89,30 @@ class LLMClient(private val context: Context) {
                 // Tier 2 (non-empty filter = contextual tools) → 1500 tokens (room for reasoning + tool call)
                 // Tier 3 (null filter = all tools) → 3000 tokens (complex tasks need deep thinking)
                 // Reasoning tokens are CHEAP. Tool call iterations are EXPENSIVE. Think more, call fewer tools.
-                val maxTokens = when {
+                var maxTokens = when {
                     toolFilter != null && toolFilter.isEmpty() -> 100
                     toolFilter != null -> 1500
                     else -> 3000
                 }
+
+                // v4.0.33: Token budget check — OpenRouter free tier has a total token limit
+                // (prompt + completion). If our request exceeds it, reduce max_tokens to fit.
+                // Rough estimate: 1 token ≈ 4 characters. System prompt + tools array + user message.
+                val estimatedPromptTokens = (systemPrompt.length + userMessage.length + 
+                    (toolFilter?.size ?: 158) * 40) / 4  // ~40 tokens per tool schema
+                val totalEstimated = estimatedPromptTokens + maxTokens
+                // v4.0.33: OpenRouter free tier limit is ~3192 tokens (prompt + completion).
+                // If we're over, reduce max_tokens. If prompt alone is over, we can't fix it here
+                // (the 402 handler will catch it + show a helpful message).
+                val FREE_TIER_LIMIT = 3192
+                if (totalEstimated > FREE_TIER_LIMIT) {
+                    val adjustedMax = FREE_TIER_LIMIT - estimatedPromptTokens
+                    if (adjustedMax > 100) {
+                        LogCapture.w("LLMClient", "Token budget: prompt~${estimatedPromptTokens} + max_tokens=$maxTokens = $totalEstimated > $FREE_TIER_LIMIT limit → reducing max_tokens to $adjustedMax")
+                        maxTokens = adjustedMax
+                    }
+                }
+
                 val requestBody = when (provider.id) {
                     "gemini" -> buildGeminiRequest(model, userMessage, systemPrompt)
                     else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, maxTokens)
@@ -210,18 +229,52 @@ class LLMClient(private val context: Context) {
                     }
 
                     // v4.0.31: Check for "Prompt tokens limit exceeded" — prompt is too large.
-                    // This happens when Tier 3 sends 15K+ tokens but free tier allows only 5408.
+                    // v4.0.33: Instead of giving up, RETRY with a minimal tool set (just the
+                    // always-available tools). This fixes "try again" failing with 16605 tokens.
                     val promptLimitMatch = Regex("""Prompt tokens limit exceeded: (\d+) > (\d+)""").find(responseBody)
-                    if (promptLimitMatch != null) {
-                        val sent = promptLimitMatch.groupValues[1]
-                        val max = promptLimitMatch.groupValues[2]
+                    if (promptLimitMatch != null && attempt < 3) {
+                        val sent = promptLimitMatch.groupValues[1].toInt()
+                        val max = promptLimitMatch.groupValues[2].toInt()
+                        LogCapture.w("LLMClient", "Prompt too large ($sent > $max) — retrying with minimal tools")
+
+                        // v4.0.33: Retry with a MINIMAL tool set — just the always-available tools.
+                        // This reduces the tools array from 158 to ~8, cutting ~6000 tokens.
+                        val minimalTools = listOf(
+                            "complete", "speak", "getCurrentTime", "getBatteryLevel",
+                            "remember", "recall", "recallSimilar", "setAlarm"
+                        )
+                        val retryBody = buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, minimalTools, 500)
+                        val retryRequest = requestBuilder.post(retryBody.toRequestBody(jsonMediaType)).build()
+                        val retryResponse = client.newCall(retryRequest).execute()
+                        val retryResponseBody = retryResponse.body?.string() ?: ""
+                        if (retryResponse.isSuccessful) {
+                            lastToolFilterSize = minimalTools.size
+                            val llmResponse = parseOpenAIResponse(retryResponseBody)
+                            Log.i("LLMClient", "Prompt-limit retry succeeded with ${minimalTools.size} tools")
+                            return@withContext llmResponse
+                        }
+                        LogCapture.w("LLMClient", "Prompt-limit retry also failed: ${retryResponse.code}")
+
+                        // v4.0.33: If minimal tools also failed, try with NO tools (text-only)
+                        if (sent > max) {
+                            LogCapture.w("LLMClient", "Trying with NO tools (text-only fallback)")
+                            val noToolsBody = buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, emptyList(), 300)
+                            val noToolsRequest = requestBuilder.post(noToolsBody.toRequestBody(jsonMediaType)).build()
+                            val noToolsResponse = client.newCall(noToolsRequest).execute()
+                            if (noToolsResponse.isSuccessful) {
+                                lastToolFilterSize = 0
+                                val llmResponse = parseOpenAIResponse(noToolsResponse.body?.string() ?: "")
+                                Log.i("LLMClient", "Text-only fallback succeeded (no tools)")
+                                return@withContext llmResponse
+                            }
+                        }
+
                         return@withContext LLMResponse(
-                            "⚠️ The system prompt ($sent tokens) is too large for your OpenRouter free tier limit ($max tokens).\n\n" +
+                            "⚠️ The request ($sent tokens) is too large for your OpenRouter free tier limit ($max tokens).\n\n" +
                                 "Fixes:\n" +
                                 "• Switch to a provider with a higher token limit (Groq, Together, or a paid OpenRouter account)\n" +
-                                "• Use simpler messages so Tier 2 (contextual) is used instead of Tier 3 (all tools)\n" +
-                                "• Disable Contextual Prompts in Settings → Thinking to always send fewer tools\n" +
-                                "• Add credits at openrouter.ai/settings/credits to raise the limit",
+                                "• Add credits at openrouter.ai/settings/credits to raise the limit\n" +
+                                "• Use simpler messages (avoid 'try again' on complex tasks)",
                             emptyList()
                         )
                     }
