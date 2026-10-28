@@ -1301,6 +1301,14 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             // These are steps in a flow (type → submit), not different attempts to click something.
                             "type", "pressEnter", "submitInput", "swipe", "scrollDown", "scrollUp",
                             "pressBack", "pressHome",
+                            // v4.0.22: Browser navigation/read tools are SETUP steps, not "approaches."
+                            // browserOpen → browserReadStructured → browserGetLinks is a SEQUENTIAL FLOW
+                            // (open page → read structure → get links), not 3 different attempts.
+                            // Only browserClick/browserFill (actual goal actions) count as approaches.
+                            "browserOpen", "browserReadStructured", "browserGetLinks", "browserGetText",
+                            "browserListClickable", "browserGetForms", "browserScreenshot", "browserGetUrl",
+                            "browserBack", "browserScrollDown", "browserWaitForElement", "browserReadPage",
+                            "browserSearch",
                         )
                         if (!isVerificationTool && !isSetupTool) {
                             failedApproachTools.add(call.name)

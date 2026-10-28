@@ -295,6 +295,17 @@ object ContextualPromptBuilder {
             return buildUltraTinyPrompt()
         }
 
+        // v4.0.22: Retry/continue messages → use full prompt (Tier 3) so the brain
+        // has the complete system prompt + all tool descriptions for the retry.
+        if (isRetryMessage(msg)) {
+            Log.i(TAG, "Retry/continue message → full prompt (Tier 3)")
+            return try {
+                context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() }
+            } catch (e: Exception) {
+                "You are an AI agent controlling an Android phone. Respond in JSON: {\"reply\":\"\",\"tool_calls\":[{\"name\":\"\",\"args\":{}}]}"
+            }
+        }
+
         // TIER 2: Contextual (match groups to keywords)
         val relevantGroups = getRelevantGroups(msg)
         if (relevantGroups.isNotEmpty()) {
@@ -329,6 +340,15 @@ object ContextualPromptBuilder {
         if (isNoToolMessage(msg)) {
             return emptyList()
         }
+        // v4.0.22: Retry/continue phrases → send ALL tools (null = no filter).
+        // When the user says "try again", "retry", "continue", etc., we don't know
+        // what the previous task needed. Sending a minimal toolset (only memory/TTS)
+        // makes it impossible to retry the original task. Return null = full toolset
+        // so the brain has access to browser/screen/app tools for the retry.
+        if (isRetryMessage(msg)) {
+            Log.i(TAG, "Retry/continue message → sending ALL tools (full toolset)")
+            return null
+        }
         // Tier 2: matched groups → only those tool names + ALWAYS_TOOLS.
         val groups = getRelevantGroups(msg)
         if (groups.isNotEmpty()) {
@@ -343,6 +363,23 @@ object ContextualPromptBuilder {
         }
         // Tier 3: no keyword match → caller should send the full toolset.
         return null
+    }
+
+    /**
+     * v4.0.22: Detect retry/continue messages.
+     * These should get the FULL toolset (not a minimal set) because we don't
+     * know what the previous task needed. Examples:
+     *   "try again", "retry", "continue", "do it again", "try once more",
+     *   "try it again", "redo", "re-run", "run again"
+     */
+    private fun isRetryMessage(msg: String): Boolean {
+        val retryPhrases = listOf(
+            "try again", "try it again", "try once more", "try once",
+            "retry", "redo", "re-run", "rerun", "run again", "do it again",
+            "do again", "again", "continue", "keep going", "go on",
+            "one more time", "once more",
+        )
+        return retryPhrases.any { msg == it || msg.startsWith(it + " ") || msg.startsWith(it + "!") || msg.startsWith(it + ".") || msg.startsWith(it + "?") }
     }
 
     /**
