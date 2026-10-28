@@ -35,15 +35,46 @@ object WebTools {
             "makeHttpRequest" -> {
                 val url = call.args["url"] as? String ?: return ToolExecutor.ToolResult(false, "missing url")
                 val method = call.args["method"] as? String ?: "GET"
+                val body = call.args["body"] as? String
+                // v4.0.28: Support custom headers (AI tried headers={"User-Agent":...} before)
+                val headersStr = call.args["headers"] as? String
                 try {
-                    // v2.2.7: Wrap in withContext(IO) — was blocking main thread → ANR
                     val (respCode, respBody) = withContext(kotlinx.coroutines.Dispatchers.IO) {
                         val client = okhttp3.OkHttpClient.Builder()
                             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .followRedirects(true)
+                            .followSslRedirects(true)
                             .build()
-                        val request = okhttp3.Request.Builder().url(url).build()
-                        val response = client.newCall(request).execute()
+                        val reqBuilder = okhttp3.Request.Builder()
+                            .url(url)
+                            // v4.0.28: Default User-Agent (can be overridden by custom headers)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                        // Parse custom headers JSON: {"User-Agent":"...", "Authorization":"Bearer ..."}
+                        if (headersStr != null) {
+                            try {
+                                val headersJson = org.json.JSONObject(headersStr)
+                                val keys = headersJson.keys()
+                                while (keys.hasNext()) {
+                                    val k = keys.next()
+                                    reqBuilder.header(k, headersJson.getString(k))
+                                }
+                            } catch (_: Exception) {
+                                // If headers isn't valid JSON, try key=value format
+                                headersStr.split(",").forEach { h ->
+                                    val idx = h.indexOf("=")
+                                    if (idx > 0) {
+                                        reqBuilder.header(h.substring(0, idx).trim(), h.substring(idx + 1).trim())
+                                    }
+                                }
+                            }
+                        }
+                        // Add body for POST/PUT/PATCH
+                        if (method.uppercase() in setOf("POST", "PUT", "PATCH") && body != null) {
+                            reqBuilder.method(method.uppercase(),
+                                body.toRequestBody("application/json".toMediaType()))
+                        }
+                        val response = client.newCall(reqBuilder.build()).execute()
                         response.code to (response.body?.string() ?: "")
                     }
                     val truncated = if (respBody.length > 2000) respBody.take(2000) + "\n[...truncated]" else respBody

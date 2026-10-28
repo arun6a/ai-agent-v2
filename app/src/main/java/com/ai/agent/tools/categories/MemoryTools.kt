@@ -44,6 +44,45 @@ object MemoryTools {
                 }
                 ToolExecutor.ToolResult(true, memoryStr)
             }
+            // v4.0.29: getConversationHistory — AI calls this when it needs MORE context.
+            // Default loads 10 messages; pass limit=N for more. Use when "try again" or
+            // complex multi-step tasks need full history.
+            "getConversationHistory" -> {
+                val limit = (call.args["limit"] as? Number)?.toInt() ?: 20
+                val sessionId = database.getCurrentSessionId()
+                if (sessionId == 0L) {
+                    ToolExecutor.ToolResult(true, "No active chat session.")
+                } else {
+                    val history = database.getConversationsForSession(sessionId).takeLast(limit)
+                    if (history.isEmpty()) {
+                        ToolExecutor.ToolResult(true, "No conversation history yet.")
+                    } else {
+                        val sb = StringBuilder("Conversation history (last ${history.size} messages):\n\n")
+                        for ((role, text, timestamp) in history) {
+                            val speaker = if (role == "user") "User" else "AI"
+                            val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date(timestamp))
+                            sb.append("[$time] $speaker: $text\n")
+                        }
+                        ToolExecutor.ToolResult(true, sb.toString())
+                    }
+                }
+            }
+            // v4.0.29: getFullMemory — AI calls this to read ALL memories (not just top 10).
+            // recallSimilar only returns top N; this returns EVERYTHING. Use when the AI
+            // needs to search for something recallSimilar might have missed.
+            "getFullMemory" -> {
+                val memory = database.getAllMemory()
+                if (memory.isEmpty()) {
+                    ToolExecutor.ToolResult(true, "No memories stored yet.")
+                } else {
+                    val sb = StringBuilder("All memories (${memory.size}):\n\n")
+                    for ((key, value) in memory) {
+                        sb.append("- $key: $value\n")
+                    }
+                    ToolExecutor.ToolResult(true, sb.toString())
+                }
+            }
             "recallSimilar" -> {
                 val query = call.args["query"] as? String ?: return ToolExecutor.ToolResult(false, "missing query")
                 val results = database.recallSimilar(query)

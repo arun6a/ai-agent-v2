@@ -353,6 +353,19 @@ object ToolSchemas {
             mapOf(
                 "name" to Param("string", "Name of the custom tool to delete.", required = true),
             )),
+        // v4.0.28: Wallpaper tool
+        Schema("setWallpaper", "Set an image file as the phone wallpaper. Works with any image path (e.g., /storage/emulated/0/Pictures/car.jpg). Use after downloadFile to set the downloaded image as wallpaper.",
+            mapOf(
+                "path" to Param("string", "Path to the image file (e.g., /storage/emulated/0/Pictures/car_wallpaper.jpg).", required = true),
+                "which" to Param("string", "Which wallpaper to set: 'home', 'lock', or 'both' (default).", required = false),
+            )),
+        // v4.0.29: On-demand context tools
+        Schema("getConversationHistory", "Load MORE conversation history when you need full context. Default returns last 20 messages. Use when 'try again' or complex tasks need more context than the short summary in the prompt. Call this if you're unsure what the user previously asked for.",
+            mapOf(
+                "limit" to Param("number", "Number of recent messages to load (default 20, max 50).", required = false),
+            )),
+        Schema("getFullMemory", "Read ALL stored memories (not just the top 10 in the prompt). Use when recallSimilar might have missed something, or when you need to find a specific past fact/workflow.",
+            mapOf()),
     )
 
     // -----------------------------------------------------------------------

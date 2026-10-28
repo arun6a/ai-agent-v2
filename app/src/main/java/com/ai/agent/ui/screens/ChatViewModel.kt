@@ -76,7 +76,7 @@ data class ChatUiState(
     val isThinking: Boolean = false,
     val isExecuting: Boolean = false,
     val currentIteration: Int = 0,
-    val maxIterations: Int = 50,
+    val maxIterations: Int = 80,  // v4.0.29: was 50 → 80 (more room for complex tasks)
     val apiCallCount: Int = 0,
     val providerName: String = "",
     val modelName: String = "",
@@ -881,6 +881,30 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                 }
                 conversation.append("]\n\n")
             }
+
+            // v4.0.29: Smart "try again" — if the user says "try again" / "retry",
+            // inject the last REAL user task so the AI knows WHAT to retry.
+            val msgLower = userMessage.lowercase().trim()
+            val retryPhrases = listOf("try again", "retry", "try it again", "do it again",
+                "try once more", "once more", "one more time", "redo", "re-run", "rerun",
+                "run again", "do again", "keep going", "go on", "continue")
+            val isRetry = retryPhrases.any { msgLower == it || msgLower.startsWith(it + " ") || msgLower.startsWith(it + "!") || msgLower.startsWith(it + ".") || msgLower.startsWith(it + "?") }
+            if (isRetry && history.isNotEmpty()) {
+                // Find the last USER message that ISN'T a retry phrase (the real task)
+                val lastRealTask = history.reversed().find { (role, text, _) ->
+                    role == "user" && !retryPhrases.any { p ->
+                        text.lowercase().trim().let { it == p || it.startsWith(p + " ") }
+                    }
+                }
+                if (lastRealTask != null) {
+                    conversation.append("[RETRY CONTEXT]: The user said '$userMessage'. They want you to RETRY this previous task:\n")
+                    conversation.append("  → ${lastRealTask.second}\n")
+                    conversation.append("Approach it fresh — try a different strategy if the previous attempt failed.\n")
+                    conversation.append("If you need MORE context about what was tried, call getConversationHistory(limit=20).\n\n")
+                    LogCapture.i(TAG, "Retry detected — injected last task: ${lastRealTask.second.take(80)}")
+                }
+            }
+
             conversation.append(userMessage)
 
             // === 3. Loop state ===
@@ -911,7 +935,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // This catches what failure-based detection misses (tools that "succeed" without accomplishing).
             var lastScreenText = ""                 // screen text after last action
             var sameScreenCount = 0                 // how many times screen didn't change in a row
-            val MAX_SAME_SCREEN = 2                 // 2x same screen → force re-plan
+            val MAX_SAME_SCREEN = 4                 // v4.0.29: was 2 → 4 (more tolerance for slow-loading screens)
 
             // v2.2.2: Notify AgentService that a task is running (updates notification)
             com.ai.agent.service.AgentService.notifyTaskStarted()
@@ -948,8 +972,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             //     (slow provider, blocking tool call), we surface a timeout
             //     step message and let the next iteration try again.
             val taskStartTime = System.currentTimeMillis()
-            val TASK_TIMEOUT_MS = 180_000L
-            val STEP_TIMEOUT_MS = 30_000L
+            val TASK_TIMEOUT_MS = 600_000L   // v4.0.29: was 180s → 600s (10 min, for 80 iterations)
+            val STEP_TIMEOUT_MS = 60_000L    // v4.0.29: was 30s → 60s (some API calls are slow)
 
             // v3.3.6: Smart Routing — pick the right model for this message
             // based on tier (1=Fast/Cheap, 2=Default, 3=Advanced) + apply it
@@ -1355,17 +1379,16 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     }
 
                     // v4.0.23: 3-FAILED-approach cap (only counts FAILED action tools).
-                    // If 3 unique action tools FAILED, STOP — the task isn't converging.
+                    // v4.0.29: Increased to 10 — user requested more approaches before giving up.
+                    // If 10 unique action tools FAILED, STOP — the task isn't converging.
                     // (v3.8.2 bug: was counting ALL tools tried, killing valid workflows.)
-                    if (failedApproachTools.size >= 3) {
-                        finalReply = "I tried 3 different actions and none succeeded:\n" +
-                            "  1. ${failedApproachTools.elementAt(0)}\n" +
-                            "  2. ${failedApproachTools.elementAt(1)}\n" +
-                            "  3. ${failedApproachTools.elementAt(2)}\n\n" +
+                    if (failedApproachTools.size >= 10) {
+                        finalReply = "I tried ${failedApproachTools.size} different actions and none succeeded:\n" +
+                            failedApproachTools.mapIndexed { i, t -> "  ${i+1}. $t" }.joinToString("\n") + "\n\n" +
                             "The screen might be in an unexpected state, or this task needs a different strategy.\n\n" +
                             "What I tried:\n$workLog\n\n" +
                             "Suggestions: check the screen manually, or describe what you see to me so I can help differently."
-                        LogCapture.w(TAG, "3-FAILED-approach cap reached: $failedApproachTools — stopping task")
+                        LogCapture.w(TAG, "${failedApproachTools.size}-FAILED-approach cap reached: $failedApproachTools — stopping task")
                         addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
                         return@withTimeoutOrNull false // stop the loop
                     }
@@ -1638,8 +1661,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
     companion object {
         private const val TAG = "ChatViewModel"
-        private const val MAX_ITERATIONS = 50
-        private const val MAX_REPEATED_TOOLS = 2
+        private const val MAX_ITERATIONS = 80           // v4.0.29: was 50 → 80 (more room for complex tasks)
+        private const val MAX_REPEATED_TOOLS = 3        // v4.0.29: was 2 → 3 (allow 3 retries before stopping)
         private const val MAX_CONVERSATION_CHARS = 8000
         const val ATTACHMENTS_DIR = "/storage/emulated/0/Documents/ai-workspace/attachments"
         /** Task 40 — user-created skills live here so SkillManager picks them up. */

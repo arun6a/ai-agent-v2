@@ -109,7 +109,11 @@ class ToolExecutor(private val context: Context) {
             // v3.9.6: Completion tool
             "complete",
             // v4.0.26: Custom tool management
-            "createCustomTool", "listCustomTools", "deleteCustomTool"
+            "createCustomTool", "listCustomTools", "deleteCustomTool",
+            // v4.0.28: Wallpaper
+            "setWallpaper",
+            // v4.0.29: On-demand context tools
+            "getConversationHistory", "getFullMemory",
         )
     }
 
@@ -235,6 +239,10 @@ class ToolExecutor(private val context: Context) {
             "complete",  // v4.0.19: Just sets a flag, doesn't need accessibility
             // v4.0.26: Custom tool management + custom tools don't need accessibility
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
+            // v4.0.28: Wallpaper
+            "setWallpaper",
+            // v4.0.29: On-demand context tools (no accessibility needed)
+            "getConversationHistory", "getFullMemory",
         )
 
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
@@ -254,6 +262,10 @@ class ToolExecutor(private val context: Context) {
         // v3.6.0: Auto-detect missing permissions for specific tools.
         // If a tool needs a permission that isn't granted, return an error
         // with a helpful message instead of failing silently.
+        // v4.0.29: Fix storage permission false-negative. MANAGE_EXTERNAL_STORAGE
+        // must be checked via Environment.isExternalStorageManager() (Android 11+),
+        // NOT checkSelfPermission (which always returns DENIED for it). This was
+        // causing "Permission missing: Storage" even when the user had granted it.
         val requiredPerms = TOOL_PERMISSIONS[call.name]
         if (requiredPerms != null) {
             for (perm in requiredPerms) {
@@ -264,6 +276,31 @@ class ToolExecutor(private val context: Context) {
                             context.contentResolver, "enabled_notification_listeners"
                         ) ?: ""
                         enabled.contains(expected)
+                    }
+                    // v4.0.29: MANAGE_EXTERNAL_STORAGE must use isExternalStorageManager()
+                    android.Manifest.permission.MANAGE_EXTERNAL_STORAGE -> {
+                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                        android.os.Environment.isExternalStorageManager()
+                    }
+                    // v4.0.29: READ/WRITE_EXTERNAL_STORAGE are deprecated on Android 13+
+                    // On API 33+, check the granular media permissions instead.
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE -> {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            // Android 13+: granular permissions — check if ANY media perm is granted
+                            val mediaPerms = listOf(
+                                android.Manifest.permission.READ_MEDIA_IMAGES,
+                                android.Manifest.permission.READ_MEDIA_VIDEO,
+                                android.Manifest.permission.READ_MEDIA_AUDIO,
+                            )
+                            mediaPerms.any {
+                                androidx.core.content.ContextCompat.checkSelfPermission(context, it) ==
+                                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                            } || android.os.Environment.isExternalStorageManager()
+                        } else {
+                            androidx.core.content.ContextCompat.checkSelfPermission(context, perm) ==
+                                android.content.pm.PackageManager.PERMISSION_GRANTED
+                        }
                     }
                     else -> androidx.core.content.ContextCompat.checkSelfPermission(context, perm) ==
                         android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -650,6 +687,11 @@ class ToolExecutor(private val context: Context) {
             "createCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             "listCustomTools" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             "deleteCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+            // v4.0.28: Wallpaper
+            "setWallpaper" -> com.ai.agent.tools.categories.WallpaperTools.execute(call, context, service, database)
+            // v4.0.29: On-demand context tools
+            "getConversationHistory" -> MemoryTools.execute(call, context, service, database)
+            "getFullMemory" -> MemoryTools.execute(call, context, service, database)
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> RuleTools.execute(call, context, service, database)
             "listRules" -> RuleTools.execute(call, context, service, database)
