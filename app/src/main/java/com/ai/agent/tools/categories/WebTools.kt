@@ -107,26 +107,51 @@ object WebTools {
             }
             "downloadFile" -> {
                 val url = call.args["url"] as? String ?: return ToolExecutor.ToolResult(false, "missing url")
-                val path = call.args["path"] as? String ?: "/storage/emulated/0/Documents/ai-workspace/downloads/\$(System.currentTimeMillis()).bin"
+                // v4.0.27: Fix broken default path — was using shell syntax $(System.currentTimeMillis())
+                // which Kotlin treated as a literal string → saved to "$(S..." file.
+                // Now uses proper Kotlin string template ${System.currentTimeMillis()}.
+                // v4.0.27: Also resolve relative paths against the workspace downloads dir.
+                val workspaceDir = "/storage/emulated/0/Documents/ai-workspace/downloads"
+                val path = when {
+                    call.args["path"] == null -> "$workspaceDir/${System.currentTimeMillis()}.bin"
+                    (call.args["path"] as String).startsWith("/") -> call.args["path"] as String
+                    else -> "$workspaceDir/${call.args["path"] as String}"
+                }
                 try {
-                    // v2.2.7: Wrap in withContext(IO) — was blocking main thread → ANR
                     val downloaded = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        // v4.0.27: Follow redirects + add User-Agent (some sites reject no-UA)
                         val client = okhttp3.OkHttpClient.Builder()
                             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                             .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .followRedirects(true)
+                            .followSslRedirects(true)
                             .build()
-                        val request = okhttp3.Request.Builder().url(url).build()
+                        val request = okhttp3.Request.Builder()
+                            .url(url)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                            .build()
                         val response = client.newCall(request).execute()
                         val bytes = response.body?.bytes() ?: return@withContext null
+                        // v4.0.27: Check if we got an actual file vs an error page.
+                        // If Content-Type is text/html and the download is tiny, it's likely an error.
+                        val contentType = response.header("Content-Type", "") ?: ""
+                        if (bytes.size < 500 && contentType.contains("text/html", ignoreCase = true)) {
+                            return@withContext -1 to "Got HTML error page (${bytes.size} bytes, status ${response.code}). URL may be wrong or requires a browser."
+                        }
                         val file = java.io.File(path)
                         file.parentFile?.mkdirs()
                         file.writeBytes(bytes)
-                        bytes.size
+                        bytes.size to contentType
                     }
                     if (downloaded != null) {
-                        ToolExecutor.ToolResult(true, "Downloaded $downloaded bytes to $path")
+                        val (size, type) = downloaded
+                        if (size == -1) {
+                            ToolExecutor.ToolResult(false, type)  // type holds the error message
+                        } else {
+                            ToolExecutor.ToolResult(true, "Downloaded $size bytes to $path\nContent-Type: $type")
+                        }
                     } else {
-                        ToolExecutor.ToolResult(false, "Empty response")
+                        ToolExecutor.ToolResult(false, "Empty response — server returned no data")
                     }
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Download error: ${e.message}")
