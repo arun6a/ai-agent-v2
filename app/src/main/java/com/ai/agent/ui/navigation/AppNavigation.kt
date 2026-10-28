@@ -69,6 +69,14 @@ fun AppNavigation() {
                 restoreState = true
             }
         }
+        // v4.0.32: Register deep link navigation callback — lets AI open any app screen
+        com.ai.agent.tools.categories.DeepLinkTools.setNavigationCallback { route ->
+            nav.navigate(route) {
+                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
     }
 
     val backstack by nav.currentBackStackEntryAsState()

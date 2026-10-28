@@ -377,6 +377,36 @@ object AIProvider {
         getPrefs(context).edit().putString(KEY_SEARCH_METHOD, method).apply()
     }
 
+    // === Brave Search API Key ===
+    // v4.0.32: Brave Search API — 2000 queries/month free.
+    // Get a key at https://api.search.brave.com/
+    private const val KEY_BRAVE_SEARCH_API_KEY = "brave_search_api_key"
+    fun getBraveSearchApiKey(context: Context): String {
+        return getPrefs(context).getString(KEY_BRAVE_SEARCH_API_KEY, "") ?: ""
+    }
+    fun setBraveSearchApiKey(context: Context, key: String) {
+        getPrefs(context).edit().putString(KEY_BRAVE_SEARCH_API_KEY, key).apply()
+    }
+
+    // === Google Custom Search API Key ===
+    // v4.0.32: Google Custom Search JSON API — 100 queries/day free.
+    // Get a key at https://developers.google.com/custom-search/v1/overview
+    // Also requires a Search Engine ID (cx) from https://programmablesearchengine.google.com/
+    private const val KEY_GOOGLE_SEARCH_API_KEY = "google_search_api_key"
+    private const val KEY_GOOGLE_SEARCH_ENGINE_ID = "google_search_engine_id"
+    fun getGoogleSearchApiKey(context: Context): String {
+        return getPrefs(context).getString(KEY_GOOGLE_SEARCH_API_KEY, "") ?: ""
+    }
+    fun setGoogleSearchApiKey(context: Context, key: String) {
+        getPrefs(context).edit().putString(KEY_GOOGLE_SEARCH_API_KEY, key).apply()
+    }
+    fun getGoogleSearchEngineId(context: Context): String {
+        return getPrefs(context).getString(KEY_GOOGLE_SEARCH_ENGINE_ID, "") ?: ""
+    }
+    fun setGoogleSearchEngineId(context: Context, id: String) {
+        getPrefs(context).edit().putString(KEY_GOOGLE_SEARCH_ENGINE_ID, id).apply()
+    }
+
     // === Browser Mode ===
     // Controls which browser the AI uses:
     // "in_app" → visible in-app WebView (no accessibility needed, user can see + intervene)

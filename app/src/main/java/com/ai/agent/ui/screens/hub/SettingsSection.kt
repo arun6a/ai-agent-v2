@@ -247,6 +247,8 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
                         toast = "Search method: $it"
                     },
                 )
+                // v4.0.32: Brave Search API key input
+                BraveApiKeyRow(context) { toast = it }
             }
         }
 
@@ -684,4 +686,153 @@ private fun ModelSlotRow(
             }
         }
     }
+}
+
+/**
+ * v4.0.32: Search API Keys row — lets the user add Brave + Google Custom Search API keys.
+ * When keys are set, the AI can use braveSearch() and googleSearchApi() for reliable,
+ * CAPTCHA-free search results (no scraping).
+ */
+@Composable
+private fun BraveApiKeyRow(context: android.content.Context, onToast: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    var showKeys by remember { mutableStateOf(false) }
+    var braveKey by remember { mutableStateOf(com.ai.agent.llm.AIProvider.getBraveSearchApiKey(context)) }
+    var googleKey by remember { mutableStateOf(com.ai.agent.llm.AIProvider.getGoogleSearchApiKey(context)) }
+    var googleCxId by remember { mutableStateOf(com.ai.agent.llm.AIProvider.getGoogleSearchEngineId(context)) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Header row with toggle
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showKeys = !showKeys }
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(
+                    "Search API Keys",
+                    color = m3.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    "Brave (2000/mo free) + Google CSE (100/day free) — enables reliable search",
+                    color = m3.onSurface.copy(alpha = 0.5f),
+                    fontSize = 10.sp,
+                )
+            }
+            Text(
+                if (showKeys) "▲" else "▼",
+                color = m3.onSurface.copy(alpha = 0.5f),
+                fontSize = 12.sp,
+            )
+        }
+
+        // Status badges
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val braveSet = braveKey.isNotEmpty()
+            val googleSet = googleKey.isNotEmpty() && googleCxId.isNotEmpty()
+            StatusBadge("Brave ${if (braveSet) "✓" else "✗"}", braveSet, custom)
+            StatusBadge("Google ${if (googleSet) "✓" else "✗"}", googleSet, custom)
+        }
+
+        if (showKeys) {
+            // Brave API Key
+            Text("Brave Search API Key", color = m3.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text("Get free key (2000 queries/month): api.search.brave.com",
+                color = m3.onSurface.copy(alpha = 0.4f), fontSize = 9.sp)
+            OutlinedTextField(
+                value = braveKey,
+                onValueChange = {
+                    braveKey = it
+                    com.ai.agent.llm.AIProvider.setBraveSearchApiKey(context, it)
+                },
+                label = { Text("Brave API Key") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Google API Key
+            Text("Google Custom Search API Key", color = m3.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text("Get key: developers.google.com/custom-search/v1/overview",
+                color = m3.onSurface.copy(alpha = 0.4f), fontSize = 9.sp)
+            OutlinedTextField(
+                value = googleKey,
+                onValueChange = {
+                    googleKey = it
+                    com.ai.agent.llm.AIProvider.setGoogleSearchApiKey(context, it)
+                },
+                label = { Text("Google API Key") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Google Engine ID (cx)
+            Text("Google Search Engine ID (cx)", color = m3.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text("Create engine: programmablesearchengine.google.com",
+                color = m3.onSurface.copy(alpha = 0.4f), fontSize = 9.sp)
+            OutlinedTextField(
+                value = googleCxId,
+                onValueChange = {
+                    googleCxId = it
+                    com.ai.agent.llm.AIProvider.setGoogleSearchEngineId(context, it)
+                },
+                label = { Text("Engine ID (cx)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.TextButton(onClick = {
+                    braveKey = ""
+                    googleKey = ""
+                    googleCxId = ""
+                    com.ai.agent.llm.AIProvider.setBraveSearchApiKey(context, "")
+                    com.ai.agent.llm.AIProvider.setGoogleSearchApiKey(context, "")
+                    com.ai.agent.llm.AIProvider.setGoogleSearchEngineId(context, "")
+                    onToast("Search API keys cleared")
+                }) {
+                    Text("Clear All", color = m3.error)
+                }
+                androidx.compose.material3.TextButton(onClick = {
+                    onToast("Keys saved. AI can now use braveSearch() + googleSearchApi()")
+                }) {
+                    Text("Done", color = custom.accent)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusBadge(text: String, active: Boolean, custom: com.ai.agent.ui.components.CustomColors) {
+    Text(
+        text = text,
+        color = if (active) custom.accent else custom.surface2,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .background(
+                if (active) custom.accent.copy(alpha = 0.1f) else custom.surface2.copy(alpha = 0.3f),
+                androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }

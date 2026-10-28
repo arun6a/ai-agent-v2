@@ -405,6 +405,37 @@ object ToolSchemas {
             mapOf(
                 "mode" to Param("string", "'silent', 'vibrate', or 'normal'.", required = true),
             )),
+        // v4.0.32: Headless search tools
+        Schema("headlessGoogleSearch", "Search Google WITHOUT opening a browser UI. Uses Android's WebView engine (executes JavaScript, has cookies) so Google serves real results — no CAPTCHA block. Slower than webSearch (5-10s) but reliable. Use when webSearch returns 0 results.",
+            mapOf(
+                "query" to Param("string", "Search query.", required = true),
+            )),
+        Schema("headlessSearch", "Search any engine WITHOUT opening a browser UI (headless WebView). Engine: 'google', 'bing', or 'duckduckgo'. Google is recommended (most results).",
+            mapOf(
+                "query" to Param("string", "Search query.", required = true),
+                "engine" to Param("string", "Search engine: 'google', 'bing', 'duckduckgo' (default google).", required = false),
+            )),
+        Schema("braveSearch", "Official Brave Search API (2000 queries/month free, clean JSON, no scraping). Requires API key in Hub → Settings → Search API Keys. Best quality when key is set.",
+            mapOf(
+                "query" to Param("string", "Search query.", required = true),
+                "limit" to Param("number", "Max results (default 5, max 20).", required = false),
+            )),
+        Schema("googleSearchApi", "Official Google Custom Search JSON API (100 queries/day free, clean JSON, no scraping, no CAPTCHA). Requires API key + Engine ID in Hub → Settings → Search API Keys. Best for reliable Google results.",
+            mapOf(
+                "query" to Param("string", "Search query.", required = true),
+                "limit" to Param("number", "Max results (default 5, max 10).", required = false),
+            )),
+        Schema("smartSearch", "Smart search — tries methods in sequence: 1. Google API (if key set) 2. Brave API (if key set) 3. Bing HTTP scrape 4. Headless Google WebView. Returns first that yields results. Use when you don't know which search method works.",
+            mapOf(
+                "query" to Param("string", "Search query.", required = true),
+            )),
+        // v4.0.32: Deep link navigation
+        Schema("navigateToAppScreen", "Navigate to a screen INSIDE Aira (settings, permissions, hub, etc.). Use to guide the user to change settings, add API keys, or check permissions. After navigating, call readScreen() to see the screen.",
+            mapOf(
+                "screen" to Param("string", "Screen name: 'chat', 'hub', 'browser', 'settings', 'llm_settings', 'api_keys', 'permissions', 'system_prompt', 'background_tasks'.", required = true),
+            )),
+        Schema("listAppScreens", "List all available app screens you can navigate to. Call this first to see the options.",
+            mapOf()),
     )
 
     // -----------------------------------------------------------------------

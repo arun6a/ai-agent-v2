@@ -121,6 +121,10 @@ class ToolExecutor(private val context: Context) {
             "getMemoryInfo", "getStorageInfo", "getBatteryHealth",
             "getScreenOrientation", "isCharging",
             "getRingtoneMode", "setRingtoneMode",
+            // v4.0.32: Headless search + deep link navigation
+            "headlessGoogleSearch", "headlessSearch", "braveSearch",
+            "googleSearchApi", "smartSearch",
+            "navigateToAppScreen", "listAppScreens",
         )
     }
 
@@ -256,6 +260,10 @@ class ToolExecutor(private val context: Context) {
             "getMemoryInfo", "getStorageInfo", "getBatteryHealth",
             "getScreenOrientation", "isCharging",
             "getRingtoneMode", "setRingtoneMode",
+            // v4.0.32: Headless search + deep link navigation (no accessibility needed)
+            "headlessGoogleSearch", "headlessSearch", "braveSearch",
+            "googleSearchApi", "smartSearch",
+            "navigateToAppScreen", "listAppScreens",
         )
 
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
@@ -721,6 +729,15 @@ class ToolExecutor(private val context: Context) {
             "isCharging" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
             "getRingtoneMode" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
             "setRingtoneMode" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            // v4.0.32: Headless search tools (Google via WebView, Brave API, Google API, smartSearch)
+            "headlessGoogleSearch" -> com.ai.agent.tools.categories.HeadlessSearchTools.execute(call, context, service, database)
+            "headlessSearch" -> com.ai.agent.tools.categories.HeadlessSearchTools.execute(call, context, service, database)
+            "braveSearch" -> com.ai.agent.tools.categories.HeadlessSearchTools.execute(call, context, service, database)
+            "googleSearchApi" -> com.ai.agent.tools.categories.HeadlessSearchTools.execute(call, context, service, database)
+            "smartSearch" -> com.ai.agent.tools.categories.HeadlessSearchTools.execute(call, context, service, database)
+            // v4.0.32: Deep link navigation (AI opens app screens)
+            "navigateToAppScreen" -> com.ai.agent.tools.categories.DeepLinkTools.execute(call, context, service, database)
+            "listAppScreens" -> com.ai.agent.tools.categories.DeepLinkTools.execute(call, context, service, database)
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> RuleTools.execute(call, context, service, database)
             "listRules" -> RuleTools.execute(call, context, service, database)
