@@ -183,10 +183,7 @@ class LLMClient(private val context: Context) {
                         lastError = "Daily quota exhausted. Try a different provider or wait until tomorrow."
                         return@withContext LLMResponse(
                             "⚠️ Daily quota exhausted for ${provider.name}.\n\n" +
-                                    "What to do:\n" +
-                                    "• Switch to a different provider (Hub → LLM → Configure)\n" +
-                                    "• Or wait until tomorrow (resets at midnight Pacific time)\n" +
-                                    "• Or use Z.ai Direct (300 req/day free)",
+                                    "Add a new API key in Hub → LLM → Configure, or wait until tomorrow.",
                             emptyList()
                         )
                     } else {
@@ -205,17 +202,21 @@ class LLMClient(private val context: Context) {
                 // OpenRouter free tier often returns "can only afford N tokens" — we
                 // extract that number + retry with a lower max_tokens that fits the budget.
                 // Also handles "Prompt tokens limit exceeded: 15897 > 5408" — prompt too large.
+                // v4.0.34: Improved — handles nested previous_errors, tries multiple budgets.
                 if (response.code == 402) {
-                    LogCapture.w("LLMClient", "Payment required (402): ${responseBody.take(300)}")
+                    LogCapture.w("LLMClient", "Payment required (402): ${responseBody.take(500)}")
 
-                    // v4.0.31: Try to extract "can only afford N tokens" from the error.
-                    val affordMatch = Regex("""can only afford (\d+)""").find(responseBody)
-                    if (affordMatch != null && attempt < 3) {
-                        val affordableTokens = affordMatch.groupValues[1].toInt()
-                        // Retry with max_tokens = affordable amount (minus a small buffer)
-                        val retryMaxTokens = maxOf(100, affordableTokens - 50)
-                        LogCapture.w("LLMClient", "402: can only afford $affordableTokens tokens — retrying with max_tokens=$retryMaxTokens")
-                        // Rebuild the request with the lower max_tokens
+                    // v4.0.34: Extract ALL "can only afford N" values (including from previous_errors)
+                    // and use the SMALLEST one (most conservative budget).
+                    val affordMatches = Regex("""can only afford (\d+)""").findAll(responseBody).map {
+                        it.groupValues[1].toInt()
+                    }.toList()
+                    val cheapestAffordable = affordMatches.minOrNull()
+
+                    if (cheapestAffordable != null && cheapestAffordable > 100 && attempt < 3) {
+                        // Retry with max_tokens = smallest affordable amount (minus buffer)
+                        val retryMaxTokens = maxOf(100, cheapestAffordable - 50)
+                        LogCapture.w("LLMClient", "402: cheapest affordable=$cheapestAffordable tokens — retrying with max_tokens=$retryMaxTokens")
                         val retryBody = buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, retryMaxTokens)
                         val retryRequest = requestBuilder.post(retryBody.toRequestBody(jsonMediaType)).build()
                         val retryResponse = client.newCall(retryRequest).execute()
@@ -225,7 +226,17 @@ class LLMClient(private val context: Context) {
                             Log.i("LLMClient", "402 retry succeeded with max_tokens=$retryMaxTokens")
                             return@withContext llmResponse
                         }
-                        LogCapture.w("LLMClient", "402 retry also failed: ${retryResponse.code}")
+                        // v4.0.34: If retry with affordable tokens also got 402, try with even fewer
+                        LogCapture.w("LLMClient", "402 retry with $retryMaxTokens also failed (${retryResponse.code}) — trying with 100 tokens")
+                        val retryBody2 = buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, 100)
+                        val retryRequest2 = requestBuilder.post(retryBody2.toRequestBody(jsonMediaType)).build()
+                        val retryResponse2 = client.newCall(retryRequest2).execute()
+                        if (retryResponse2.isSuccessful) {
+                            val llmResponse = parseOpenAIResponse(retryResponse2.body?.string() ?: "")
+                            Log.i("LLMClient", "402 retry with 100 tokens succeeded")
+                            return@withContext llmResponse
+                        }
+                        LogCapture.w("LLMClient", "402 retry with 100 tokens also failed")
                     }
 
                     // v4.0.31: Check for "Prompt tokens limit exceeded" — prompt is too large.
@@ -270,22 +281,15 @@ class LLMClient(private val context: Context) {
                         }
 
                         return@withContext LLMResponse(
-                            "⚠️ The request ($sent tokens) is too large for your OpenRouter free tier limit ($max tokens).\n\n" +
-                                "Fixes:\n" +
-                                "• Switch to a provider with a higher token limit (Groq, Together, or a paid OpenRouter account)\n" +
-                                "• Add credits at openrouter.ai/settings/credits to raise the limit\n" +
-                                "• Use simpler messages (avoid 'try again' on complex tasks)",
+                            "⚠️ The request ($sent tokens) is too large for your current API limit ($max tokens).\n\n" +
+                                "Add credits at the provider's dashboard, or add a new API key in Hub → LLM → Configure.",
                             emptyList()
                         )
                     }
 
                     return@withContext LLMResponse(
                         "⚠️ Insufficient credits on ${provider.name}.\n\n" +
-                                responseBody.take(300).let {
-                                    if (it.contains("balance", ignoreCase = true)) it
-                                    else "Add credits at the provider's dashboard."
-                                } +
-                                "\n\nFor Cline: app.cline.bot/credits",
+                            "Add credits at the provider's dashboard, or add a new API key in Hub → LLM → Configure.",
                         emptyList()
                     )
                 }
@@ -308,10 +312,7 @@ class LLMClient(private val context: Context) {
                         return@withContext LLMResponse(
                             "⚠️ ${provider.name} server error ($code).\n\n" +
                                     "${describeServerError(code)}\n\n" +
-                                    "What to do:\n" +
-                                    "• Wait a few minutes + retry (server overloaded)\n" +
-                                    "• Or switch provider (Hub → LLM → Configure)\n" +
-                                    "• Recommended backup: Groq (fast, 14,400/day free)",
+                                    "Wait a few minutes and retry, or add a new API key in Hub → LLM → Configure.",
                             emptyList()
                         )
                     }
