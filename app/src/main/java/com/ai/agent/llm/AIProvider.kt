@@ -183,7 +183,7 @@ object AIProvider {
         ),
         ProviderInfo(
             id = "zai_direct",
-            name = "Z.ai Direct (Official API)",
+            name = "Direct API",
             description = "Calls Z.ai's official API DIRECTLY from your phone — no sandbox needed. " +
                     "Works anywhere, anytime (even when sandbox is offline). OpenAI-compatible. " +
                     "Get an API key at z.ai (API Keys section). Supports native function calling. " +
