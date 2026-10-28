@@ -1282,7 +1282,11 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             toolSummary.append(" ${dr.output.take(200)}")
                             previouslyFailedSignatures.add(sig)
                         }
-                        // v3.8.3: Track unique ACTION tools for the approach cap.
+                        // v3.8.3: Track unique ACTION tools that FAILED for the approach cap.
+                        // v4.0.23: CRITICAL FIX — was adding ALL action tools regardless of success.
+                        // This caused the "check the screen manually" message to fire on perfectly
+                        // valid workflows that used 3+ different action tools (e.g., tap →
+                        // clickByText → clickElement, all succeeding). Now ONLY counts FAILED tools.
                         // Exclude SETUP tools (launchApp, searchInApp, openUrl, openInChrome, etc.)
                         // — these are sequential workflow steps, not "approaches."
                         // Only count tools that attempt to accomplish the GOAL (click/play/tap a result):
@@ -1310,7 +1314,9 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             "browserBack", "browserScrollDown", "browserWaitForElement", "browserReadPage",
                             "browserSearch",
                         )
-                        if (!isVerificationTool && !isSetupTool) {
+                        // v4.0.23: Only count FAILED action tools toward the approach cap.
+                        // A successful workflow with 3+ different action tools is NOT "3 approaches."
+                        if (!dr.success && !isVerificationTool && !isSetupTool) {
                             failedApproachTools.add(call.name)
                         }
                         resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
@@ -1348,18 +1354,18 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         lastScreenText = currentScreenText
                     }
 
-                    // v3.8.2: 3-different-approach cap (counts tools TRIED, not just failed).
-                    // If 3 unique action tools were tried, STOP — the task isn't converging.
-                    // This catches "tools succeed but don't accomplish the goal" wandering.
+                    // v4.0.23: 3-FAILED-approach cap (only counts FAILED action tools).
+                    // If 3 unique action tools FAILED, STOP — the task isn't converging.
+                    // (v3.8.2 bug: was counting ALL tools tried, killing valid workflows.)
                     if (failedApproachTools.size >= 3) {
-                        finalReply = "I tried 3 different approaches and none accomplished the goal:\n" +
+                        finalReply = "I tried 3 different actions and none succeeded:\n" +
                             "  1. ${failedApproachTools.elementAt(0)}\n" +
                             "  2. ${failedApproachTools.elementAt(1)}\n" +
                             "  3. ${failedApproachTools.elementAt(2)}\n\n" +
                             "The screen might be in an unexpected state, or this task needs a different strategy.\n\n" +
                             "What I tried:\n$workLog\n\n" +
                             "Suggestions: check the screen manually, or describe what you see to me so I can help differently."
-                        LogCapture.w(TAG, "3-different-approach cap reached: $failedApproachTools — stopping task")
+                        LogCapture.w(TAG, "3-FAILED-approach cap reached: $failedApproachTools — stopping task")
                         addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
                         return@withTimeoutOrNull false // stop the loop
                     }
