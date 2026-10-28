@@ -114,6 +114,13 @@ class ToolExecutor(private val context: Context) {
             "setWallpaper",
             // v4.0.29: On-demand context tools
             "getConversationHistory", "getFullMemory",
+            // v4.0.30: Permission-based tools
+            "readSms", "vibrate", "getPhoneState", "wakeLock",
+            // v4.0.30: Device info tools
+            "getBrightness", "getFlashlightState", "getDeviceUptime",
+            "getMemoryInfo", "getStorageInfo", "getBatteryHealth",
+            "getScreenOrientation", "isCharging",
+            "getRingtoneMode", "setRingtoneMode",
         )
     }
 
@@ -243,6 +250,12 @@ class ToolExecutor(private val context: Context) {
             "setWallpaper",
             // v4.0.29: On-demand context tools (no accessibility needed)
             "getConversationHistory", "getFullMemory",
+            // v4.0.30: Permission-based + device info tools (no accessibility needed)
+            "readSms", "vibrate", "getPhoneState", "wakeLock",
+            "getBrightness", "getFlashlightState", "getDeviceUptime",
+            "getMemoryInfo", "getStorageInfo", "getBatteryHealth",
+            "getScreenOrientation", "isCharging",
+            "getRingtoneMode", "setRingtoneMode",
         )
 
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
@@ -692,6 +705,22 @@ class ToolExecutor(private val context: Context) {
             // v4.0.29: On-demand context tools
             "getConversationHistory" -> MemoryTools.execute(call, context, service, database)
             "getFullMemory" -> MemoryTools.execute(call, context, service, database)
+            // v4.0.30: Permission-based tools
+            "readSms" -> com.ai.agent.tools.categories.PermissionTools.execute(call, context, service, database)
+            "vibrate" -> com.ai.agent.tools.categories.PermissionTools.execute(call, context, service, database)
+            "getPhoneState" -> com.ai.agent.tools.categories.PermissionTools.execute(call, context, service, database)
+            "wakeLock" -> com.ai.agent.tools.categories.PermissionTools.execute(call, context, service, database)
+            // v4.0.30: Device info tools
+            "getBrightness" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getFlashlightState" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getDeviceUptime" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getMemoryInfo" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getStorageInfo" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getBatteryHealth" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getScreenOrientation" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "isCharging" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "getRingtoneMode" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
+            "setRingtoneMode" -> com.ai.agent.tools.categories.DeviceInfoTools.execute(call, context, service, database)
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> RuleTools.execute(call, context, service, database)
             "listRules" -> RuleTools.execute(call, context, service, database)

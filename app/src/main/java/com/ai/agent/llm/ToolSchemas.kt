@@ -366,6 +366,45 @@ object ToolSchemas {
             )),
         Schema("getFullMemory", "Read ALL stored memories (not just the top 10 in the prompt). Use when recallSimilar might have missed something, or when you need to find a specific past fact/workflow.",
             mapOf()),
+        // v4.0.30: Permission-based tools
+        Schema("readSms", "Read recent SMS messages from the inbox. Useful for 'who texted me?' or 'read my last messages'.",
+            mapOf(
+                "limit" to Param("number", "Max messages to return (default 10, max 50).", required = false),
+            )),
+        Schema("vibrate", "Vibrate the device for haptic feedback. Great for rules: direct:vibrate(pattern=double) as a silent alert.",
+            mapOf(
+                "duration" to Param("number", "Vibration duration in ms (default 500).", required = false),
+                "pattern" to Param("string", "Pattern: 'short', 'long', 'double', 'triple' (overrides duration).", required = false),
+            )),
+        Schema("getPhoneState", "Get carrier name, SIM status, network type, signal strength. Uses READ_PHONE_STATE permission.",
+            mapOf()),
+        Schema("wakeLock", "Keep the CPU awake for N seconds (even if screen is off). Useful for long-running rules that need to run while phone is sleeping.",
+            mapOf(
+                "seconds" to Param("number", "Seconds to hold the wake lock (default 60, max 600).", required = true),
+            )),
+        // v4.0.30: Device info tools (10 new read-only + action tools)
+        Schema("getBrightness", "Get current screen brightness level + mode (auto/manual).",
+            mapOf()),
+        Schema("getFlashlightState", "Check if the flashlight/torch is available on this device.",
+            mapOf()),
+        Schema("getDeviceUptime", "How long since the device was last booted (days/hours/minutes).",
+            mapOf()),
+        Schema("getMemoryInfo", "Get RAM info: total, used, available, low-memory threshold.",
+            mapOf()),
+        Schema("getStorageInfo", "Get disk space: total, used, available (internal + external SD card).",
+            mapOf()),
+        Schema("getBatteryHealth", "Get battery health, temperature, voltage, technology, charging status. More detailed than getBatteryLevel.",
+            mapOf()),
+        Schema("getScreenOrientation", "Get current screen orientation (portrait/landscape).",
+            mapOf()),
+        Schema("isCharging", "Is the phone currently charging? Returns charging status + power source (AC/USB/Wireless).",
+            mapOf()),
+        Schema("getRingtoneMode", "Get ringer mode (silent/vibrate/normal) + current volume levels.",
+            mapOf()),
+        Schema("setRingtoneMode", "Set ringer mode. Useful for rules: 'when in meeting, set silent'.",
+            mapOf(
+                "mode" to Param("string", "'silent', 'vibrate', or 'normal'.", required = true),
+            )),
     )
 
     // -----------------------------------------------------------------------

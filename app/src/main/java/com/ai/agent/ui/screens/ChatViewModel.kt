@@ -859,12 +859,14 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // === 2. Build the conversation: recent history + user message ===
             // v2.2.0 Issue 113b — scope history to the CURRENT session only,
             // so the AI doesn't bleed context across unrelated chat threads.
+            // v4.0.29: 5 msgs × 150 chars default. AI calls getConversationHistory()
+            // on demand when it needs more context (keeps default cheap).
             val conversation = StringBuilder()
             val currentSession = _state.value.currentSessionId
             val history = if (currentSession != 0L) {
                 try {
                     database.getConversationsForSession(currentSession)
-                        .takeLast(4)
+                        .takeLast(5)
                         .map { Triple(it.first, it.second, it.third) }
                 } catch (e: Exception) {
                     emptyList<Triple<String, String, Long>>()
