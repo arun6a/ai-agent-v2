@@ -33,6 +33,14 @@ class LLMClient(private val context: Context) {
 
     private val jsonMediaType = "application/json".toMediaType()
 
+    // v4.0.21: Track the tool filter size from the LAST request so the parser
+    // knows whether text-extracted tool calls are valid. When toolFilter is
+    // empty (Tier 1 greeting), the model was NEVER asked to call tools, so
+    // any "tool calls" found in text are false positives (e.g., "I can help
+    // with apps(open, tap, navigate)" → fake "apps" tool call). Skip them.
+    @Volatile
+    private var lastToolFilterSize: Int = -1  // -1 = all tools (null), 0 = none, N = filtered
+
     data class LLMResponse(
         val reply: String,
         val toolCalls: List<ToolCall>
@@ -90,6 +98,10 @@ class LLMClient(private val context: Context) {
                     "gemini" -> buildGeminiRequest(model, userMessage, systemPrompt)
                     else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, maxTokens)
                 }
+
+                // v4.0.21: Record tool filter size for the parser (skip false-positive
+                // text tool calls when 0 tools were sent).
+                lastToolFilterSize = toolFilter?.size ?: -1
 
                 // For Gemini, construct the full URL with model + API key
                 val finalUrl = if (provider.id == "gemini") {
@@ -713,7 +725,11 @@ tools array. Call tools using the standard tool_calls format.
             //   "Calling: tap(970, 180)"
             //   "I'll use searchInApp(package=youtube, query=BLACKPINK)"
             // This extracts them so the agent loop can actually execute them.
-            if (toolCalls.isEmpty()) {
+            //
+            // v4.0.21: SKIP this when 0 tools were sent (Tier 1 greeting). The model
+            // was never asked to call tools, so any "tool calls" found in text are
+            // false positives (e.g., "I can help with apps(open, tap, navigate)").
+            if (toolCalls.isEmpty() && lastToolFilterSize != 0) {
                 val textCalls = extractToolCallsFromText(content)
                 if (textCalls.isNotEmpty()) {
                     Log.i("LLMClient", "Recovered ${textCalls.size} tool call(s) from plain text: ${textCalls.map { it.name }}")
@@ -724,7 +740,8 @@ tools array. Call tools using the standard tool_calls format.
             LLMResponse(reply, toolCalls)
         } catch (e: Exception) {
             // JSON parsing failed — try to extract tool calls from plain text
-            val textCalls = extractToolCallsFromText(content)
+            // v4.0.21: Skip when 0 tools were sent (Tier 1 — false positives).
+            val textCalls = if (lastToolFilterSize != 0) extractToolCallsFromText(content) else emptyList()
             if (textCalls.isNotEmpty()) {
                 Log.i("LLMClient", "JSON parse failed but recovered ${textCalls.size} tool call(s) from text: ${textCalls.map { it.name }}")
                 // Strip the "Tool: ..." text from the reply so the user doesn't see raw tool syntax

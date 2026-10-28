@@ -214,7 +214,7 @@ class ToolExecutor(private val context: Context) {
             null  // not needed — these tools don't use it
         } else {
             waitForAccessibilityService()
-                ?: return ToolResult(false, "Accessibility service is not enabled. Open Settings → Accessibility → AI Agent → toggle ON. (This tool requires accessibility to control the screen.)")
+                ?: return ToolResult(false, buildAccessibilityErrorMessage(context))
         }
 
         // v3.6.0: Auto-detect missing permissions for specific tools.
@@ -949,6 +949,32 @@ class ToolExecutor(private val context: Context) {
         }
 
         return LLMClient.ToolCall(call.name, newArgs)
+    }
+
+    /**
+     * v4.0.21: Build a context-aware accessibility error message.
+     *
+     * Distinguishes between:
+     * 1. Accessibility NOT enabled in settings → tell user to enable it
+     * 2. Accessibility enabled in settings BUT service instance not bound →
+     *    Android killed/restarted the service. Tell user to toggle OFF then ON.
+     *    (This is the "why does it keep saying turn on accessibility when it's
+     *    already on" bug — the setting is on, but the service process is dead.)
+     */
+    private fun buildAccessibilityErrorMessage(context: Context): String {
+        val isEnabled = AgentAccessibilityService.isEnabled(context)
+        return if (isEnabled) {
+            // Settings say it's ON, but the service instance is null (dead/unbound).
+            // This happens when Android killed the service (OOM, app restart, MIUI
+            // battery optimization). The fix is to toggle it OFF then ON in settings,
+            // which forces Android to rebind the service.
+            "⚠️ Accessibility is enabled but the service is not responding (Android may have killed it). " +
+                "Go to Settings → Accessibility → AI Agent → toggle it OFF then back ON to reconnect. " +
+                "This happens when Android restarts the service in the background."
+        } else {
+            "Accessibility service is not enabled. Open Settings → Accessibility → AI Agent → toggle ON. " +
+                "(This tool requires accessibility to control the screen.)"
+        }
     }
 
     data class ToolResult(

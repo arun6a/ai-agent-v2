@@ -1,10 +1,13 @@
 package com.ai.agent.rules
 
 import android.app.Notification
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -33,6 +36,39 @@ class NotificationListener : NotificationListenerService() {
         // v3.0.3: Anti-loop cooldown — don't reply to same package within 10 seconds
         private const val REPLY_COOLDOWN_MS = 10_000L  // 10 seconds
         private val lastReplyTime = mutableMapOf<String, Long>()  // packageName → timestamp
+
+        /**
+         * v4.0.21: Check if the notification listener is connected + alive.
+         * If it's enabled in settings but the instance is null (Android killed it),
+         * request a rebind so it reconnects automatically.
+         *
+         * Call this on app startup or before executing a notification-triggered rule.
+         * Returns true if the listener is currently connected + ready to receive
+         * notifications.
+         */
+        fun ensureConnected(context: Context): Boolean {
+            if (instance != null) return true  // already connected
+            // Check if enabled in settings
+            val enabled = isNotificationListenerEnabled(context)
+            if (!enabled) return false
+            // Enabled but not connected — request rebind
+            try {
+                val cn = ComponentName(context, NotificationListener::class.java)
+                NotificationListenerService.requestRebind(cn)
+                Log.i(TAG, "🔄 NotificationListener enabled but not connected — requested rebind")
+            } catch (e: Exception) {
+                Log.e(TAG, "requestRebind failed in ensureConnected", e)
+            }
+            return false  // not connected YET (rebind is async)
+        }
+
+        private fun isNotificationListenerEnabled(context: Context): Boolean {
+            val expected = "${context.packageName}/${NotificationListener::class.java.name}"
+            val enabled = Settings.Secure.getString(
+                context.contentResolver, "enabled_notification_listeners"
+            ) ?: ""
+            return enabled.contains(expected)
+        }
     }
 
     private val db by lazy { AgentDatabase(this) }
@@ -66,7 +102,17 @@ class NotificationListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         instance = null
-        Log.w(TAG, "⚠️ NotificationListener disconnected")
+        Log.w(TAG, "⚠️ NotificationListener disconnected — requesting rebind")
+        // v4.0.21: Proactively request rebind. Android sometimes disconnects
+        // the listener (app update, OOM, settings change). requestRebind()
+        // asks the system to reconnect us automatically. This is the official
+        // API for keeping a NotificationListenerService alive.
+        try {
+            requestRebind(ComponentName(this, NotificationListener::class.java))
+            Log.i(TAG, "✅ Rebind requested — system will reconnect shortly")
+        } catch (e: Exception) {
+            Log.e(TAG, "requestRebind failed", e)
+        }
         // Don't unregister triggers here — they'll be re-registered when listener reconnects
     }
 

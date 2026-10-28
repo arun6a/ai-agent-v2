@@ -125,7 +125,8 @@ object RuleTools {
                 }
             }
             "deleteRule" -> {
-                val id = (call.args["id"] as? Number)?.toLong() ?: return ToolExecutor.ToolResult(false, "missing id")
+                // v4.0.21: Handle id as Number, String, or Int — models return it inconsistently.
+                val id = parseId(call.args["id"]) ?: return ToolExecutor.ToolResult(false, "missing id")
                 // Cancel scheduled alarm if it's a time rule
                 try {
                     com.ai.agent.rules.RuleScheduler(context).cancelRule(id)
@@ -136,7 +137,8 @@ object RuleTools {
                 ToolExecutor.ToolResult(true, "Deleted rule id=$id")
             }
             "modifyRule" -> {
-                val id = (call.args["id"] as? Number)?.toLong() ?: return ToolExecutor.ToolResult(false, "missing id")
+                // v4.0.21: Handle id as Number, String, or Int.
+                val id = parseId(call.args["id"]) ?: return ToolExecutor.ToolResult(false, "missing id")
                 val existing = database.getRules().find { it.id == id }
                     ?: return ToolExecutor.ToolResult(false, "rule id=$id not found")
                 val newName = call.args["name"] as? String
@@ -174,6 +176,20 @@ object RuleTools {
                 ToolExecutor.ToolResult(true, "Modified rule id=$id")
             }
             else -> ToolExecutor.ToolResult(false, "Unknown rule tool: ${call.name}")
+        }
+    }
+
+    /**
+     * v4.0.21: Parse a rule ID from any type the model might return.
+     * Models return id as: Int(1), Long(1L), Double(1.0), String("1"), or even String("1.0").
+     * This handles all cases + returns null if truly missing/unparseable.
+     */
+    private fun parseId(value: Any?): Long? {
+        return when (value) {
+            is Number -> value.toLong()
+            is String -> value.trim().trim('"').trim('\'')
+                .substringBefore('.').toLongOrNull()
+            else -> null
         }
     }
 }

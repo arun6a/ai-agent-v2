@@ -64,6 +64,10 @@ class MainActivity : ComponentActivity() {
         // v3.7.2: Remote HTTP server (AgentHttpServer) removed — in-app Logs
         // section replaces remote testing. See Hub → Logs.
         startRuleEngine()                                   // Task 58
+        // v4.0.21: Ensure NotificationListener is connected (Android may have
+        // killed it since last app open). If enabled in settings but not
+        // connected, requestRebind will make the system reconnect it.
+        com.ai.agent.rules.NotificationListener.ensureConnected(this)
         // v3.5.4: Overlay pipeline disabled — will be re-added in a future version.
         // showOverlay()                                       // Task 61
         // v3.5.4: Permission requests disabled on launch — will be handled by the
