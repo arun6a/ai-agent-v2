@@ -414,10 +414,18 @@ class LLMClient(private val context: Context) {
             // spaces/commas (e.g., createRule(name=WhatsApp Auto Reply, action=reply: I'm busy, will get back!)).
             // Native function calling avoids this entirely — the model returns
             // structured tool_calls in the response, not text JSON.
-            // Only enabled for providers that support it (OpenRouter, Groq, OpenAI, etc.)
+            // v4.0.19: Also check endpoint URL — bindings can use zai_direct providerId
+            // but route to OpenRouter/Groq/etc. Check both providerId AND endpoint.
+            // Note: endpoint is not available in buildOpenAIRequest scope, so we
+            // check providerId here. The caller (chat()) can also pass the endpoint.
+            // For now, we check if providerId is zai_direct AND the model name
+            // looks like an OpenRouter model (contains "/").
+            val supportsNativeTools = providerId in setOf(
+                "openrouter", "groq", "openai", "together", "deepinfra",
+                "fireworks", "cerebras", "mistral", "apikeys_in", "cline", "custom"
+            ) || (providerId == "zai_direct" && model.contains("/"))  // OpenRouter models have "/" in name
             // Z.AI proxy/direct don't support tools array → still uses text JSON path.
-            if (providerId in setOf("openrouter", "groq", "openai", "together", "deepinfra",
-                    "fireworks", "cerebras", "mistral", "apikeys_in", "cline", "custom")) {
+            if (supportsNativeTools) {
                 val tools = buildToolsArray(toolFilter)
                 if (tools.length() > 0) {
                     put("tools", tools)

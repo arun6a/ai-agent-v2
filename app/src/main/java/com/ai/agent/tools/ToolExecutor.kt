@@ -205,6 +205,7 @@ class ToolExecutor(private val context: Context) {
             "openGoogleSearch", "shareToApp", "openContact",
             "mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto",
             "forceStopApp", "uninstallApp",  // v4.0.17: Use ActivityManager, not accessibility
+            "complete",  // v4.0.19: Just sets a flag, doesn't need accessibility
         )
 
         // For non-accessibility tools, skip the service check entirely.
