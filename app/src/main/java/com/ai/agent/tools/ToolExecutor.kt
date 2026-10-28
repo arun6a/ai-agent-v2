@@ -154,9 +154,13 @@ class ToolExecutor(private val context: Context) {
     }
 
     private suspend fun executeTool(rawCall: LLMClient.ToolCall): ToolResult {
-        // v4.0.16: Normalize tool name for case-insensitive matching.
+        // v4.0.18: Case-insensitive tool name matching.
         // Brain sometimes sends "createrule" instead of "createRule".
-        var call = LLMClient.ToolCall(rawCall.name.trim().lowercase().replaceFirstChar { it.uppercase() }, rawCall.args)
+        // v4.0.16 broke this by lowercasing+capitalizing first letter → "Createrule" ≠ "createRule".
+        // Now: lookup canonical name from available tools by lowercase match.
+        val toolNameLower = rawCall.name.trim().lowercase()
+        val canonicalName = getAvailableToolNames().find { it.lowercase() == toolNameLower } ?: rawCall.name.trim()
+        var call = LLMClient.ToolCall(canonicalName, rawCall.args)
         // Normalize positional args (0, 1, 2...) to named args for tools that the LLM
         // wrote as plain text (e.g., "tap(970, 180)" → args={"0":970, "1":180}).
         // This converts them to the expected named format ({"x":970, "y":180}).
