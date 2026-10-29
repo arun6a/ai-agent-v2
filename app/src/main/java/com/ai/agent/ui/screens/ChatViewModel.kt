@@ -573,7 +573,12 @@ class ChatViewModel(
                 com.ai.agent.llm.ContextualPromptBuilder.isTier1NoTools(userMessage)
             } else false
             val basePrompt = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
-            LogCapture.i(TAG, "Contextual prompt: ${com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(basePrompt)} tokens, tools=${contextualToolFilter?.size ?: "all"}")
+            val promptTokens = com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(basePrompt)
+            val toolCount = contextualToolFilter?.size ?: 158
+            val toolTokens = toolCount * 40 / 4  // ~40 tokens per tool schema
+            // v4.0.40: Detailed token breakdown for Logs section
+            LogCapture.i(TAG, "Contextual prompt: $promptTokens tokens, tools=$toolCount (~${toolTokens} tokens)")
+            LogCapture.tokens(TAG, "TOKEN BREAKDOWN: prompt=$promptTokens, tools=$toolCount (~${toolTokens} tok), total_est=${promptTokens + toolTokens}")
             // v3.6.2: Use FTS5 recallSimilar to find the 10 most RELEVANT memories
             // for the current task, instead of taking the first 10 alphabetically.
             val allMemory = database.getAllMemory()

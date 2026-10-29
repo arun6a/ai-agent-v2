@@ -314,6 +314,19 @@ object ContextualPromptBuilder {
         val relevantGroups = getRelevantGroups(msg)
         if (relevantGroups.isNotEmpty()) {
             val promptSize = relevantGroups.sumOf { it.tools.size }
+
+            // v4.0.40: TIER 2.5 — if the message is medium-complexity (matches
+            // multiple groups OR contains complex keywords), expand to include
+            // more groups. This gives the brain more tools without going full Tier 3.
+            val isMediumComplexity = relevantGroups.size >= 3 ||
+                msg.contains(" and ") || msg.contains(" then ") || msg.contains(" after ")
+            if (isMediumComplexity) {
+                val expandedGroups = expandGroupsForMediumTasks(relevantGroups)
+                val expandedSize = expandedGroups.sumOf { it.tools.size }
+                Log.i(TAG, "Tier 2.5: Expanded contextual → ${expandedGroups.size} groups, $expandedSize tools (was ${relevantGroups.size} groups, $promptSize tools)")
+                return buildGroupPrompt(expandedGroups)
+            }
+
             Log.i(TAG, "Tier 2: Contextual → ${relevantGroups.size} groups, $promptSize tools")
             return buildGroupPrompt(relevantGroups)
         }
@@ -325,6 +338,41 @@ object ContextualPromptBuilder {
         } catch (e: Exception) {
             "You are an AI agent controlling an Android phone. Respond in JSON: {\"reply\":\"\",\"tool_calls\":[{\"name\":\"\",\"args\":{}}]}"
         }
+    }
+
+    /**
+     * v4.0.40: Expand groups for medium-complexity tasks (Tier 2.5).
+     * Adds commonly-needed groups that medium tasks often require:
+     * - If Screen matched → add Browser (screen tasks often need web)
+     * - If Apps matched → add Memory (app tasks often need recall)
+     * - If Rules matched → add Memory (rules reference past memories)
+     * - If Web matched → add Browser (web research needs browser)
+     * - Always add Device (for battery/time checks)
+     *
+     * This gives ~60-80 tools instead of Tier 2's ~30 or Tier 3's 158.
+     */
+    private fun expandGroupsForMediumTasks(matched: List<ToolGroup>): List<ToolGroup> {
+        var expanded = matched.toMutableList()
+        val groupNames = matched.map { it.name }.toSet()
+
+        // Auto-add groups that medium-complexity tasks often need
+        if ("Screen" in groupNames && "Browser" !in groupNames) {
+            TOOL_GROUPS.find { it.name == "Browser" }?.let { expanded.add(it) }
+        }
+        if ("Apps" in groupNames && "Memory" !in groupNames) {
+            TOOL_GROUPS.find { it.name == "Memory" }?.let { expanded.add(it) }
+        }
+        if ("Rules" in groupNames && "Memory" !in groupNames) {
+            TOOL_GROUPS.find { it.name == "Memory" }?.let { expanded.add(it) }
+        }
+        if ("Web" in groupNames && "Browser" !in groupNames) {
+            TOOL_GROUPS.find { it.name == "Browser" }?.let { expanded.add(it) }
+        }
+        // Always add Device for medium tasks (battery/time checks)
+        if ("Device" !in groupNames) {
+            TOOL_GROUPS.find { it.name == "Device" }?.let { expanded.add(it) }
+        }
+        return expanded.distinctBy { it.name }
     }
 
     /**
@@ -356,13 +404,25 @@ object ContextualPromptBuilder {
         // Tier 2: matched groups → only those tool names + ALWAYS_TOOLS.
         val groups = getRelevantGroups(msg)
         if (groups.isNotEmpty()) {
+            // v4.0.40: Tier 2.5 — expand groups for medium-complexity tasks
+            val isMediumComplexity = groups.size >= 3 ||
+                msg.contains(" and ") || msg.contains(" then ") || msg.contains(" after ")
+            val effectiveGroups = if (isMediumComplexity) {
+                expandGroupsForMediumTasks(groups)
+            } else {
+                groups
+            }
+
             val names = mutableSetOf<String>()
             // Strip the "(...)" suffix from ALWAYS_TOOLS entries like "speak(text)".
             for ((raw, _) in ALWAYS_TOOLS) {
                 val n = raw.substringBefore("(").trim()
                 if (n.isNotEmpty()) names.add(n)
             }
-            for (g in groups) names.addAll(g.tools)
+            for (g in effectiveGroups) names.addAll(g.tools)
+            if (isMediumComplexity) {
+                Log.i(TAG, "Tier 2.5: Expanded tool filter → ${effectiveGroups.size} groups, ${names.size} tools")
+            }
             return names.toList()
         }
         // Tier 3: no keyword match → caller should send the full toolset.
@@ -409,9 +469,14 @@ object ContextualPromptBuilder {
         val msg = userMessage.lowercase().trim()
         // Tier 1: greetings + no-tool messages.
         if (isNoToolMessage(msg)) return 1
-        // Tier 2: contextual (matched tool groups).
+        // v4.0.40: Tier 2.5 — medium-complexity tasks (3+ groups OR "and"/"then"/"after")
         val groups = getRelevantGroups(msg)
-        if (groups.isNotEmpty()) return 2
+        if (groups.isNotEmpty()) {
+            val isMediumComplexity = groups.size >= 3 ||
+                msg.contains(" and ") || msg.contains(" then ") || msg.contains(" after ")
+            return if (isMediumComplexity) 2 else 2  // SmartRouting treats 2.5 as Tier 2 (same model)
+            // The tier difference affects tool count, not model selection
+        }
         // Tier 3: full prompt (no keyword match — complex/unknown task).
         return 3
     }

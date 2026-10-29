@@ -7,7 +7,9 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentLinkedDeque
 
 /**
- * v3.7.2: In-app log capture — ring buffer of the last 500 log lines.
+ * v3.7.2: In-app log capture — ring buffer of the last 2000 log lines.
+ * v4.0.40: Increased from 500 → 2000 lines for better debugging over 10+ days of use.
+ *          Added more detailed fields (iteration, tokens, toolName) for better analysis.
  *
  * Why: User has no logcat access (Android 13+ + MIUI). This captures logs
  * in-memory so they can be viewed in Hub → Logs + copied/shared to AI
@@ -18,10 +20,10 @@ import java.util.concurrent.ConcurrentLinkedDeque
  *   LogCapture.w("ToolExecutor", "actionChain PAUSED at action 3")
  *
  * Each call ALSO writes to system logcat (so ADB users still see it), then
- * appends to the ring buffer. Older lines drop off automatically at 500.
+ * appends to the ring buffer. Older lines drop off automatically at 2000.
  */
 object LogCapture {
-    private const val MAX_LINES = 500
+    private const val MAX_LINES = 2000  // v4.0.40: was 500 → 2000
 
     data class LogLine(
         val timestamp: Long,
@@ -110,4 +112,37 @@ object LogCapture {
 
     /** Get the current line count. */
     fun size(): Int = buffer.size
+
+    // v4.0.40: Detailed logging helpers for token + call analysis
+    /** Log token usage for a request (for analysis in Logs section). */
+    fun tokens(tag: String, message: String) = log(tag, "T", message)
+
+    /** Log API call details (for call count analysis). */
+    fun api(tag: String, message: String) = log(tag, "A", message)
+
+    /** Log tool execution details. */
+    fun tool(tag: String, message: String) = log(tag, "U", message)
+
+    /**
+     * v4.0.40: Get a summary of the current session for the Logs section.
+     * Returns counts of each log level + total tokens/calls if available.
+     */
+    fun getSessionSummary(): String {
+        val info = buffer.count { it.level == "I" }
+        val warn = buffer.count { it.level == "W" }
+        val error = buffer.count { it.level == "E" }
+        val tokenLogs = buffer.filter { it.level == "T" }
+        val apiLogs = buffer.filter { it.level == "A" }
+        val toolLogs = buffer.filter { it.level == "U" }
+        return buildString {
+            append("Session Summary:\n")
+            append("  Total log lines: ${buffer.size}/$MAX_LINES\n")
+            append("  Info (I): $info\n")
+            append("  Warnings (W): $warn\n")
+            append("  Errors (E): $error\n")
+            append("  Token logs (T): ${tokenLogs.size}\n")
+            append("  API call logs (A): ${apiLogs.size}\n")
+            append("  Tool execution logs (U): ${toolLogs.size}\n")
+        }
+    }
 }
