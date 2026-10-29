@@ -149,8 +149,9 @@ private fun buildToolCategories(allTools: List<String>): List<ToolCategory> {
 
     categories += ToolCategory("Screen", Icons.Outlined.Visibility, select {
         it in setOf(
-            "readScreen", "readScreenStructured", "tap", "clickByText", "type", "swipe",
-            "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput",
+            "readScreen", "readScreenStructured", "tap", "clickByText", "clickElement",
+            "longClick", "longClickElement", "focusElement", "paste", "edit",
+            "type", "swipe", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter", "submitInput",
             "lockScreen", "takeScreenshotToGallery",
         )
     })
@@ -171,6 +172,10 @@ private fun buildToolCategories(allTools: List<String>): List<ToolCategory> {
     categories += ToolCategory("Web", Icons.Outlined.Cloud, select {
         it in setOf("webSearch", "makeHttpRequest", "downloadFile", "openUrl", "fetchPageText")
     })
+    // v4.0.39: New Search tools (headless + API-based)
+    categories += ToolCategory("Search", Icons.Outlined.Search, select {
+        it in setOf("headlessGoogleSearch", "headlessSearch", "braveSearch", "googleSearchApi", "smartSearch")
+    })
     categories += ToolCategory("Device", Icons.Outlined.Build, select {
         it in setOf(
             "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
@@ -178,11 +183,25 @@ private fun buildToolCategories(allTools: List<String>): List<ToolCategory> {
             "toggleFlashlight", "toggleWifi",
         )
     })
+    // v4.0.39: New Device Info tools
+    categories += ToolCategory("Device Info", Icons.Outlined.Info, select {
+        it in setOf(
+            "getBrightness", "getFlashlightState", "getDeviceUptime",
+            "getMemoryInfo", "getStorageInfo", "getBatteryHealth",
+            "getScreenOrientation", "isCharging",
+            "getRingtoneMode", "setRingtoneMode",
+        )
+    })
+    // v4.0.39: Permission-based tools
+    categories += ToolCategory("Permissions", Icons.Outlined.Lock, select {
+        it in setOf("readSms", "vibrate", "getPhoneState", "wakeLock")
+    })
     categories += ToolCategory("Memory", Icons.Outlined.Memory, select {
         it in setOf(
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "getClipboard", "setClipboard",
+            "getConversationHistory", "getFullMemory",  // v4.0.39: on-demand context
         )
     })
     categories += ToolCategory("Location", Icons.Outlined.Public, select {
@@ -211,7 +230,15 @@ private fun buildToolCategories(allTools: List<String>): List<ToolCategory> {
         it in setOf("executeSkill", "listSkills", "createSkill", "deleteSkill", "getSkill")
     })
     categories += ToolCategory("Async", Icons.Outlined.Refresh, select {
-        it in setOf("wait", "waitAndContinue")
+        it in setOf("wait", "waitAndContinue", "runShellCommand", "actionChain")
+    })
+    // v4.0.39: Custom tools (created by AI via createCustomTool)
+    categories += ToolCategory("Custom Tools", Icons.Outlined.Extension, select {
+        it in setOf("createCustomTool", "listCustomTools", "deleteCustomTool")
+    })
+    // v4.0.39: Navigation + Wallpaper
+    categories += ToolCategory("System", Icons.Outlined.Settings, select {
+        it in setOf("navigateToAppScreen", "listAppScreens", "setWallpaper", "complete")
     })
 
     // Anything not bucketed lands in Misc.
@@ -230,7 +257,10 @@ private fun buildToolCategories(allTools: List<String>): List<ToolCategory> {
 @Composable
 internal fun ToolsSection() {
     val context = LocalContext.current
-    val allTools = remember { ToolExecutor.getAvailableToolNames() }
+    // v4.0.39: Include custom tools (created by AI via createCustomTool) in the list
+    val allTools = remember {
+        ToolExecutor.getAvailableToolNames() + com.ai.agent.tools.custom.CustomToolStore.getToolNames(context)
+    }
     val categories = remember(allTools) { buildToolCategories(allTools) }
 
     LazyVerticalGrid(
