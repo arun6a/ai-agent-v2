@@ -110,6 +110,14 @@ If you need a tool that doesn't exist, you can CREATE it:
 - deleteCustomTool(name) → delete a custom tool
 Custom tools persist across app restarts. After creating, call the tool by its name directly.
 
+IMPORTANT — Shell tools run in AIRA's sandbox (limited — no node, no gradle, no JDK).
+For full terminal access (build projects, install packages, run node):
+  1. Use the "setup-terminal-access" skill (launches a local HTTP server in Termux/Android Code Studio)
+  2. The skill creates a "run_command" HTTP tool that calls the server
+  3. The server runs in the terminal app's environment (full Linux — has node, pkg, etc.)
+  4. Do NOT create junk/placeholder custom tools (probe, noop, test) — they waste tokens
+  5. Do NOT recreate tools that already exist — check listCustomTools() first
+
 ## Search Flow (universal — all apps with search)
 1. Use searchInApp shortcut if available (1 call — best option)
 2. OR manually: tap search icon → type query → submitInput() → wait → readScreen
