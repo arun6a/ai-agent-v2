@@ -4,6 +4,126 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.39 (versionCode 167) — Tools Section Reorganized + Custom Tools Visible
+**Date:** 2026-10-29
+**Commit:** `4aa2cf6`
+
+### Changes
+- Reorganized Tools section with proper categories (5 new: Search, Device Info, Permissions, Custom Tools, System)
+- Custom tools (created by AI via `createCustomTool`) now visible in Hub → Tools
+- Misc category reduced from ~20 tools to 0-2 (only truly uncategorized)
+
+---
+
+## v4.0.38 (versionCode 166) — Working Directory Changed to /Aira/
+**Date:** 2026-10-29
+**Commit:** `f7cba2a`
+
+### Changes
+- Changed working directory from `/storage/emulated/0/Documents/ai-workspace/` → `/storage/emulated/0/Aira/`
+- Added central `Config.WORKSPACE_DIR` constant
+- Automatic migration: old files copied to new location on first launch
+
+---
+
+## v4.0.37 (versionCode 165) — Pattern Learning + Device Calibration
+**Date:** 2026-10-29
+**Commit:** `4905f8d`
+
+### Major Features
+1. **Pattern Learning**: When `complete(success=true)` is called, saves the successful tool sequence as `pattern_*` memory. Next similar task → AI uses known-good sequence (saves 2-3 API calls).
+2. **Device Calibration**: When `clickByText`/`clickElement` succeeds, saves app+element+result as `calib_*` memory. AI learns which clicks work on YOUR device.
+3. Removed screen resolution from system prompt (was encouraging coordinate guessing)
+4. Quiet VLM errors (401 logged as WARN, not ERROR — a11y fallback works silently)
+
+---
+
+## v4.0.34 (versionCode 162) — Clean Error Messages + Improved 402 Retry
+**Date:** 2026-10-28
+**Commit:** `7cafdf3`
+
+### Changes
+- Removed all provider recommendations (Z.ai, Cline, Groq) from error messages
+- Error messages now neutral: "Add credits at the provider's dashboard, or add a new API key in Hub → LLM → Configure."
+- Improved 402 retry: extracts ALL "can only afford N" values from nested `previous_errors`, uses smallest
+
+---
+
+## v4.0.33 (versionCode 161) — Fix Prompt Too Large for Free Tier
+**Date:** 2026-10-28
+**Commit:** `04d2b8b`
+
+### Changes
+- Pre-flight token budget check: estimates total tokens, reduces `max_tokens` if over 3192 limit
+- Prompt-too-large fallback: retries with minimal tools (8) → no tools (text-only)
+- Fixes "try again" failing with 16605 tokens on OpenRouter free tier
+
+---
+
+## v4.0.32 (versionCode 160) — Headless Google Search + API Keys + Deep Links
+**Date:** 2026-10-28
+**Commit:** `42e60de`
+
+### 7 New Tools
+1. `headlessGoogleSearch(query)` — Google search via off-screen WebView (no CAPTCHA!)
+2. `headlessSearch(query, engine)` — generic headless WebView search
+3. `braveSearch(query, limit)` — official Brave Search API (2000/month free)
+4. `googleSearchApi(query, limit)` — official Google Custom Search API (100/day free)
+5. `smartSearch(query)` — tries Google API → Brave → Bing → Headless Google
+6. `navigateToAppScreen(screen)` — AI opens any app screen (settings, permissions, etc.)
+7. `listAppScreens()` — lists available screens
+
+### Settings UI
+- New "Search API Keys" section: Brave + Google API key inputs with status badges
+
+---
+
+## v4.0.30 (versionCode 158) — 14 New Permission + Device Info Tools
+**Date:** 2026-10-28
+**Commit:** `fb695cc`
+
+### 14 New Tools
+**Permission-based:** readSms, vibrate, getPhoneState, wakeLock
+**Device info:** getBrightness, getFlashlightState, getDeviceUptime, getMemoryInfo, getStorageInfo, getBatteryHealth, getScreenOrientation, isCharging, getRingtoneMode, setRingtoneMode
+
+---
+
+## v4.0.26 (versionCode 155) — AI Can CREATE New Tools at Runtime
+**Date:** 2026-10-28
+**Commit:** `de41b17`
+
+### Major Feature
+- `createCustomTool(name, description, handlerType, handler, parameters)` — AI creates new tools!
+- Two handler types: `shell` (runs shell command) + `http` (makes HTTP request)
+- Tools persist across app restarts (saved to JSON)
+- `listCustomTools()` + `deleteCustomTool(name)` for management
+
+---
+
+## v4.0.20 (versionCode 149) — Fixed Rules + Skills System (5 Root Causes)
+**Date:** 2026-10-28
+**Commit:** `2daad30`
+
+### 5 Root Cause Fixes
+1. Context-aware arg alias (`name→package` only for package-taking tools)
+2. Implemented `parseArgsAsKeyValue` (was called but never defined)
+3. Resolved prompt/tools conflict (native function calling vs JSON text)
+4. RuleEngine routed through `chatWithFailover` + real prompt
+5. Hardened text parser (comma-in-value handling)
+
+---
+
+## v4.0.19 (versionCode 148) — Native Function Calling Fix
+**Date:** 2026-10-28
+**Commit:** `f361200`
+
+### Changes
+- Re-enabled native function calling for OpenRouter
+- Fixed case-insensitive tool name matching
+- Added `complete` to noAccessibilityNeeded
+
+---
+
 ## v2.3.3 (versionCode 24) — getWeather + webSearch fetchTop + AppProfileManager
 **Date:** 2026-10-12
 **Commit:** `145c93d`
