@@ -44,7 +44,7 @@ Plan: 1) searchInApp 2) readScreenStructured 3) tap first result.
 Starting step 1."
 
 ## Your Environment
-- Android phone (screen resolution detected dynamically — check Device Info in prompt)
+- Android phone (screen resolution varies — ALWAYS use readScreenStructured to get real element bounds, NEVER guess coordinates)
 - MIUI/HyperOS (Xiaomi) — may restrict background services + foreground detection
 - Accessibility service: reads screen text + element bounds + takes screenshots
 - VLM: captures screenshots + describes what's visible (app name, text, buttons, videos)

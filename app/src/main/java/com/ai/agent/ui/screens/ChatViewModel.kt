@@ -838,15 +838,17 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // The brain naturally plans in its reply. Action history keeps it on track.
             // The complete tool forces verification before stopping.
 
-            // v3.8.13: Inject the ACTUAL screen resolution so the brain knows the coordinate space.
-            // Was hardcoded 1080x2400 — but tablets have different resolutions (2880x1800, etc.).
-            val displayMetrics = context.resources.displayMetrics
-            val screenWidth = displayMetrics.widthPixels
-            val screenHeight = displayMetrics.heightPixels
-            systemPrompt += "\n\n## Device Info\n" +
-                "Screen resolution: ${screenWidth}x${screenHeight} pixels. " +
-                "When tapping, ALWAYS get coordinates from readScreenStructured bounds (not guessed). " +
-                "Calculate center: x=(left+right)/2, y=(top+bottom)/2."
+            // v4.0.37: REMOVED screen resolution from the system prompt.
+            // Was: "Screen resolution: 1080x2400 pixels. When tapping, get coordinates from readScreenStructured..."
+            // Problem: telling the AI the resolution ENCOURAGED coordinate guessing ("the screen is
+            // 1080 wide, so the button must be at x=540"). This caused mistaps on devices with
+            // different resolutions + let the AI be lazy (guess instead of reading the screen).
+            // Now: the AI must ALWAYS use readScreenStructured to get real element bounds.
+            // This is more reliable — works on ANY device without hardcoded assumptions.
+            // val displayMetrics = context.resources.displayMetrics
+            // val screenWidth = displayMetrics.widthPixels
+            // val screenHeight = displayMetrics.heightPixels
+            // systemPrompt += "\n\n## Device Info\nScreen resolution: ${screenWidth}x${screenHeight}..."
 
             // v3.6.2: Per-iteration instruction moved here (was repeated every step).
             // This saves ~50 tokens per iteration × every step.
@@ -1123,6 +1125,21 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         val reason = completeCall?.args?.get("reason") as? String ?: "No reason"
                         finalReply = if (success) "✅ Done! $reason" else "❌ Task couldn't be completed. $reason"
                         LogCapture.i(TAG, "✓ complete tool called (success=$success) — stopping loop")
+
+                        // v4.0.37: Pattern Learning — save successful tool sequences.
+                        // When a task succeeds, save the tool sequence so the AI can reuse it
+                        // next time a similar request comes in (saves exploration calls).
+                        if (success && toolCallHistory.isNotEmpty()) {
+                            try {
+                                com.ai.agent.learning.PatternLearner.saveSuccessfulPattern(
+                                    context = context,
+                                    userMessage = userMessage,
+                                    toolSequence = toolCallHistory.distinct().take(10),  // unique tools, max 10
+                                    reason = reason
+                                )
+                            } catch (_: Exception) {}
+                        }
+
                         // Execute the complete tool (so it gets logged)
                         val completeResults = toolExecutor.executeTools(listOf(completeCall!!))
                         val completeDisplay = completeResults.mapIndexed { i, r ->

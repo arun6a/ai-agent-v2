@@ -57,7 +57,21 @@ object ScreenTools {
             }
             "clickByText" -> {
                 val text = call.args["text"] as? String ?: return ToolExecutor.ToolResult(false, "missing text")
-                ToolExecutor.ToolResult(service!!.clickByText(text), "clickByText($text)")
+                val result = service!!.clickByText(text)
+                // v4.0.37: Device Calibration — save click result for this app
+                try {
+                    val appPkg = service.getCurrentForegroundPackage() ?: ""
+                    if (appPkg.isNotEmpty()) {
+                        com.ai.agent.learning.PatternLearner.saveClickCalibration(
+                            context = context,
+                            appPackage = appPkg,
+                            toolName = "clickByText",
+                            elementDesc = text,
+                            success = result
+                        )
+                    }
+                } catch (_: Exception) {}
+                ToolExecutor.ToolResult(result, "clickByText($text)")
             }
             // v3.9.9: clickElement(index) — click by index from readScreenStructured.
             // Preferred over tap(x,y) — no coordinate guessing. The brain reads
@@ -67,6 +81,19 @@ object ScreenTools {
                 val index = (call.args["index"] as? Number)?.toInt()
                     ?: return ToolExecutor.ToolResult(false, "missing index. Call readScreenStructured() first to see element indices, then clickElement(index=N).")
                 val clicked = service!!.clickElement(index)
+                // v4.0.37: Device Calibration — save click result for this app
+                try {
+                    val appPkg = service.getCurrentForegroundPackage() ?: ""
+                    if (appPkg.isNotEmpty()) {
+                        com.ai.agent.learning.PatternLearner.saveClickCalibration(
+                            context = context,
+                            appPackage = appPkg,
+                            toolName = "clickElement",
+                            elementDesc = "index=$index",
+                            success = clicked
+                        )
+                    }
+                } catch (_: Exception) {}
                 ToolExecutor.ToolResult(clicked, if (clicked) "clickElement($index) → tapped" else "clickElement($index) failed (element not found — screen may have changed. Call readScreenStructured() again.)")
             }
             // v4.0.2: longClick — long press (context menus, drag, etc.)

@@ -146,8 +146,14 @@ object VisionTools {
                 val responseBody = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "VLM API error ${response.code}: ${responseBody.take(200)}")
-                    return@withContext "VLM error: ${response.code}"
+                    // v4.0.36: Less noisy VLM errors — 401 happens when the vision endpoint
+                    // uses cookie auth (Z.AI proxy). Aira falls back to a11y, so just warn.
+                    if (response.code == 401) {
+                        Log.w(TAG, "VLM auth failed (401) — falling back to a11y silently.")
+                    } else {
+                        Log.w(TAG, "VLM API error ${response.code}: ${responseBody.take(100)}")
+                    }
+                    return@withContext ""  // empty = VLM failed, caller falls back to a11y
                 }
 
                 val json = org.json.JSONObject(responseBody)
@@ -211,8 +217,14 @@ object VisionTools {
                 val responseBody = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "VLM API error ${response.code}: ${responseBody.take(200)}")
-                    return@withContext "VLM error: ${response.code}"
+                    // v4.0.36: Less noisy VLM errors — 401 happens when the vision endpoint
+                    // uses cookie auth (Z.AI proxy). Aira falls back to a11y, so just warn.
+                    if (response.code == 401) {
+                        Log.w(TAG, "VLM auth failed (401) — falling back to a11y silently.")
+                    } else {
+                        Log.w(TAG, "VLM API error ${response.code}: ${responseBody.take(100)}")
+                    }
+                    return@withContext ""  // empty = VLM failed, caller falls back to a11y
                 }
 
                 val json = org.json.JSONObject(responseBody)
@@ -338,9 +350,13 @@ object VisionTools {
                 val responseBody = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
-                    LogCapture.e(TAG, "VLM API error ${response.code}: ${responseBody.take(300)}")
-                    Log.e(TAG, "VLM error ${response.code}: ${responseBody.take(300)}")
-                    return@withContext "VLM error: ${response.code}. Body: ${responseBody.take(200)}"
+                    // v4.0.36: Less noisy — 401 means the endpoint needs cookie auth.
+                    if (response.code == 401) {
+                        Log.w(TAG, "VLM auth failed (401) — falling back to a11y.")
+                    } else {
+                        Log.w(TAG, "VLM error ${response.code}: ${responseBody.take(100)}")
+                    }
+                    return@withContext ""  // empty = VLM failed, caller falls back to a11y
                 }
 
                 val json = org.json.JSONObject(responseBody)
