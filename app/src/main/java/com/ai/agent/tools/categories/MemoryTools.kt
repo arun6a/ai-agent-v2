@@ -83,6 +83,13 @@ object MemoryTools {
                     ToolExecutor.ToolResult(true, sb.toString())
                 }
             }
+            // v4.0.41: getConversationSummary — AI reads WhatsApp/messaging conversation history.
+            // Used when user asks: "what messages did I get?" / "who texted me?" / "summarize replies"
+            "getConversationSummary" -> {
+                val contact = call.args["contact"] as? String ?: "all"
+                val summary = com.ai.agent.rules.ConversationMemory.getConversationForAI(context, contact)
+                ToolExecutor.ToolResult(true, summary)
+            }
             "recallSimilar" -> {
                 val query = call.args["query"] as? String ?: return ToolExecutor.ToolResult(false, "missing query")
                 val results = database.recallSimilar(query)

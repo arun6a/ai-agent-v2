@@ -158,7 +158,19 @@ class NotificationListener : NotificationListenerService() {
                 Log.i(TAG, "🔔 Notification rule matched: ${rule.name} (from $packageName: $title)")
 
                 // v3.0.5: Save incoming message to conversation memory
-                val convKey = if (trigger.contains(":")) trigger else packageName
+                // v4.0.41: Store per-contact, not just per-app.
+                // If trigger is "com.whatsapp:Mom" → key = "com.whatsapp:Mom"
+                // If trigger is "com.whatsapp" (any sender) → key = "com.whatsapp:$title"
+                //   (title is the sender name/number from the notification)
+                // This separates Mom's messages from Arjun's messages even if both
+                // use WhatsApp and the rule matches "com.whatsapp".
+                val convKey = if (trigger.contains(":")) {
+                    trigger  // Rule is sender-specific: "com.whatsapp:Mom"
+                } else {
+                    // Rule matches all senders for this app — use sender title as sub-key
+                    val senderKey = if (title.isNotEmpty()) title.replace(" ", "_").replace(":", "_") else "unknown"
+                    "$packageName:$senderKey"
+                }
                 ConversationMemory.addIncoming(this, convKey, "$title: $text")
 
                 val action = rule.action

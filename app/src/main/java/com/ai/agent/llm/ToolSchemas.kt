@@ -366,6 +366,11 @@ object ToolSchemas {
             )),
         Schema("getFullMemory", "Read ALL stored memories (not just the top 10 in the prompt). Use when recallSimilar might have missed something, or when you need to find a specific past fact/workflow.",
             mapOf()),
+        // v4.0.41: Conversation summary — WhatsApp/messaging history
+        Schema("getConversationSummary", "Read WhatsApp/messaging conversation history. Use when user asks 'what messages did I get?', 'who texted me?', 'summarize WhatsApp replies', 'what did Mom say?'. Pass contact='all' for all conversations, or contact='whatsapp'/'telegram'/'Mom' for specific.",
+            mapOf(
+                "contact" to Param("string", "Contact/app name: 'all' (default), 'whatsapp', 'telegram', 'Mom', or a phone number. Partial matches work.", required = false),
+            )),
         // v4.0.30: Permission-based tools
         Schema("readSms", "Read recent SMS messages from the inbox. Useful for 'who texted me?' or 'read my last messages'.",
             mapOf(

@@ -126,6 +126,83 @@ object ConversationMemory {
     }
 
     /**
+     * v4.0.41: List ALL conversation keys (contacts/apps that have history).
+     * Returns list of conversation keys (e.g., "com.whatsapp", "com.whatsapp:Mom").
+     */
+    fun listAllConversations(context: android.content.Context): List<String> {
+        val dir = File(context.filesDir, CONV_DIR)
+        if (!dir.exists()) return emptyList()
+        return dir.listFiles()?.map { file ->
+            // Reverse the sanitization: replace _ with : (best effort)
+            file.nameWithoutExtension.replace("_", ":")
+        } ?: emptyList()
+    }
+
+    /**
+     * v4.0.41: Get a summary of ALL conversations.
+     * Returns a readable summary of all conversations with their last few messages.
+     * Used by the getConversationSummary tool so the AI can answer:
+     *   "what messages did I get?" / "who texted me?" / "summarize WhatsApp replies"
+     */
+    fun getAllConversationsSummary(context: android.content.Context): String {
+        val dir = File(context.filesDir, CONV_DIR)
+        if (!dir.exists() || dir.listFiles()?.isEmpty() != false) {
+            return "No conversations stored yet."
+        }
+        val sb = StringBuilder("Conversations Summary:\n\n")
+        val files = dir.listFiles()?.sortedByDescending { it.lastModified() } ?: return sb.toString()
+        for (file in files) {
+            val key = file.nameWithoutExtension.replace("_", ":")
+            val history = getHistory(context, key)
+            if (history.isEmpty()) continue
+            val incoming = history.count { it.role == "incoming" }
+            val outgoing = history.count { it.role == "outgoing" }
+            val lastMsg = history.lastOrNull()
+            sb.append("• $key ($incoming incoming, $outgoing replies)\n")
+            sb.append("  Last: ${lastMsg?.time} ${if (lastMsg?.role == "incoming") "Them" else "You"}: ${lastMsg?.text?.take(80)}\n")
+            // Show last 3 exchanges
+            val recent = history.takeLast(6)
+            for (msg in recent) {
+                val speaker = if (msg.role == "incoming") "  → Them" else "  ← You"
+                sb.append("$speaker: ${msg.text.take(100)}\n")
+            }
+            sb.append("\n")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * v4.0.41: Get conversation history for a specific contact/app.
+     * contact can be "com.whatsapp", "com.whatsapp:Mom", or "all".
+     */
+    fun getConversationForAI(context: android.content.Context, contact: String): String {
+        if (contact.lowercase() == "all") {
+            return getAllConversationsSummary(context)
+        }
+        // Try exact match first, then partial match
+        var key = contact
+        var history = getHistory(context, key)
+        if (history.isEmpty()) {
+            // Try matching by partial key (e.g., "whatsapp" matches "com.whatsapp")
+            val allKeys = listAllConversations(context)
+            val match = allKeys.find { it.contains(contact, ignoreCase = true) }
+            if (match != null) {
+                key = match
+                history = getHistory(context, key)
+            }
+        }
+        if (history.isEmpty()) {
+            return "No conversation history found for: $contact"
+        }
+        val sb = StringBuilder("Conversation: $key (${history.size} messages)\n\n")
+        for (msg in history) {
+            val speaker = if (msg.role == "incoming") "Them" else "You (AI reply)"
+            sb.append("[${msg.time}] $speaker: ${msg.text}\n")
+        }
+        return sb.toString()
+    }
+
+    /**
      * Clear ALL conversation histories.
      */
     fun clearAll(context: android.content.Context) {

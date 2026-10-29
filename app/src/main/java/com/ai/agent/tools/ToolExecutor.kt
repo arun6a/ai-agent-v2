@@ -114,6 +114,7 @@ class ToolExecutor(private val context: Context) {
             "setWallpaper",
             // v4.0.29: On-demand context tools
             "getConversationHistory", "getFullMemory",
+            "getConversationSummary",  // v4.0.41: WhatsApp/messaging conversation history
             // v4.0.30: Permission-based tools
             "readSms", "vibrate", "getPhoneState", "wakeLock",
             // v4.0.30: Device info tools
@@ -254,6 +255,7 @@ class ToolExecutor(private val context: Context) {
             "setWallpaper",
             // v4.0.29: On-demand context tools (no accessibility needed)
             "getConversationHistory", "getFullMemory",
+            "getConversationSummary",  // v4.0.41: conversation history
             // v4.0.30: Permission-based + device info tools (no accessibility needed)
             "readSms", "vibrate", "getPhoneState", "wakeLock",
             "getBrightness", "getFlashlightState", "getDeviceUptime",
@@ -713,6 +715,8 @@ class ToolExecutor(private val context: Context) {
             // v4.0.29: On-demand context tools
             "getConversationHistory" -> MemoryTools.execute(call, context, service, database)
             "getFullMemory" -> MemoryTools.execute(call, context, service, database)
+            // v4.0.41: Conversation summary (WhatsApp/messaging history)
+            "getConversationSummary" -> MemoryTools.execute(call, context, service, database)
             // v4.0.30: Permission-based tools
             "readSms" -> com.ai.agent.tools.categories.PermissionTools.execute(call, context, service, database)
             "vibrate" -> com.ai.agent.tools.categories.PermissionTools.execute(call, context, service, database)
