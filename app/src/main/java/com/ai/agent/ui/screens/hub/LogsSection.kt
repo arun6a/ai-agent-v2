@@ -190,7 +190,7 @@ internal fun LogsSection() {
                 // Export
                 IconButton(onClick = {
                     try {
-                        val dir = File("/storage/emulated/0/Documents/ai-workspace")
+                        val dir = File("/storage/emulated/0/Aira")
                         if (!dir.exists()) dir.mkdirs()
                         val file = File(dir, "logs.txt")
                         file.writeText(LogCapture.getAllAsText())

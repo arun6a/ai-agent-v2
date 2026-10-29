@@ -256,7 +256,7 @@ object ToolSchemas {
 
         // ==================== FILES (10) ====================
         Schema("listFiles", "List files in a directory.",
-            mapOf("path" to Param("string", "Directory path (default: Documents/ai-workspace).", required = false))),
+            mapOf("path" to Param("string", "Directory path (default: Aira).", required = false))),
         Schema("readFile", "Read a text file.",
             mapOf("path" to Param("string", "File path.", required = true))),
         Schema("writeFile", "Write text to a file. Marked safe:false in action chains.",

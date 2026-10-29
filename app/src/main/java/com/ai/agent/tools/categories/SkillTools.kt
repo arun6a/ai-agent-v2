@@ -32,7 +32,7 @@ object SkillTools {
                 val trigger = call.args["trigger"] as? String ?: return ToolExecutor.ToolResult(false, "missing trigger")
                 val instructions = call.args["instructions"] as? String ?: return ToolExecutor.ToolResult(false, "missing instructions")
                 try {
-                    val skillsDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+                    val skillsDir = java.io.File("/storage/emulated/0/Aira/skills")
                     if (!skillsDir.exists()) skillsDir.mkdirs()
                     val skillFile = java.io.File(skillsDir, "${name.replace(" ", "_")}.md")
                     val content = """---
@@ -54,7 +54,7 @@ $instructions
             "deleteSkill" -> {
                 val name = call.args["name"] as? String ?: return ToolExecutor.ToolResult(false, "missing name")
                 try {
-                    val skillsDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+                    val skillsDir = java.io.File("/storage/emulated/0/Aira/skills")
                     val assetSkillsDir = java.io.File("assets/skills")  // read-only, can't delete
                     val userSkillFile = java.io.File(skillsDir, "${name.replace(" ", "_")}.md")
                     if (userSkillFile.exists()) {

@@ -56,7 +56,7 @@ class SkillManager(private val context: Context) {
 
         // v4.0.14: Check for .deleted_ marker files — user may have hidden built-in skills.
         // If a marker exists, skip that skill (both from assets and auto-injection).
-        val userSkillsDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+        val userSkillsDir = java.io.File("/storage/emulated/0/Aira/skills")
         val deletedMarkers: Set<String> = if (userSkillsDir.exists()) {
             userSkillsDir.listFiles { f -> f.name.startsWith(".deleted_") }
                 ?.map { it.name.removePrefix(".deleted_") }?.toSet() ?: emptySet()

@@ -11,5 +11,16 @@ package com.ai.agent
  */
 object Config {
     // App version (must match app/build.gradle.kts versionName)
-    const val VERSION = "4.0.19"
+    const val VERSION = "4.0.37"
+
+    // v4.0.38: Aira's working directory on external storage.
+    // All files (skills, downloads, attachments, knowledge, screenshots) live here.
+    // Changed from /storage/emulated/0/Aira/ → /storage/emulated/0/Aira/
+    // for a cleaner, shorter path that's easier for users to find.
+    const val WORKSPACE_DIR = "/storage/emulated/0/Aira"
+    const val ATTACHMENTS_DIR = "$WORKSPACE_DIR/attachments"
+    const val SKILLS_DIR = "$WORKSPACE_DIR/skills"
+    const val KNOWLEDGE_DIR = "$WORKSPACE_DIR/knowledge"
+    const val DOWNLOADS_DIR = "$WORKSPACE_DIR/downloads"
+    const val SCREENSHOTS_DIR = "$WORKSPACE_DIR/screenshots"
 }

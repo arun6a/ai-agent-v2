@@ -86,14 +86,12 @@ class MainActivity : ComponentActivity() {
 
     // -------------------------------------------------------------------------
     // Task 59: Create app folders on first launch.
-    // Mirrors v1's createAppFolders() — the workspace lives at
-    // /storage/emulated/0/Documents/ai-workspace/ with subdirs for skills,
-    // knowledge, attachments, downloads, and screenshots. .nomedia prevents
-    // the gallery from indexing these directories.
+    // v4.0.38: Moved from /storage/emulated/0/Documents/ai-workspace/ → /storage/emulated/0/Aira/
+    // for a cleaner, shorter path. Also migrates old files if the old folder exists.
     // -------------------------------------------------------------------------
     private fun createAppFolders() {
         try {
-            val basePath = "/storage/emulated/0/Documents/ai-workspace"
+            val basePath = com.ai.agent.Config.WORKSPACE_DIR
             val folders = listOf("attachments", "skills", "knowledge", "downloads", "screenshots")
             for (folder in folders) {
                 val dir = java.io.File("$basePath/$folder")
@@ -108,6 +106,29 @@ class MainActivity : ComponentActivity() {
                 try { nomedia.createNewFile() } catch (_: Exception) {}
             }
             Log.i(TAG, "App folders ready at $basePath")
+
+            // v4.0.38: Migrate old workspace if it exists (Documents/ai-workspace → Aira)
+            val oldPath = "/storage/emulated/0/Documents/ai-workspace"
+            val oldDir = java.io.File(oldPath)
+            if (oldDir.exists()) {
+                Log.i(TAG, "Found old workspace at $oldPath — migrating to $basePath")
+                try {
+                    oldDir.walkTopDown().forEach { oldFile ->
+                        if (oldFile.isFile) {
+                            val relativePath = oldFile.absolutePath.removePrefix(oldPath)
+                            val newFile = java.io.File(basePath + relativePath)
+                            newFile.parentFile?.mkdirs()
+                            oldFile.copyTo(newFile, overwrite = true)
+                            Log.i(TAG, "Migrated: ${oldFile.name} → $newFile")
+                        }
+                    }
+                    // Delete old directory after migration
+                    oldDir.deleteRecursively()
+                    Log.i(TAG, "✅ Migration complete — old workspace deleted")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Migration failed (old files still at $oldPath): ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create app folders", e)
         }

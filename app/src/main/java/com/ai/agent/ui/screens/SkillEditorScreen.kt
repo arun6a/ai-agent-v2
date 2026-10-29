@@ -66,7 +66,7 @@ import java.io.File
 //
 //  • Edit   (skillName != null, isReadOnly = false) → existing user skill
 //      - All fields editable
-//      - Save → writes to /storage/emulated/0/Documents/ai-workspace/skills/<name>.md
+//      - Save → writes to /storage/emulated/0/Aira/skills/<name>.md
 //
 //  • Create (skillName == null)                      → brand new user skill
 //      - Empty fields (version defaults to "1.0")
@@ -75,7 +75,7 @@ import java.io.File
 //
 // Storage paths:
 //   built-in (read-only): assets/skills/*.md
-//   user-created (rw):    /storage/emulated/0/Documents/ai-workspace/skills/*.md
+//   user-created (rw):    /storage/emulated/0/Aira/skills/*.md
 // ============================================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,7 +149,7 @@ fun SkillEditorScreen(
             appendLine(body)
         }
 
-        val dir = File("/storage/emulated/0/Documents/ai-workspace/skills")
+        val dir = File("/storage/emulated/0/Aira/skills")
         if (!dir.exists()) dir.mkdirs()
         val file = File(dir, filename)
 
@@ -181,7 +181,7 @@ fun SkillEditorScreen(
             appendLine()
             appendLine(body)
         }
-        val dir = File("/storage/emulated/0/Documents/ai-workspace/skills")
+        val dir = File("/storage/emulated/0/Aira/skills")
         if (!dir.exists()) dir.mkdirs()
         val file = File(dir, filename)
         try {
@@ -516,7 +516,7 @@ private fun SkillBodyField(
  * [HubScreen] (to show the "user" vs "built-in" badge + long-press menu).
  */
 fun isUserCreatedSkill(fileName: String): Boolean {
-    val userDir = File("/storage/emulated/0/Documents/ai-workspace/skills")
+    val userDir = File("/storage/emulated/0/Aira/skills")
     return File(userDir, fileName).exists()
 }
 

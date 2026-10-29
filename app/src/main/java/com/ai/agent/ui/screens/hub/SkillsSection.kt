@@ -159,7 +159,7 @@ internal fun SkillsSection(
         }
         // Skills can be loaded from TWO sources:
         //   1. Built-in assets (assets/skills/*.md) — immutable, shipped with APK
-        //   2. User storage (/storage/emulated/0/Documents/ai-workspace/skills/*.md)
+        //   2. User storage (/storage/emulated/0/Aira/skills/*.md)
         // SkillManager loads built-ins first, then user files — so a user file
         // with the same fileName as an asset creates a duplicate entry.
         //
@@ -171,7 +171,7 @@ internal fun SkillsSection(
         //     under /storage/.../skills/. Here we filter out any entry whose
         //     fileName matches such a marker (UNLESS a user override exists for
         //     that fileName — the override is still shown).
-        val userDir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+        val userDir = java.io.File("/storage/emulated/0/Aira/skills")
         val userFileNames: Set<String> = if (userDir.exists()) {
             userDir.listFiles { f -> f.extension == "md" }
                 ?.map { it.name }?.toSet() ?: emptySet()
@@ -267,7 +267,7 @@ internal fun SkillsSection(
             item {
                 TextButton(
                     onClick = {
-                        val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+                        val dir = java.io.File("/storage/emulated/0/Aira/skills")
                         dir.listFiles { f -> f.name.startsWith(".deleted_") }?.forEach { it.delete() }
                         toast = "Restored $hiddenCount hidden skill(s)"
                         reload()
@@ -346,7 +346,7 @@ internal fun SkillsSection(
  *   APK remains untouched (so the user can restore it by deleting the marker).
  */
 private fun deleteOrHideSkill(skill: SkillManager.Skill) {
-    val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/skills")
+    val dir = java.io.File("/storage/emulated/0/Aira/skills")
     if (!dir.exists()) dir.mkdirs()
     val userFile = java.io.File(dir, skill.fileName)
     if (userFile.exists()) {

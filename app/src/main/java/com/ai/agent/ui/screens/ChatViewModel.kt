@@ -329,7 +329,7 @@ class ChatViewModel(
             trimmed
         } else {
             val attachmentList = attachments.joinToString(", ") { it.name }
-            "$trimmed\n\n[Attached files: $attachmentList — use readFile/listFiles tools to access them from /storage/emulated/0/Documents/ai-workspace/attachments/]"
+            "$trimmed\n\n[Attached files: $attachmentList — use readFile/listFiles tools to access them from /storage/emulated/0/Aira/attachments/]"
         }
 
         // Persist + display the user message (display the trimmed text, not the augmented one).
@@ -378,7 +378,7 @@ class ChatViewModel(
     // ---- Attachments ----
 
     /**
-     * Copy a content:// Uri into `/storage/emulated/0/Documents/ai-workspace/attachments/`
+     * Copy a content:// Uri into `/storage/emulated/0/Aira/attachments/`
      * and stage it as an Attachment for the next message.
      *
      * Runs on Dispatchers.IO so we don't block the UI thread on large files.
@@ -477,7 +477,7 @@ class ChatViewModel(
 
     /**
      * Persist a workflow as a Markdown skill file in
-     * `/storage/emulated/0/Documents/ai-workspace/skills/{name}.md` so that
+     * `/storage/emulated/0/Aira/skills/{name}.md` so that
      * SkillManager.loadSkills() picks it up next time.
      *
      * SkillManager itself is frozen and exposes no save method, so we write
@@ -1683,9 +1683,9 @@ ALWAYS state index + text + reason before clicking. No exceptions.
         private const val MAX_ITERATIONS = 80           // v4.0.29: was 50 → 80 (more room for complex tasks)
         private const val MAX_REPEATED_TOOLS = 3        // v4.0.29: was 2 → 3 (allow 3 retries before stopping)
         private const val MAX_CONVERSATION_CHARS = 8000
-        const val ATTACHMENTS_DIR = "/storage/emulated/0/Documents/ai-workspace/attachments"
+        const val ATTACHMENTS_DIR = com.ai.agent.Config.ATTACHMENTS_DIR
         /** Task 40 — user-created skills live here so SkillManager picks them up. */
-        const val USER_SKILLS_DIR = "/storage/emulated/0/Documents/ai-workspace/skills"
+        const val USER_SKILLS_DIR = com.ai.agent.Config.SKILLS_DIR
     }
 }
 

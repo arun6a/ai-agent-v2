@@ -63,7 +63,7 @@ import java.io.File
 //
 // Modes (selected via the dropdown chip row at the top):
 //
-//   • custom    → edit /storage/emulated/0/Documents/ai-workspace/system_prompt_custom.txt
+//   • custom    → edit /storage/emulated/0/Aira/system_prompt_custom.txt
 //                 If the file doesn't exist yet, seed it with the contents of the
 //                 built-in "smart" prompt (assets/system_prompt_smart.txt) on
 //                 first open.
@@ -79,7 +79,7 @@ import java.io.File
 // (~4 chars ≈ 1 token — matches the runtime cost tracker).
 //
 // Storage layout mirrors v1 exactly:
-//   custom file:  /storage/emulated/0/Documents/ai-workspace/system_prompt_custom.txt
+//   custom file:  /storage/emulated/0/Aira/system_prompt_custom.txt
 //   built-ins:    app/src/main/assets/system_prompt_*.txt  (frozen, read-only)
 // ============================================================================
 
@@ -109,7 +109,7 @@ fun SystemPromptEditorScreen(
     LaunchedEffect(Unit) {
         if (!customLoaded) {
             try {
-                val dir = File("/storage/emulated/0/Documents/ai-workspace")
+                val dir = File("/storage/emulated/0/Aira")
                 if (!dir.exists()) dir.mkdirs()
                 val file = File(dir, "system_prompt_custom.txt")
                 if (!file.exists()) {
@@ -146,7 +146,7 @@ fun SystemPromptEditorScreen(
     // ---- Save (custom mode only) ----
     fun saveCustomPrompt() {
         try {
-            val dir = File("/storage/emulated/0/Documents/ai-workspace")
+            val dir = File("/storage/emulated/0/Aira")
             if (!dir.exists()) dir.mkdirs()
             val file = File(dir, "system_prompt_custom.txt")
             file.writeText(customText)
@@ -174,7 +174,7 @@ fun SystemPromptEditorScreen(
                 .open("system_prompt_smart.txt")
                 .bufferedReader()
                 .use { it.readText() }
-            val dir = File("/storage/emulated/0/Documents/ai-workspace")
+            val dir = File("/storage/emulated/0/Aira")
             if (!dir.exists()) dir.mkdirs()
             val file = File(dir, "system_prompt_custom.txt")
             file.writeText(smartPrompt)

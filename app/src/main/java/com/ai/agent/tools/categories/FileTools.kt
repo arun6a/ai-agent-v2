@@ -24,7 +24,7 @@ object FileTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "listFiles" -> {
-                val path = call.args["path"] as? String ?: "/storage/emulated/0/Documents/ai-workspace"
+                val path = call.args["path"] as? String ?: "/storage/emulated/0/Aira"
                 try {
                     val dir = java.io.File(path)
                     if (!dir.exists()) return ToolExecutor.ToolResult(false, "Directory not found: $path")
@@ -90,7 +90,7 @@ object FileTools {
                 } catch (e: Exception) { ToolExecutor.ToolResult(false, "Error: ${e.message}") }
             }
             "listAttachments" -> {
-                val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/attachments")
+                val dir = java.io.File("/storage/emulated/0/Aira/attachments")
                 if (!dir.exists()) {
                     ToolExecutor.ToolResult(true, "No attachments directory. Files attached to chat messages will appear here.")
                 } else {
@@ -109,7 +109,7 @@ object FileTools {
             }
             "readAttachment" -> {
                 val filename = call.args["filename"] as? String ?: return ToolExecutor.ToolResult(false, "missing filename")
-                val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/attachments")
+                val dir = java.io.File("/storage/emulated/0/Aira/attachments")
                 val file = java.io.File(dir, filename)
                 if (!file.exists()) {
                     // Try exact path
@@ -145,7 +145,7 @@ object FileTools {
                 val filename = call.args["filename"] as? String ?: return ToolExecutor.ToolResult(false, "missing filename")
                 val appPackage = call.args["package"] as? String ?: return ToolExecutor.ToolResult(false, "missing package")
                 val caption = call.args["caption"] as? String  // v6.1.0: optional caption
-                val dir = java.io.File("/storage/emulated/0/Documents/ai-workspace/attachments")
+                val dir = java.io.File("/storage/emulated/0/Aira/attachments")
                 val file = java.io.File(dir, filename).let { if (it.exists()) it else java.io.File(filename) }
                 if (!file.exists()) return ToolExecutor.ToolResult(false, "File not found: $filename")
                 try {
