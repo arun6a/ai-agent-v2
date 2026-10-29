@@ -88,7 +88,14 @@ object BrowserController {
      */
     fun openUrl(context: Context, url: String) {
         Log.i(TAG, "Opening URL (visible, BrowserScreen): $url")
-        val finalUrl = if (!url.startsWith("http")) "https://$url" else url
+        // v4.0.43: Don't prepend https:// to file:// URLs (was mangling them).
+        // Also don't prepend to content:// or other non-http schemes.
+        val finalUrl = when {
+            url.startsWith("http://") || url.startsWith("https://") -> url
+            url.startsWith("file://") -> url  // v4.0.43: Keep file:// as-is
+            url.startsWith("content://") -> url
+            else -> "https://$url"
+        }
 
         // v4.0.14: Fix thread crash — WebView.url must be called on main thread.
         // Was: val currentUrl = browserScreenWebView?.url (crashed on IO thread)

@@ -827,9 +827,37 @@ class ToolExecutor(private val context: Context) {
         service: com.ai.agent.accessibility.AgentAccessibilityService?,
     ): ToolResult {
         // Parse the actions list from args.
-        @Suppress("UNCHECKED_CAST")
-        val actionsRaw = call.args["actions"] as? List<Map<String, Any>>
-            ?: return ToolResult(false, "actionChain: missing 'actions' list")
+        // v4.0.43: Handle JSON string actions — the model sometimes passes actions as a
+        // JSON string instead of a List<Map>. Parse it if needed.
+        var actionsRaw: List<Map<String, Any>>? = null
+        when (val actionsArg = call.args["actions"]) {
+            is List<*> -> {
+                @Suppress("UNCHECKED_CAST")
+                actionsRaw = actionsArg as? List<Map<String, Any>>
+            }
+            is String -> {
+                // v4.0.43: Parse JSON string to list of maps
+                try {
+                    val arr = org.json.JSONArray(actionsArg)
+                    val parsed = mutableListOf<Map<String, Any>>()
+                    for (i in 0 until arr.length()) {
+                        val item = arr.optJSONObject(i) ?: continue
+                        val map = mutableMapOf<String, Any>()
+                        val keys = item.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            map[k] = item.get(k)
+                        }
+                        parsed.add(map)
+                    }
+                    actionsRaw = parsed
+                    LogCapture.i(TAG, "actionChain: parsed JSON string actions (${parsed.size} actions)")
+                } catch (e: Exception) {
+                    LogCapture.w(TAG, "actionChain: failed to parse actions string: ${e.message}")
+                }
+            }
+        }
+        if (actionsRaw == null) return ToolResult(false, "actionChain: missing 'actions' list. Pass actions as a list of {name, args, safe} objects.")
 
         if (actionsRaw.isEmpty()) return ToolResult(false, "actionChain: empty actions list")
 

@@ -98,33 +98,95 @@ class LLMClient(private val context: Context) {
                 // v4.0.33: Token budget check — OpenRouter free tier has a total token limit
                 // (prompt + completion). If our request exceeds it, reduce max_tokens to fit.
                 // Rough estimate: 1 token ≈ 4 characters. System prompt + tools array + user message.
-                val estimatedPromptTokens = (systemPrompt.length + userMessage.length + 
-                    (toolFilter?.size ?: 158) * 40) / 4  // ~40 tokens per tool schema
-                val totalEstimated = estimatedPromptTokens + maxTokens
+                var effectiveToolFilter = toolFilter
+                var estimatedPromptTokens = (systemPrompt.length + userMessage.length + 
+                    (effectiveToolFilter?.size ?: 158) * 40) / 4  // ~40 tokens per tool schema
+                var totalEstimated = estimatedPromptTokens + maxTokens
                 // v4.0.33: OpenRouter free tier limit is ~3192 tokens (prompt + completion).
-                // If we're over, reduce max_tokens. If prompt alone is over, we can't fix it here
-                // (the 402 handler will catch it + show a helpful message).
                 val FREE_TIER_LIMIT = 3192
+
+                // v4.0.43: If max_tokens would be crushed below 500, reduce the TOOLS instead.
+                // Sending 158 tools (5626 tokens) with max_tokens=100 produces "null" replies.
+                // Better to send fewer tools + keep max_tokens at 500+ so the model can think.
                 if (totalEstimated > FREE_TIER_LIMIT) {
                     val adjustedMax = FREE_TIER_LIMIT - estimatedPromptTokens
-                    if (adjustedMax > 100) {
-                        LogCapture.w("LLMClient", "Token budget: prompt~${estimatedPromptTokens} + max_tokens=$maxTokens = $totalEstimated > $FREE_TIER_LIMIT limit → reducing max_tokens to $adjustedMax")
-                        maxTokens = adjustedMax
+                    if (adjustedMax < 500 && effectiveToolFilter == null) {
+                        // v4.0.43: Tier 3 (all tools) is too large. Fall back to a reduced tool set.
+                        // Send only the most commonly needed tools (similar to Tier 2.5).
+                        val reducedTools = listOf(
+                            "complete", "speak", "getCurrentTime", "getBatteryLevel",
+                            "remember", "recall", "recallSimilar", "searchMemory",
+                            "recallAll", "getFullMemory", "getConversationHistory", "getConversationSummary",
+                            "readScreen", "readScreenStructured", "tap", "clickByText", "clickElement",
+                            "type", "swipe", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter",
+                            "submitInput", "actionChain",
+                            "launchApp", "listInstalledApps", "searchInApp",
+                            "openWhatsAppChat", "playSpotify", "openYouTubeVideo",
+                            "webSearch", "fetchPageText", "downloadFile", "makeHttpRequest",
+                            "browserOpen", "browserReadStructured", "browserClickText", "browserFillForm",
+                            "browserGetText", "browserGetLinks", "browserBack", "browserScrollDown",
+                            "createRule", "listRules", "deleteRule", "modifyRule",
+                            "replyToNotification",
+                            "executeSkill", "listSkills", "createSkill",
+                            "createCustomTool", "listCustomTools",
+                            "navigateToAppScreen", "listAppScreens",
+                            "setWallpaper", "setRingtoneMode", "vibrate",
+                            "runShellCommand", "wait", "waitAndContinue",
+                            "saveToKnowledge", "recallKnowledge", "listKnowledge",
+                            "setBrightness", "setVolume", "toggleFlashlight",
+                            "sendSMS", "makePhoneCall", "sendEmail", "composeEmail",
+                            "readContacts", "searchContacts", "getCallLog",
+                            "getCalendarEvents", "setAlarm", "setTimer",
+                            "getCurrentLocation", "getWeather", "openMaps",
+                            "listFiles", "readFile", "writeFile", "copyFile", "moveFile", "deleteFile",
+                            "takePhoto", "takeScreenshotToGallery",
+                            "headlessGoogleSearch", "smartSearch",
+                            "readSms", "getPhoneState",
+                            "getBatteryHealth", "getMemoryInfo", "getStorageInfo",
+                            "isCharging", "getRingtoneMode"
+                        )
+                        effectiveToolFilter = reducedTools
+                        estimatedPromptTokens = (systemPrompt.length + userMessage.length +
+                            reducedTools.size * 40) / 4
+                        totalEstimated = estimatedPromptTokens + maxTokens
+                        LogCapture.w("LLMClient", "Token budget: Tier 3 too large (${(toolFilter?.size ?: 158)} tools). Falling back to ${reducedTools.size} essential tools to keep max_tokens reasonable.")
+                    }
+                    // Now check again with the reduced tool set
+                    if (totalEstimated > FREE_TIER_LIMIT) {
+                        val adjustedMax2 = FREE_TIER_LIMIT - estimatedPromptTokens
+                        if (adjustedMax2 > 100) {
+                            LogCapture.w("LLMClient", "Token budget: prompt~${estimatedPromptTokens} + max_tokens=$maxTokens = $totalEstimated > $FREE_TIER_LIMIT limit → reducing max_tokens to $adjustedMax2")
+                            maxTokens = adjustedMax2
+                        }
                     }
                 }
 
-                val requestBody = when (provider.id) {
-                    "gemini" -> buildGeminiRequest(model, userMessage, systemPrompt)
-                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, maxTokens)
+                // v4.0.43: Detect if we're hitting Gemini's API (even via a non-gemini binding).
+                // Some bindings use providerId="zai_direct" but point to Gemini's endpoint.
+                // In that case, we must use Gemini's request format, not OpenAI's.
+                val isGeminiEndpoint = endpoint.contains("generativelanguage.googleapis.com") ||
+                    provider.id == "gemini"
+
+                // v4.0.43: Strip "google/" prefix from model name when using Gemini's direct API.
+                // OpenRouter uses "google/gemini-2.5-flash" but Gemini's API expects "gemini-2.5-flash".
+                val effectiveModel = if (isGeminiEndpoint && model.startsWith("google/")) {
+                    model.removePrefix("google/")
+                } else {
+                    model
+                }
+
+                val requestBody = when {
+                    isGeminiEndpoint -> buildGeminiRequest(effectiveModel, userMessage, systemPrompt)
+                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, effectiveToolFilter, maxTokens)
                 }
 
                 // v4.0.21: Record tool filter size for the parser (skip false-positive
                 // text tool calls when 0 tools were sent).
-                lastToolFilterSize = toolFilter?.size ?: -1
+                lastToolFilterSize = effectiveToolFilter?.size ?: -1
 
                 // For Gemini, construct the full URL with model + API key
-                val finalUrl = if (provider.id == "gemini") {
-                    "$endpoint/models/$model:generateContent?key=$apiKey"
+                val finalUrl = if (isGeminiEndpoint) {
+                    "$endpoint/models/$effectiveModel:generateContent?key=$apiKey"
                 } else {
                     endpoint
                 }

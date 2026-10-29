@@ -316,6 +316,9 @@ fun BrowserScreen(
                         settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                         settings.databaseEnabled = true
                         settings.setSupportZoom(true)
+                        // v4.0.43: Allow file:// URLs to load local HTML files
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = true
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
