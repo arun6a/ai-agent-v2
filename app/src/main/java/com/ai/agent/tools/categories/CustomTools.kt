@@ -153,14 +153,38 @@ object CustomTools {
             for ((key, value) in args) {
                 command = command.replace("{$key}", value.toString())
             }
-            // Check for unresolved placeholders
-            val unresolved = Regex("\\{[^}]+}").findAll(command).map { it.value }.toList()
+            // v4.0.44: Fix regex error — was using Regex("\\{[^}]+}") which crashes on Android
+            // because the closing } is not escaped. Use simple string check instead.
+            val unresolved = mutableListOf<String>()
+            var i = 0
+            while (i < command.length) {
+                if (command[i] == '{') {
+                    val end = command.indexOf('}', i)
+                    if (end > i) {
+                        val placeholder = command.substring(i, end + 1)
+                        unresolved.add(placeholder)
+                        i = end + 1
+                    } else {
+                        i++
+                    }
+                } else {
+                    i++
+                }
+            }
             if (unresolved.isNotEmpty()) {
                 return ToolExecutor.ToolResult(false, "missing parameters: $unresolved. Required: ${tool.parameters}")
             }
 
-            Log.i(TAG, "Executing custom shell tool '${tool.name}': $command")
-            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            // v4.0.44: The handler might be "sh -c {cmd}" — we pass it to sh -c again,
+            // which causes double-sh. Extract just the inner command if handler starts with "sh -c".
+            val finalCommand = if (command.startsWith("sh -c ")) {
+                command.removePrefix("sh -c ").trim().trim('"').trim('\'')
+            } else {
+                command
+            }
+
+            Log.i(TAG, "Executing custom shell tool '${tool.name}': $finalCommand")
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", finalCommand))
             val output = process.inputStream.bufferedReader().readText()
             val errors = process.errorStream.bufferedReader().readText()
             val exitCode = process.waitFor()
