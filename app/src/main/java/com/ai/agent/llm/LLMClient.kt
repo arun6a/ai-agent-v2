@@ -84,82 +84,24 @@ class LLMClient(private val context: Context) {
         // Retry up to 3 times with increasing delay
         for (attempt in 1..3) {
             try {
-                // v3.8.18: max_tokens per tier — INCREASED for chain-of-thought reasoning.
-                // Tier 1 (empty filter = no tools) → 100 tokens (short reply, no reasoning needed)
-                // Tier 2 (non-empty filter = contextual tools) → 1500 tokens (room for reasoning + tool call)
-                // Tier 3 (null filter = all tools) → 3000 tokens (complex tasks need deep thinking)
-                // Reasoning tokens are CHEAP. Tool call iterations are EXPENSIVE. Think more, call fewer tools.
-                var maxTokens = when {
-                    toolFilter != null && toolFilter.isEmpty() -> 100
-                    toolFilter != null -> 1500
-                    else -> 3000
-                }
+                // v4.0.46: max_tokens only for Tier 1. Tier 2/2.5/3 have NO limit.
+                // The model generates only what it needs (~200-300 tokens for tool calls,
+                // more for reports/code). Removing the limit prevents responses from being
+                // cut off mid-code/mid-report. Actual billing = input + actual output,
+                // NOT input + max_tokens. So no limit = no extra cost for short responses.
+                //
+                // Tier 1 (greeting) → 100 tokens (greetings are always short)
+                // Tier 2+ → null (no limit — let model decide response length)
+                val maxTokens = if (toolFilter != null && toolFilter.isEmpty()) 100 else null
 
-                // v4.0.33: Token budget check — OpenRouter free tier has a total token limit
-                // (prompt + completion). If our request exceeds it, reduce max_tokens to fit.
-                // Rough estimate: 1 token ≈ 4 characters. System prompt + tools array + user message.
-                var effectiveToolFilter = toolFilter
-                var estimatedPromptTokens = (systemPrompt.length + userMessage.length + 
-                    (effectiveToolFilter?.size ?: 158) * 40) / 4  // ~40 tokens per tool schema
-                var totalEstimated = estimatedPromptTokens + maxTokens
-                // v4.0.33: OpenRouter free tier limit is ~3192 tokens (prompt + completion).
-                val FREE_TIER_LIMIT = 3192
-
-                // v4.0.43: If max_tokens would be crushed below 500, reduce the TOOLS instead.
-                // Sending 158 tools (5626 tokens) with max_tokens=100 produces "null" replies.
-                // Better to send fewer tools + keep max_tokens at 500+ so the model can think.
-                if (totalEstimated > FREE_TIER_LIMIT) {
-                    val adjustedMax = FREE_TIER_LIMIT - estimatedPromptTokens
-                    if (adjustedMax < 500 && effectiveToolFilter == null) {
-                        // v4.0.43: Tier 3 (all tools) is too large. Fall back to a reduced tool set.
-                        // Send only the most commonly needed tools (similar to Tier 2.5).
-                        val reducedTools = listOf(
-                            "complete", "speak", "getCurrentTime", "getBatteryLevel",
-                            "remember", "recall", "recallSimilar", "searchMemory",
-                            "recallAll", "getFullMemory", "getConversationHistory", "getConversationSummary",
-                            "readScreen", "readScreenStructured", "tap", "clickByText", "clickElement",
-                            "type", "swipe", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter",
-                            "submitInput", "actionChain",
-                            "launchApp", "listInstalledApps", "searchInApp",
-                            "openWhatsAppChat", "playSpotify", "openYouTubeVideo",
-                            "webSearch", "fetchPageText", "downloadFile", "makeHttpRequest",
-                            "browserOpen", "browserReadStructured", "browserClickText", "browserFillForm",
-                            "browserGetText", "browserGetLinks", "browserBack", "browserScrollDown",
-                            "createRule", "listRules", "deleteRule", "modifyRule",
-                            "replyToNotification",
-                            "executeSkill", "listSkills", "createSkill",
-                            "createCustomTool", "listCustomTools",
-                            "navigateToAppScreen", "listAppScreens",
-                            "setWallpaper", "setRingtoneMode", "vibrate",
-                            "runShellCommand", "wait", "waitAndContinue",
-                            "saveToKnowledge", "recallKnowledge", "listKnowledge",
-                            "setBrightness", "setVolume", "toggleFlashlight",
-                            "sendSMS", "makePhoneCall", "sendEmail", "composeEmail",
-                            "readContacts", "searchContacts", "getCallLog",
-                            "getCalendarEvents", "setAlarm", "setTimer",
-                            "getCurrentLocation", "getWeather", "openMaps",
-                            "listFiles", "readFile", "writeFile", "copyFile", "moveFile", "deleteFile",
-                            "takePhoto", "takeScreenshotToGallery",
-                            "headlessGoogleSearch", "smartSearch",
-                            "readSms", "getPhoneState",
-                            "getBatteryHealth", "getMemoryInfo", "getStorageInfo",
-                            "isCharging", "getRingtoneMode"
-                        )
-                        effectiveToolFilter = reducedTools
-                        estimatedPromptTokens = (systemPrompt.length + userMessage.length +
-                            reducedTools.size * 40) / 4
-                        totalEstimated = estimatedPromptTokens + maxTokens
-                        LogCapture.w("LLMClient", "Token budget: Tier 3 too large (${(toolFilter?.size ?: 158)} tools). Falling back to ${reducedTools.size} essential tools to keep max_tokens reasonable.")
-                    }
-                    // Now check again with the reduced tool set
-                    if (totalEstimated > FREE_TIER_LIMIT) {
-                        val adjustedMax2 = FREE_TIER_LIMIT - estimatedPromptTokens
-                        if (adjustedMax2 > 100) {
-                            LogCapture.w("LLMClient", "Token budget: prompt~${estimatedPromptTokens} + max_tokens=$maxTokens = $totalEstimated > $FREE_TIER_LIMIT limit → reducing max_tokens to $adjustedMax2")
-                            maxTokens = adjustedMax2
-                        }
-                    }
-                }
+                // v4.0.46: REMOVED the 3192 preemptive token budget check entirely.
+                // It was based on a misunderstanding — 3192 was OpenRouter's REMAINING daily
+                // balance, not a per-request limit. The preemptive reduction caused:
+                //   1. max_tokens crushed to 100-300 → null replies
+                //   2. 402 retries → 3-4 wasted API calls per task
+                //   3. Daily budget burned 4x faster on failed retries
+                // Now: send full request, let the 402 handler catch REAL limits if they happen.
+                val effectiveToolFilter = toolFilter
 
                 // v4.0.43: Detect if we're hitting Gemini's API (even via a non-gemini binding).
                 // Some bindings use providerId="zai_direct" but point to Gemini's endpoint.
@@ -177,7 +119,7 @@ class LLMClient(private val context: Context) {
 
                 val requestBody = when {
                     isGeminiEndpoint -> buildGeminiRequest(effectiveModel, userMessage, systemPrompt)
-                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, effectiveToolFilter, maxTokens)
+                    else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, effectiveToolFilter, maxTokens ?: 0)
                 }
 
                 // v4.0.21: Record tool filter size for the parser (skip false-positive

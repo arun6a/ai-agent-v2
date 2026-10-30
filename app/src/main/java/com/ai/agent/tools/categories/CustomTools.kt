@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
@@ -206,11 +207,25 @@ object CustomTools {
      */
     private fun executeHttp(tool: CustomToolStore.CustomTool, args: Map<String, Any>): ToolExecutor.ToolResult {
         try {
-            val config = JSONObject(tool.handler)
-            var url = config.optString("url", "")
-            var body = config.optString("body", "")
-            val method = config.optString("method", "GET").uppercase()
-            val headersObj = config.optJSONObject("headers")
+            // v4.0.46: Handle BOTH JSON config AND raw URL as handler.
+            // The AI sometimes passes a raw URL ("http://...") instead of JSON config.
+            var url: String
+            var body = ""
+            var method = "GET"
+            var headersObj: JSONObject? = null
+
+            if (tool.handler.trim().startsWith("{")) {
+                // JSON config: {"method":"GET","url":"...","headers":{...},"body":"..."}
+                val config = JSONObject(tool.handler)
+                url = config.optString("url", "")
+                body = config.optString("body", "")
+                method = config.optString("method", "GET").uppercase()
+                headersObj = config.optJSONObject("headers")
+            } else {
+                // v4.0.46: Raw URL — treat as GET request
+                url = tool.handler.trim()
+                method = "GET"
+            }
 
             // Substitute {param} in URL and body
             for ((key, value) in args) {
@@ -218,7 +233,18 @@ object CustomTools {
                 body = body.replace("{$key}", value.toString())
             }
 
-            val unresolved = Regex("\\{[^}]+}").findAll(url).map { it.value }.toList()
+            // v4.0.46: Fix regex crash — same fix as executeShell. Use string scan.
+            val unresolved = mutableListOf<String>()
+            var i = 0
+            while (i < url.length) {
+                if (url[i] == '{') {
+                    val end = url.indexOf('}', i)
+                    if (end > i) {
+                        unresolved.add(url.substring(i, end + 1))
+                        i = end + 1
+                    } else { i++ }
+                } else { i++ }
+            }
             if (unresolved.isNotEmpty()) {
                 return ToolExecutor.ToolResult(false, "missing parameters in URL: $unresolved. Required: ${tool.parameters}")
             }
@@ -247,6 +273,4 @@ object CustomTools {
             return ToolExecutor.ToolResult(false, "HTTP error: ${e.message}")
         }
     }
-
-    private fun JSONObject(s: String) = org.json.JSONObject(s)
 }
