@@ -1368,8 +1368,9 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             failedApproachTools.add(call.name)
                         }
                         resultsForLLM.append("Tool: ${call.name}($argsStr)\n")
-                        // v3.6.2: truncate tool results to 500 chars to slow conversation growth.
-                        resultsForLLM.append("Result: ${dr.output.take(500)}\n\n")
+                        // v4.0.47: Increased from 500 → 3000 chars so skill bodies + file contents
+                        // are fully visible to the AI (was truncating getSkill results → AI looped)
+                        resultsForLLM.append("Result: ${dr.output.take(3000)}\n\n")
                     }
 
                     // v3.9.12: Removed plan step tracking (was dead code — no plan to track).

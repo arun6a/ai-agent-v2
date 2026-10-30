@@ -4,6 +4,8 @@
     <!-- ====== Permissions (carried over from v1 — do NOT modify) ====== -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v4.0.47: Allow cleartext HTTP to localhost (for local terminal server) -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -68,7 +70,9 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.AIAgentV2"
         android:supportsRtl="true"
-        android:extractNativeLibs="true">
+        android:extractNativeLibs="true"
+        android:usesCleartextTraffic="true">
+        <!-- v4.0.47: usesCleartextTraffic=true — allows HTTP to localhost (terminal server) -->
 
         <!-- ===== Main activity (Compose) ===== -->
         <activity

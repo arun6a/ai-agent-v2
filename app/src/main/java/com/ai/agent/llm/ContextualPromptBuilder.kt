@@ -38,6 +38,15 @@ object ContextualPromptBuilder {
         "createCustomTool(name, description, handlerType, handler, parameters?)" to "create a NEW custom tool at runtime (shell command or HTTP endpoint). Use when no existing tool fits.",
         "listCustomTools()" to "list all custom tools you've created",
         "deleteCustomTool(name)" to "delete a custom tool by name",
+        // v4.0.47: File + Shell tools ALWAYS available — the AI needs these to follow skills
+        // (e.g., setup-terminal-access needs writeFile to create server.js, not runShellCommand)
+        "writeFile(path, content)" to "write text to a file — USE THIS to create files, NOT runShellCommand",
+        "readFile(path)" to "read a text file",
+        "listFiles(path?)" to "list files in a directory",
+        "runShellCommand(command)" to "run a shell command — for system info, NOT for writing files (use writeFile instead)",
+        "wait(seconds)" to "wait for N seconds",
+        "recallSimilar(query)" to "search memory for relevant past experiences",
+        "recallAll()" to "list all memories",
     )
 
     private val TOOL_GROUPS = listOf(
