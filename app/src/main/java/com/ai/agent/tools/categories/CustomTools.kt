@@ -27,13 +27,15 @@ import java.util.concurrent.TimeUnit
  */
 object CustomTools {
     private const val TAG = "CustomTools"
-    // v4.0.49: Bumped readTimeout from 30s → 305s to support long-running commands
-    // (builds, package installs). The server-side default is 120s, max 600s.
-    // 305s = 300s (5 min build) + 5s buffer for network overhead.
+    // v4.0.50: Removed client-side timeout (was 305s) — now infinite (0).
+    // The AI decides per-command whether to set a timeout via the `timeout` param.
+    // Omit timeout → command runs until it finishes (no kill).
+    // Pass timeout=60 → command killed after 60s (for risky/hanging commands).
+    // OkHttp: timeout of 0 means "no timeout" (infinite).
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(305, TimeUnit.SECONDS)
-        .callTimeout(310, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.SECONDS)
+        .callTimeout(0, TimeUnit.SECONDS)
         .build()
     private val jsonMediaType = "application/json".toMediaType()
 

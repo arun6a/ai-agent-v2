@@ -11,14 +11,15 @@ The run_command custom tool should already exist + the server should be running.
 
 ## CRITICAL: Environment Setup (read this first!)
 
-The HTTP server runs commands with PTY support (v4.0.49+). Key facts:
+The HTTP server runs commands with PTY support (v4.0.50+). Key facts:
 1. PTY mode: if `script` command is available, commands run in a real pseudo-terminal.
-   Interactive Y/n prompts are auto-answered with 'y' after 3 seconds.
+   Interactive Y/n prompts are auto-answered with 'y' (only when prompt detected).
 2. Fallback mode: if `script` not available, uses direct spawn (no PTY).
 3. `which` is NOT available — use `command -v` instead (POSIX builtin, always works).
 4. `pkg`, `node`, `java`, `git` live in `/data/data/com.tom.rv2ide/files/usr/bin/`.
 5. The server does NOT source `~/.profile` — you must set PATH explicitly.
-6. **Timeout**: default 120s. Pass `timeout=300` for builds, `timeout=600` max.
+6. **Timeout is OPTIONAL** (v4.0.50+): default = infinite (no kill). Pass `timeout=60`
+   ONLY for commands that might hang (ping, tail -f). OMIT timeout for builds/installs.
 
 **FIRST COMMAND always run to find tools:**
 ```
@@ -105,21 +106,21 @@ OR:
 1. Tell user: "Open AndroidIDE-Rv2 terminal and run `idesetup -c` to install JDK + build tools"
 2. Use the IDE's built-in build system
 
-**IMPORTANT: Pass timeout=300 for builds** (default 120s is too short for Gradle):
+**IMPORTANT: OMIT timeout for builds** (v4.0.50+ default is infinite — let them finish):
 ```
-Build debug APK:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleDebug 2>&1", timeout=300)
-Build release:     run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleRelease 2>&1", timeout=300)
+Build debug APK:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleDebug 2>&1")
+Build release:     run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleRelease 2>&1")
 ```
 
 ### Install Packages (AndroidIDE-Rv2 / Termux)
 NOTE: `pkg install` prints 4 "apt WARNING" lines — IGNORE them. They are not errors.
-NOTE: Pass `timeout=180` for installs (downloads can take a while).
+NOTE: OMIT timeout (v4.0.50+ default is infinite — let installs finish).
 ```
-Update packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg update -y 2>&1; echo EXIT=$?", timeout=180)
-Install Node.js:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y nodejs 2>&1; echo EXIT=$?", timeout=180)
-Install Python:    run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y python 2>&1; echo EXIT=$?", timeout=180)
-Install Java:      run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y openjdk-17 2>&1; echo EXIT=$?", timeout=180)
-Install Git:       run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y git 2>&1; echo EXIT=$?", timeout=180)
+Update packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg update -y 2>&1; echo EXIT=$?")
+Install Node.js:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y nodejs 2>&1; echo EXIT=$?")
+Install Python:    run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y python 2>&1; echo EXIT=$?")
+Install Java:      run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y openjdk-17 2>&1; echo EXIT=$?")
+Install Git:       run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y git 2>&1; echo EXIT=$?")
 Search packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg search openjdk 2>&1")
 ```
 NOTE: `gradle` is NOT in the pkg repository. To build Gradle projects, you must:
@@ -143,22 +144,24 @@ Storage:        run_command(command="df -h /sdcard")
 Memory:         run_command(command="free -h 2>/dev/null || cat /proc/meminfo | head -5")
 ```
 
-## How to Interpret Command Results (v4.0.49+)
+## How to Interpret Command Results (v4.0.50+)
 
 When run_command returns, the response JSON now includes:
 1. `"success": true/false` — command completed (exit code 0 + not timed out)
 2. `"exitCode": 0` — shell exit code (0 = success, non-zero = failure)
-3. `"timedOut": true/false` — if true, command exceeded the timeout and was killed
+3. `"timedOut": true/false` — if true, command exceeded the timeout YOU set and was killed
 4. `"output": "..."` — cleaned stdout (ANSI codes stripped)
 5. `"stderr": "..."` — cleaned stderr
 6. `"elapsed": "5s"` — how long the command took
 7. `"pty": "script"` or `"spawn"` — PTY mode used
+8. `"autoYesUsed": true/false` — whether auto-Y was sent for a detected prompt
 
 ### Decision logic:
-- If `timedOut: true` → re-run with higher timeout: `run_command(command="...", timeout=300)`
+- If `timedOut: true` → you passed a timeout that was too short. Re-run WITHOUT timeout (default = infinite).
 - If `exitCode: 0` → command succeeded (even if stderr has apt warnings — IGNORE those)
 - If `exitCode: 1` and output has "not found" → check PATH, prefix with `export PATH=...`
 - If `success: false` but output looks correct → check exitCode; some commands return non-zero on success
+- If response takes a long time → that's expected for builds/installs (no step timeout kill in v4.0.50+)
 
 ### Old response format (pre-v4.0.49):
 If the response doesn't have `exitCode`/`timedOut`/`pty` fields, the server is old.
@@ -167,13 +170,15 @@ Tell the user: "Please restart the terminal server: open terminal, Ctrl+C, then 
 ## Important Notes
 
 - Commands run via the HTTP server in AndroidIDE-Rv2's terminal environment
-- v4.0.49+: PTY support via `script` command (interactive prompts auto-answered with 'y' after 3s)
-- v4.0.49+: Timeout parameter — pass `timeout=300` for builds, `timeout=600` max (default 120s)
+- v4.0.50: Default timeout = INFINITE (no kill). AI decides per-command.
+- v4.0.50: Step timeout in ChatViewModel bumped from 60s → 600s (was killing run_command)
+- v4.0.50: Auto-Y now only fires when a prompt pattern is detected (not blindly after 3s)
+- v4.0.50: PTY uses `script -qfc` for unbuffered output (was hanging on simple commands)
 - DO NOT use `which` — use `command -v`
 - DO NOT use `idesetup` via run_command — it's interactive + bash-only (even with PTY, prefer manual)
 - /sdcard is mounted with noexec — can't execute binaries from there
 - Use `pkg` to install packages (nodejs, python, openjdk-17, git)
 - `apt` warnings from `pkg` are expected — IGNORE them
-- If `timedOut: true` in response → re-run with higher timeout
+- If `timedOut: true` in response → you set a timeout that was too short. Re-run WITHOUT timeout.
 - If response has no `pty`/`exitCode` fields → server is old, tell user to restart it
 - If the server dies, tell user to restart: open terminal → "node /sdcard/Aira/aira-server.js &"

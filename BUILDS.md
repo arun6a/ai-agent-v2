@@ -4,6 +4,68 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.50 (versionCode 178) — Remove Forced Timeout + Fix PTY Hanging + Step Timeout Fix
+**Date:** 2026-10-30
+
+### Major Changes
+
+#### 1. Removed Forced Timeout — AI Decides Per-Command
+- **Server default timeout**: 120s → **0 (infinite — no kill)**
+- **Server max cap**: 600s → **No cap (AI picks any value)**
+- **Client readTimeout** (`CustomTools.kt`): 305s → **0 (infinite — never disconnects)**
+- **Client callTimeout** (`CustomTools.kt`): 310s → **0 (infinite)**
+- The `timeout` parameter is now **opt-in** instead of forced
+- AI omits `timeout` for builds/installs (let them finish); passes `timeout=60` only for commands that might hang
+
+#### 2. Fixed PTY Server Hanging (was the real cause of 60s timeouts)
+**Root cause:** The v4.0.49 server used `script -qc` with `stdio: ['pipe','pipe','pipe']` which **buffered stdout** — simple commands like `echo hello` would hang for 60s because the pipe never flushed.
+
+**Fix:**
+- Changed `script -qc` → `script -qfc` (the `-f` flag forces flush after each write)
+- Auto-Y timer: was firing blindly after 3s for ALL commands (even `echo`) → now only fires when a prompt pattern (`[Y/n]`, `yes/no`, `?`) is detected in output, with a 5s fallback
+- Added `proc.stdin.end()` on close to prevent lingering pipes
+- Added `autoYesUsed` field to response so AI can see if auto-Y was sent
+
+#### 3. Fixed Step Timeout in ChatViewModel (THE REAL KILLER)
+**Root cause:** `ChatViewModel.kt:985` had `STEP_TIMEOUT_MS = 60_000L` — a per-iteration budget that killed ANY tool call taking >60s. Even with infinite OkHttp + server timeouts, this 60s limit would still abort `run_command` calls.
+
+**Evidence from logs:**
+```
+21:08:50 W/ChatViewModel: Step 1 timed out after 60000ms
+21:08:56 W/ChatViewModel: Step 2 timed out after 60000ms
+21:12:52 W/ChatViewModel: Step 1 timed out after 60000ms
+21:22:10 W/ChatViewModel: Step 2 timed out after 60000ms
+```
+
+**Fix:** `STEP_TIMEOUT_MS`: 60s → **600s** (10 min, matches TASK_TIMEOUT_MS). Also fixed the hardcoded "30s" in the timeout error message to use the actual value.
+
+#### 4. Timeout Guide Updated
+- **OMIT timeout** for: builds, installs, file ops, scripts (should finish)
+- **Pass `timeout=10`** for: `ping`, `tail -f` (run forever)
+- **Pass `timeout=60`** for: risky commands that might hang (safety net)
+
+### Three Layers of Timeout (all now aligned)
+
+| Layer | Location | v4.0.49 | v4.0.50 |
+|-------|----------|---------|---------|
+| 1. OkHttp client | `CustomTools.kt:36-37` | 305s | **0 (infinite)** |
+| 2. Server execSync | `aira-server.js` | 120s default, 600s max | **0 (infinite), AI controls** |
+| 3. ChatViewModel step | `ChatViewModel.kt:990` | 60s | **600s** |
+
+### Files Changed
+- `app/build.gradle.kts` — version 4.0.49 → 4.0.50, versionCode 177 → 178
+- `app/src/main/java/com/ai/agent/tools/categories/CustomTools.kt` — readTimeout/callTimeout → 0 (infinite)
+- `app/src/main/java/com/ai/agent/ui/screens/ChatViewModel.kt` — STEP_TIMEOUT_MS 60s → 600s + fixed error message
+- `app/src/main/assets/skills/setup_terminal_access.md` — server default timeout=0, `script -qfc`, smart auto-Y
+- `app/src/main/assets/skills/terminal_commands.md` — timeout is opt-in, omit for builds/installs
+
+### Migration Notes
+- **Server restart required**: User must restart the server after updating the skill
+- **Recreate run_command tool**: Tell Aira "set up terminal access" to write the new server + recreate the tool
+- **Backward compatible**: Old server + new APK works (just 60s step timeout still applies until server updated)
+
+---
+
 ## v4.0.49 (versionCode 177) — Terminal PTY Support + Timeout Parameter + Optional Tool Params
 **Date:** 2026-10-30
 

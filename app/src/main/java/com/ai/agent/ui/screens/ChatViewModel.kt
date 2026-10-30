@@ -982,7 +982,12 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             //     step message and let the next iteration try again.
             val taskStartTime = System.currentTimeMillis()
             val TASK_TIMEOUT_MS = 600_000L   // v4.0.29: was 180s → 600s (10 min, for 80 iterations)
-            val STEP_TIMEOUT_MS = 60_000L    // v4.0.29: was 30s → 60s (some API calls are slow)
+            // v4.0.50: was 60s → 600s. The 60s step timeout was killing run_command
+            // calls that legitimately take >60s (builds, pkg install, npm install).
+            // Now matches the task timeout so long-running commands aren't aborted.
+            // The trade-off: a stuck tool call now blocks for 10 min instead of 60s,
+            // but the AI can pass timeout=N to run_command for safety on risky commands.
+            val STEP_TIMEOUT_MS = 600_000L
 
             // v3.3.6: Smart Routing — pick the right model for this message
             // based on tier (1=Fast/Cheap, 2=Default, 3=Advanced) + apply it
@@ -1457,7 +1462,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         // iteration try a (hopefully) faster path.
                         LogCapture.w(TAG, "Step $iteration timed out after ${STEP_TIMEOUT_MS}ms")
                         addAiStepMessage(
-                            "⏱️ Step $iteration timed out after 30s — retrying with a simpler approach.",
+                            "⏱️ Step $iteration timed out after ${STEP_TIMEOUT_MS / 1000}s — retrying with a simpler approach.",
                             emptyList(),
                             emptyList(),
                             iteration,
@@ -1465,7 +1470,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             MessageStatus.ERROR,
                         )
                         conversation.append(
-                            "\n\n[Step $iteration timed out after 30 seconds. " +
+                            "\n\n[Step $iteration timed out after ${STEP_TIMEOUT_MS / 1000} seconds. " +
                                 "Try a simpler approach or fewer tool calls.]"
                         )
                     }
