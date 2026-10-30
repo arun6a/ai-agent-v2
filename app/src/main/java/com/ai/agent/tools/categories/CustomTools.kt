@@ -7,12 +7,18 @@ import com.ai.agent.llm.LLMClient
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
 import com.ai.agent.tools.custom.CustomToolStore
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * v4.0.26: Custom Tools executor.
@@ -210,8 +216,13 @@ object CustomTools {
      * Execute an HTTP-based custom tool.
      * The handler is a JSON config: {"method":"GET","url":"...","headers":{...},"body":"..."}
      * Substitutes {param} placeholders in URL + body with arg values.
+     *
+     * v4.0.51: Now suspend + cancellable. When the parent coroutine is cancelled
+     * (user sends a new message or taps Stop), the HTTP call is cancelled immediately
+     * via call.cancel(). This prevents orphaned HTTP connections holding the server's
+     * subprocess alive after the user has moved on.
      */
-    private fun executeHttp(tool: CustomToolStore.CustomTool, args: Map<String, Any>): ToolExecutor.ToolResult {
+    private suspend fun executeHttp(tool: CustomToolStore.CustomTool, args: Map<String, Any>): ToolExecutor.ToolResult {
         try {
             // v4.0.46: Handle BOTH JSON config AND raw URL as handler.
             // The AI sometimes passes a raw URL ("http://...") instead of JSON config.
@@ -287,10 +298,41 @@ object CustomTools {
                 reqBuilder.post(body.toRequestBody(jsonMediaType))
             }
 
-            val response = client.newCall(reqBuilder.build()).execute()
+            // v4.0.51: Use async enqueue + suspendCancellableCoroutine so the HTTP
+            // call is cancelled when the parent coroutine is cancelled (user sends
+            // a new message or taps Stop). Previously used blocking execute() which
+            // kept the connection open even after the coroutine was cancelled,
+            // leaving orphaned subprocesses running on the server.
+            val response = suspendCancellableCoroutine { cont ->
+                val call = client.newCall(reqBuilder.build())
+                // On cancellation (user sent new message / tapped Stop):
+                // cancel the OkHttp call → server detects disconnect → kills proc
+                cont.invokeOnCancellation { cause ->
+                    Log.i(TAG, "HTTP tool '${tool.name}' cancelled by user: ${cause?.message ?: "unknown"}")
+                    call.cancel()
+                }
+                call.enqueue(object : Callback {
+                    override fun onResponse(call: Call, response: Response) {
+                        cont.resume(response)
+                    }
+                    override fun onFailure(call: Call, e: java.io.IOException) {
+                        if (cont.isCancelled) {
+                            // Expected — coroutine was cancelled, don't report as error
+                            Log.i(TAG, "HTTP tool '${tool.name}' cancelled (expected): ${e.message}")
+                        } else {
+                            cont.resumeWithException(e)
+                        }
+                    }
+                })
+            }
             val responseBody = response.body?.string() ?: ""
             val result = "$method $url → ${response.code}\n\n${responseBody.take(2000)}"
             return ToolExecutor.ToolResult(response.isSuccessful, result)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // v4.0.51: Coroutine was cancelled (user sent new message / tapped Stop)
+            // Return a clear "cancelled" result so the AI knows the command was aborted
+            Log.i(TAG, "HTTP tool '${tool.name}' cancelled: ${e.message}")
+            return ToolExecutor.ToolResult(false, "⏹️ Command cancelled by user (new message sent or Stop tapped). The server may still be running the command — it will be killed on disconnect.")
         } catch (e: Exception) {
             return ToolExecutor.ToolResult(false, "HTTP error: ${e.message}")
         }

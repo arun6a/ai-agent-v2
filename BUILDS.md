@@ -4,6 +4,82 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.51 (versionCode 179) — Cancellable HTTP Calls + Kill on Disconnect
+**Date:** 2026-10-30
+
+### Problem
+With v4.0.50's infinite timeout, if a user sent a new message or tapped Stop during a long `run_command` (e.g., 5-min gradle build):
+1. The agent loop was cancelled (`loopJob.cancel()`) ✓
+2. BUT the OkHttp HTTP call kept blocking (not coroutine-aware) ✗
+3. AND the server's subprocess kept running on the phone ✗
+4. Result: orphaned processes consuming CPU until they finished on their own
+
+### Fix — 3 layers of cancellation now propagate
+
+#### 1. CustomTools.kt — Cancellable HTTP calls
+- Changed `executeHttp` from `fun` → `suspend fun`
+- Replaced blocking `client.newCall(req).execute()` with `suspendCancellableCoroutine` + `call.enqueue()`
+- On coroutine cancellation: `call.cancel()` fires → OkHttp aborts the HTTP connection
+- Added `CancellationException` handler → returns "⏹️ Command cancelled by user" instead of generic error
+- Added imports: `Call`, `Callback`, `Response`, `suspendCancellableCoroutine`, `resume`, `resumeWithException`
+
+#### 2. aira-server.js — Kill subprocess on client disconnect
+- Added `runningProcs = new Set()` to track all active subprocesses
+- Added `req.on('close', ...)` handler: when client disconnects (HTTP cancelled), kills `proc` with `SIGKILL`
+- Registers/unregisters proc from `runningProcs` on start/close
+- Added `"cancelled": true/false` field to response JSON
+- Added `success: code === 0 && !timedOut && !clientDisconnected` (cancelled = not success)
+
+#### 3. New /kill endpoint
+- `GET /kill?token=aira` kills ALL running subprocesses
+- Returns `{ success: true, killed: N, message: "All running commands killed" }`
+- Useful for emergency stop or when AI detects user wants to cancel
+
+### How cancellation flows now
+
+```
+User sends new message or taps Stop
+  ↓
+ChatViewModel: loopJob.cancel()
+  ↓
+CustomTools: suspendCancellableCoroutine invokeOnCancellation → call.cancel()
+  ↓
+OkHttp: closes HTTP connection
+  ↓
+aira-server.js: req.on('close') fires → proc.kill('SIGKILL')
+  ↓
+Phone: subprocess dies, CPU freed
+```
+
+**Result:** A 5-minute build is killed within ~1 second of the user tapping Stop.
+
+### Response JSON additions
+```json
+{
+  "success": false,
+  "cancelled": true,           ← NEW v4.0.51
+  "exitCode": null,
+  "output": "partial output...",
+  "elapsed": "3s",
+  "pty": "script"
+}
+```
+
+The AI sees `cancelled: true` and knows NOT to retry — the user moved on.
+
+### Files Changed
+- `app/build.gradle.kts` — version 4.0.50 → 4.0.51, versionCode 178 → 179
+- `app/src/main/java/com/ai/agent/tools/categories/CustomTools.kt` — `executeHttp` suspend + cancellable
+- `app/src/main/assets/skills/setup_terminal_access.md` — server: runningProcs Set, req.on('close'), /kill endpoint, version 4.0.51
+- `app/src/main/assets/skills/terminal_commands.md` — document cancellation behavior + `cancelled` field
+
+### Migration Notes
+- **Server restart required**: User must restart the server after updating the skill
+- **Recreate run_command tool**: Tell Aira "set up terminal access" to write the new server + recreate the tool
+- **Backward compatible**: Old server + new APK works (just no kill-on-disconnect). New server + old APK works (just blocking HTTP call, not cancellable)
+
+---
+
 ## v4.0.50 (versionCode 178) — Remove Forced Timeout + Fix PTY Hanging + Step Timeout Fix
 **Date:** 2026-10-30
 

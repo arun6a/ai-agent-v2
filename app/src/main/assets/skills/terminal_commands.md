@@ -144,24 +144,34 @@ Storage:        run_command(command="df -h /sdcard")
 Memory:         run_command(command="free -h 2>/dev/null || cat /proc/meminfo | head -5")
 ```
 
-## How to Interpret Command Results (v4.0.50+)
+## How to Interpret Command Results (v4.0.51+)
 
 When run_command returns, the response JSON now includes:
-1. `"success": true/false` — command completed (exit code 0 + not timed out)
+1. `"success": true/false` — command completed (exit code 0 + not timed out + not cancelled)
 2. `"exitCode": 0` — shell exit code (0 = success, non-zero = failure)
 3. `"timedOut": true/false` — if true, command exceeded the timeout YOU set and was killed
-4. `"output": "..."` — cleaned stdout (ANSI codes stripped)
-5. `"stderr": "..."` — cleaned stderr
-6. `"elapsed": "5s"` — how long the command took
-7. `"pty": "script"` or `"spawn"` — PTY mode used
-8. `"autoYesUsed": true/false` — whether auto-Y was sent for a detected prompt
+4. `"cancelled": true/false` — v4.0.51: if true, user sent a new message or tapped Stop
+5. `"output": "..."` — cleaned stdout (ANSI codes stripped)
+6. `"stderr": "..."` — cleaned stderr
+7. `"elapsed": "5s"` — how long the command took
+8. `"pty": "script"` or `"spawn"` — PTY mode used
+9. `"autoYesUsed": true/false` — whether auto-Y was sent for a detected prompt
 
 ### Decision logic:
-- If `timedOut: true` → you passed a timeout that was too short. Re-run WITHOUT timeout (default = infinite).
+- If `timedOut: true` → you set a timeout that was too short. Re-run WITHOUT timeout (default = infinite).
+- If `cancelled: true` → user interrupted (new message or Stop). DON'T retry — user moved on.
 - If `exitCode: 0` → command succeeded (even if stderr has apt warnings — IGNORE those)
 - If `exitCode: 1` and output has "not found" → check PATH, prefix with `export PATH=...`
 - If `success: false` but output looks correct → check exitCode; some commands return non-zero on success
 - If response takes a long time → that's expected for builds/installs (no step timeout kill in v4.0.50+)
+
+### What happens when user sends a new message mid-command (v4.0.51+):
+1. Aira cancels the current agent loop (`loopJob.cancel()`)
+2. The HTTP call to aira-server.js is cancelled immediately (`call.cancel()`)
+3. The server detects client disconnect (`req.on('close')`) and kills the subprocess (`proc.kill('SIGKILL')`)
+4. The phone stops running the command — no orphaned processes consuming CPU
+
+This means: if a 5-minute build is running and the user types "stop", the build is killed within seconds.
 
 ### Old response format (pre-v4.0.49):
 If the response doesn't have `exitCode`/`timedOut`/`pty` fields, the server is old.

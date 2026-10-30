@@ -49,7 +49,7 @@ const { spawn, execSync } = require('child_process');
 
 const PORT = 8080;
 const HOST = '127.0.0.1';
-const VERSION = '4.0.49';
+const VERSION = '4.0.51';
 
 // v4.0.49: Detect PTY support via 'script' command at startup.
 // If 'script' is available, commands run in a real PTY (interactive prompts work).
@@ -66,6 +66,11 @@ try {
   ptyMode = 'spawn';
 }
 console.log(`PTY mode: ${ptyMode}`);
+
+// v4.0.51: Track all running subprocesses so we can kill them on client
+// disconnect or when the /kill endpoint is called. This prevents orphaned
+// commands from consuming CPU after the user cancels.
+const runningProcs = new Set();
 
 http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -86,6 +91,19 @@ http.createServer((req, res) => {
 
   if (token !== 'aira') {
     res.end(JSON.stringify({ success: false, error: 'Invalid token. Use ?token=aira' }));
+    return;
+  }
+
+  // v4.0.51: /kill endpoint — kills ALL running commands.
+  // Called when user sends a new message or taps Stop (client disconnects).
+  // Usage: GET /kill?token=aira
+  if (url.pathname === '/kill') {
+    let killed = 0;
+    for (const p of runningProcs) {
+      try { p.kill('SIGKILL'); killed++; } catch (e) {}
+    }
+    runningProcs.clear();
+    res.end(JSON.stringify({ success: true, killed: killed, message: 'All running commands killed' }));
     return;
   }
 
@@ -116,6 +134,21 @@ http.createServer((req, res) => {
     // Fallback: direct spawn with /system/bin/sh (no PTY)
     proc = spawn(cmd, { shell: '/system/bin/sh', stdio: ['pipe', 'pipe', 'pipe'] });
   }
+
+  // v4.0.51: Register this proc so /kill endpoint can find it.
+  // Also set up disconnect watcher — if client closes the connection
+  // (user sent a new message or tapped Stop), kill the subprocess.
+  runningProcs.add(proc);
+  let clientDisconnected = false;
+  req.on('close', () => {
+    if (!proc.killed && proc.exitCode === null && proc.signalCode === null) {
+      // Process still running + client gone → kill it
+      try { proc.kill('SIGKILL'); } catch (e) {}
+      clientDisconnected = true;
+      console.log(`[v4.0.51] Client disconnected — killed proc for: ${cmd.substring(0, 50)}`);
+    }
+    runningProcs.delete(proc);
+  });
 
   // v4.0.50: Auto-answer Y/n prompts — but ONLY when a prompt is detected.
   // We watch stdout for '?', '[Y/n]', '[y/N]', '(yes/no)' patterns.
@@ -175,9 +208,10 @@ http.createServer((req, res) => {
 
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     const result = {
-      success: code === 0 && !timedOut,
+      success: code === 0 && !timedOut && !clientDisconnected,
       exitCode: code,
       timedOut: timedOut,
+      cancelled: clientDisconnected,  // v4.0.51: client disconnected (user sent new msg)
       output: clean(stdout),
       stderr: clean(stderr),
       elapsed: elapsed + 's',
