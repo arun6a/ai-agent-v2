@@ -65,7 +65,9 @@ http.createServer((req, res) => {
   }
   
   try {
-    const output = execSync(cmd, { 
+    // v4.0.48: Source profile first so pkg/node/java are in PATH
+    const fullCmd = 'source ~/.profile 2>/dev/null; source ~/.bashrc 2>/dev/null; ' + cmd;
+    const output = execSync(fullCmd, { 
       timeout: 120000, 
       encoding: 'utf8',
       maxBuffer: 1024 * 1024 * 10  // 10MB max output

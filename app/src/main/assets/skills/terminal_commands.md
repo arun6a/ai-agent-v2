@@ -9,12 +9,44 @@ keywords: build, install, command, shell, terminal, run, script, git, system, ch
 This skill assumes you've already set up terminal access via the setup-terminal-access skill.
 The run_command custom tool should already exist + the server should be running.
 
+## CRITICAL: Environment Setup (read this first!)
+
+The HTTP server runs commands in a NON-INTERACTIVE shell. This means:
+- PATH may not include `pkg`, `node`, `java`, `gradle` etc.
+- ~/.profile is NOT sourced automatically
+- The interactive terminal has these, but the server doesn't
+
+**FIRST COMMAND always run:**
+```
+run_command(command="source ~/.profile 2>/dev/null; source ~/.bashrc 2>/dev/null; echo PATH=$PATH; which pkg node java gradle 2>/dev/null")
+```
+
+If `pkg` is found at `/data/data/com.tom.rv2ide/files/usr/bin/pkg` or similar:
+- Prefix ALL commands with the full path OR
+- Export PATH first: `export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin`
+
+**Example pattern for ALL commands:**
+```
+run_command(command="source ~/.profile 2>/dev/null; export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; <YOUR COMMAND HERE>")
+```
+
+If `idesetup` is available, tell the user: "Run `idesetup -c` in Android Code Studio terminal to install JDK + build tools"
+
 ## Verify Server Is Running
-Before running commands, verify:
+```
 run_command(command="echo aira-server-check")
+```
 If this fails, tell the user: "Terminal server not running. Say 'set up terminal access' to start it."
 
 ## Common Commands by Category
+
+### Environment Exploration (run these FIRST)
+```
+Find available tools:   run_command(command="source ~/.profile 2>/dev/null; which pkg node java javac gradle python3 2>/dev/null")
+Check PATH:            run_command(command="echo $PATH")
+List installed bins:   run_command(command="ls /data/data/com.tom.rv2ide/files/usr/bin/ 2>/dev/null | head -30")
+Check home directory:  run_command(command="echo HOME=$HOME && ls -la ~ 2>/dev/null")
+```
 
 ### File Operations
 ```
@@ -25,106 +57,53 @@ Move file:         run_command(command="mv /sdcard/old.txt /sdcard/new.txt")
 Delete file:       run_command(command="rm /sdcard/unwanted.txt")
 Create directory:  run_command(command="mkdir -p /sdcard/Aira/projects")
 Find files:         run_command(command="find /sdcard -name '*.apk' -type f")
-Disk usage:         run_command(command="du -sh /sdcard/Aira/*")
 ```
 
 ### Build Android Projects
+IMPORTANT: /sdcard is mounted with noexec on Android. You CANNOT execute binaries from /sdcard.
+To build, either:
+1. Copy the project to the app's home directory: `cp -r /sdcard/MyProject ~/MyProject`
+2. Run gradle from there: `cd ~/MyProject && ./gradlew assembleDebug`
+OR:
+1. Run `idesetup -c` first (installs JDK + build tools in Android Code Studio)
+2. Use the IDE's built-in build system
+
 ```
-Build debug APK:   run_command(command="cd /sdcard/MyProject && ./gradlew assembleDebug")
-Build release:     run_command(command="cd /sdcard/MyProject && ./gradlew assembleRelease")
-Clean build:       run_command(command="cd /sdcard/MyProject && ./gradlew clean assembleDebug")
-Check errors:       run_command(command="cd /sdcard/MyProject && ./gradlew assembleDebug 2>&1 | tail -50")
-List tasks:         run_command(command="cd /sdcard/MyProject && ./gradlew tasks")
+Build debug APK:   run_command(command="source ~/.profile 2>/dev/null; cd /sdcard/MyProject && ./gradlew assembleDebug 2>&1")
+Build release:     run_command(command="source ~/.profile 2>/dev/null; cd /sdcard/MyProject && ./gradlew assembleRelease 2>&1")
 ```
 
-### Install Packages (Termux)
+### Install Packages (Android Code Studio / Termux)
 ```
-Update packages:   run_command(command="pkg update && pkg upgrade")
-Install Node.js:   run_command(command="pkg install nodejs")
-Install Python:    run_command(command="pkg install python")
-Install Java:      run_command(command="pkg install openjdk-17")
-Install Git:       run_command(command="pkg install git")
-Install curl:      run_command(command="pkg install curl")
-Install vim:       run_command(command="pkg install vim")
+Update packages:   run_command(command="source ~/.profile 2>/dev/null; pkg update -y && pkg upgrade -y")
+Install Node.js:   run_command(command="source ~/.profile 2>/dev/null; pkg install -y nodejs")
+Install Python:    run_command(command="source ~/.profile 2>/dev/null; pkg install -y python")
+Install Java:      run_command(command="source ~/.profile 2>/dev/null; pkg install -y openjdk-17")
+Install Git:       run_command(command="source ~/.profile 2>/dev/null; pkg install -y git")
 ```
 
 ### Git Commands
 ```
-Status:            run_command(command="cd /sdcard/MyProject && git status")
-Add all:           run_command(command="cd /sdcard/MyProject && git add -A")
-Commit:            run_command(command="cd /sdcard/MyProject && git commit -m 'update'")
-Push:              run_command(command="cd /sdcard/MyProject && git push")
-Pull:              run_command(command="cd /sdcard/MyProject && git pull")
-Clone:             run_command(command="cd /sdcard && git clone https://github.com/user/repo.git")
-Log:               run_command(command="cd /sdcard/MyProject && git log --oneline -10")
+Status:    run_command(command="cd /sdcard/MyProject && git status")
+Clone:     run_command(command="cd /sdcard && git clone https://github.com/user/repo.git")
+Commit:    run_command(command="cd /sdcard/MyProject && git add -A && git commit -m 'update'")
+Push:      run_command(command="cd /sdcard/MyProject && git push")
 ```
 
 ### System Info
 ```
-Device model:      run_command(command="getprop ro.product.model")
-Android version:   run_command(command="getprop ro.build.version.release")
-Battery:           run_command(command="dumpsys battery")
-Storage:           run_command(command="df -h /sdcard")
-Memory:            run_command(command="free -h")
-CPU info:          run_command(command="cat /proc/cpuinfo | head -20")
-Network:           run_command(command="ip addr show wlan0")
-IP address:        run_command(command="ip addr show wlan0 | grep 'inet '")
-Uptime:            run_command(command="uptime")
-Installed apps:    run_command(command="pm list packages -3")
+Device model:   run_command(command="getprop ro.product.model")
+Android version: run_command(command="getprop ro.build.version.release")
+Storage:        run_command(command="df -h /sdcard")
+Memory:         run_command(command="free -h")
 ```
-
-### Run Scripts
-```
-Python:            run_command(command="python /sdcard/Aira/script.py")
-Node.js:           run_command(command="node /sdcard/Aira/app.js")
-Shell script:      run_command(command="sh /sdcard/Aira/build.sh")
-With args:         run_command(command="python /sdcard/Aira/script.py --arg1 value1")
-```
-
-### Network
-```
-HTTP GET:          run_command(command="curl -s https://api.github.com/repos/termux/termux-app/releases/latest")
-Ping:              run_command(command="ping -c 3 google.com")
-Download:          run_command(command="curl -o /sdcard/Aira/file.zip https://example.com/file.zip")
-DNS lookup:        run_command(command="nslookup google.com")
-Port check:        run_command(command="curl -s -o /dev/null -w '%{http_code}' https://google.com")
-```
-
-### Process Management
-```
-List processes:    run_command(command="ps aux | head -20")
-Kill by name:      run_command(command="pkill -f node")
-Find process:      run_command(command="ps aux | grep node")
-```
-
-## How to Handle Build Errors
-
-When a build fails, the output will contain error messages. Common patterns:
-
-### Gradle build errors
-```
-ERROR: Failed to resolve: com.squareup.retrofit2:retrofit:2.9.0
-→ Dependency not found. Check build.gradle for correct version.
-
-ERROR: Manifest merger failed
-→ AndroidManifest.xml conflict. Check for duplicate permissions/activities.
-
-ERROR: Compilation failed
-→ Java/Kotlin code error. The output will show the file + line number.
-```
-
-### What to do when build fails
-1. Read the error output carefully
-2. Identify the file + line number
-3. Use readFile to read the file
-4. Use writeFile to fix the error
-5. Run the build again: run_command(command="cd /project && ./gradlew assembleDebug")
 
 ## Important Notes
 
-- Commands run in the terminal app's environment (Termux or Android Code Studio)
+- Commands run via the HTTP server in Android Code Studio's terminal environment
+- The server's shell is NON-INTERACTIVE — always source ~/.profile first
+- /sdcard is mounted with noexec — can't execute binaries from there
+- Use `pkg` to install packages (nodejs, python, openjdk-17, git)
+- Run `idesetup -c` to set up the full IDE environment
 - The server has a 120-second timeout — long builds may be killed
-- For long builds, increase timeout in /sdcard/Aira/aira-server.js
-- Max output is 10MB — very large outputs will error
-- The server runs on 127.0.0.1:8080 (localhost only — not accessible from other devices)
-- If the server dies, restart: open terminal → "node /sdcard/Aira/aira-server.js &"
+- If the server dies, tell user to restart: open terminal → "node /sdcard/Aira/aira-server.js &"
