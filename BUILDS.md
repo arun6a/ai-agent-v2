@@ -4,6 +4,61 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.49 (versionCode 177) — Terminal PTY Support + Timeout Parameter + Optional Tool Params
+**Date:** 2026-10-30
+
+### Major Changes
+
+#### 1. PTY-Based Terminal Server (Option A)
+- Rewrote `aira-server.js` (in `setup_terminal_access.md` skill) to use `child_process.spawn` instead of `execSync`
+- **Auto-detects PTY support** via `script` command at startup:
+  - If `script` available → PTY mode (`script -qc "cmd" /dev/null`) — real pseudo-terminal
+  - If not → fallback to direct spawn with `/system/bin/sh`
+- **Interactive prompts auto-answered** — feeds `y\n` to stdin after 3 seconds (handles apt/pkg Y/n prompts)
+- **ANSI escape codes stripped** from output for cleaner AI parsing
+- **Removed `source ~/.profile` auto-prepend** — was causing `Syntax error: end of file unexpected` in dash shell
+- Response now includes: `exitCode`, `timedOut`, `elapsed`, `pty` mode
+
+#### 2. Timeout Parameter for `run_command` (Option 2)
+- `run_command` custom tool now accepts optional `timeout` parameter
+- Default: 120s. Max: 600s (10 min). Client-side cap: 305s.
+- AI can pass `timeout=300` for builds, `timeout=180` for package installs
+- **`CustomTools.kt`**: bumped OkHttp `readTimeout` from 30s → 305s, added `callTimeout(310s)`
+- **Optional parameter support**: HTTP custom tools now strip unresolved `{param}` placeholders from URL instead of failing — enables optional parameters like `timeout`
+
+#### 3. Skill File Updates
+- `terminal_commands.md`:
+  - Replaced all `which` → `command -v` (POSIX builtin, always works in dash)
+  - Documented `apt WARNING` lines as expected noise (IGNORE them)
+  - Documented `idesetup` as bash-only + interactive — cannot run via `run_command`
+  - Added timeout guidance: `timeout=300` for builds, `timeout=180` for installs
+  - Updated "How to Interpret Results" section for new v4.0.49 response format
+- `setup_terminal_access.md`:
+  - Full rewrite with PTY server code, timeout parameter, createCustomTool with `parameters="command,timeout"`
+  - Added PTY detection step, timeout guide table, troubleshooting for `timedOut`/`pty` fields
+
+### Root Causes Fixed
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| `which: not found` | dash shell has no `which` binary | Use `command -v` (POSIX builtin) |
+| `Syntax error: end of file unexpected` | Server auto-prepended `source ~/.profile` which aborts in dash | Removed auto-prepend; callers set PATH explicitly |
+| `idesetup -c` timeout (30s) | OkHttp `readTimeout=30s` killed the connection before server's 120s | Bumped to 305s + added `timeout` parameter |
+| `idesetup` syntax error | bash-only script parsed by dash | PTY via `script` + documented as manual-only |
+| apt warnings (×4) treated as errors | `pkg` wraps `apt` which prints warnings | Documented as expected noise |
+
+### Files Changed
+- `app/build.gradle.kts` — version 4.0.48 → 4.0.49, versionCode 176 → 177
+- `app/src/main/java/com/ai/agent/tools/categories/CustomTools.kt` — readTimeout 30s→305s, optional params
+- `app/src/main/assets/skills/setup_terminal_access.md` — full rewrite (PTY server + timeout)
+- `app/src/main/assets/skills/terminal_commands.md` — which→command -v, timeout guidance, PTY notes
+
+### Migration Notes
+- **Existing `run_command` tools**: The old tool (without `timeout` param) still works — the server uses 120s default. To get the new timeout support, Aira must recreate the tool via `createCustomTool` with `parameters="command,timeout"`.
+- **Server restart required**: User must restart the server after updating the skill: `node /sdcard/Aira/aira-server.js &`
+- **Backward compatible**: Old server + new APK works (just no timeout/PTY). New server + old APK works (just 30s client timeout still applies).
+
+---
+
 ## v4.0.39 (versionCode 167) — Tools Section Reorganized + Custom Tools Visible
 **Date:** 2026-10-29
 **Commit:** `4aa2cf6`

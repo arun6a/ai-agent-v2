@@ -11,38 +11,75 @@ The run_command custom tool should already exist + the server should be running.
 
 ## CRITICAL: Environment Setup (read this first!)
 
-The HTTP server runs commands in a NON-INTERACTIVE shell. This means:
-- PATH may not include `pkg`, `node`, `java`, `gradle` etc.
-- ~/.profile is NOT sourced automatically
-- The interactive terminal has these, but the server doesn't
+The HTTP server runs commands with PTY support (v4.0.49+). Key facts:
+1. PTY mode: if `script` command is available, commands run in a real pseudo-terminal.
+   Interactive Y/n prompts are auto-answered with 'y' after 3 seconds.
+2. Fallback mode: if `script` not available, uses direct spawn (no PTY).
+3. `which` is NOT available — use `command -v` instead (POSIX builtin, always works).
+4. `pkg`, `node`, `java`, `git` live in `/data/data/com.tom.rv2ide/files/usr/bin/`.
+5. The server does NOT source `~/.profile` — you must set PATH explicitly.
+6. **Timeout**: default 120s. Pass `timeout=300` for builds, `timeout=600` max.
 
-**FIRST COMMAND always run:**
+**FIRST COMMAND always run to find tools:**
 ```
-run_command(command="source ~/.profile 2>/dev/null; source ~/.bashrc 2>/dev/null; echo PATH=$PATH; which pkg node java gradle 2>/dev/null")
-```
-
-If `pkg` is found at `/data/data/com.tom.rv2ide/files/usr/bin/pkg` or similar:
-- Prefix ALL commands with the full path OR
-- Export PATH first: `export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin`
-
-**Example pattern for ALL commands:**
-```
-run_command(command="source ~/.profile 2>/dev/null; export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; <YOUR COMMAND HERE>")
+run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java git 2>/dev/null; echo DONE")
 ```
 
-If `idesetup` is available, tell the user: "Run `idesetup -c` in Android Code Studio terminal to install JDK + build tools"
+If you see output like `/data/data/com.tom.rv2ide/files/usr/bin/pkg` etc., tools are present.
+
+**Universal command pattern for ALL commands that need pkg/node/java:**
+```
+run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; <YOUR COMMAND HERE>")
+```
+
+## CRITICAL: Known Shell Limitations
+
+### `which` does NOT exist
+AndroidIDE-Rv2's minimal shell has no `which` binary. ALWAYS use `command -v` instead:
+```
+WRONG:  which pkg node java
+RIGHT:  command -v pkg node java
+```
+
+### `idesetup` CANNOT run via run_command
+The `idesetup` script uses bash-specific syntax (the minimal `sh` is dash and can't parse it),
+and `idesetup -c` is interactive (downloads JDK + build tools with prompts).
+If you run `idesetup -c` via run_command, you will see:
+```
+Syntax error: word unexpected (expecting ")")
+```
+OR the command will time out after 120 seconds.
+
+If the user wants to set up the IDE, tell them:
+"Open AndroidIDE-Rv2 terminal and run `idesetup -c` manually — it's interactive and needs bash."
+
+### `apt` warnings are EXPECTED NOISE
+When you run `pkg install` or `pkg search`, you'll see this 4 times:
+```
+WARNING: apt does not have a stable CLI interface. Use with caution in scripts.
+```
+This is NOT an error — `pkg` wraps `apt` and apt prints this warning.
+IGNORE these warning lines. Only check:
+- The actual output (package names, "done", etc.)
+- The exit code (Exit: 0 = success, Exit: 1 = failure)
+
+### /sdcard is mounted with noexec
+You CANNOT execute binaries from /sdcard. To build:
+1. Copy the project to the app's home directory: `cp -r /sdcard/MyProject ~/MyProject`
+2. Run gradle from there: `cd ~/MyProject && ./gradlew assembleDebug`
 
 ## Verify Server Is Running
 ```
 run_command(command="echo aira-server-check")
 ```
-If this fails, tell the user: "Terminal server not running. Say 'set up terminal access' to start it."
+If this fails with "Connection refused": the server is not running.
+Tell the user: "Open AndroidIDE-Rv2 terminal and run: `node /sdcard/Aira/aira-server.js &`"
 
 ## Common Commands by Category
 
 ### Environment Exploration (run these FIRST)
 ```
-Find available tools:   run_command(command="source ~/.profile 2>/dev/null; which pkg node java javac gradle python3 2>/dev/null")
+Find available tools:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java javac git python3 2>/dev/null; echo DONE")
 Check PATH:            run_command(command="echo $PATH")
 List installed bins:   run_command(command="ls /data/data/com.tom.rv2ide/files/usr/bin/ 2>/dev/null | head -30")
 Check home directory:  run_command(command="echo HOME=$HOME && ls -la ~ 2>/dev/null")
@@ -65,22 +102,30 @@ To build, either:
 1. Copy the project to the app's home directory: `cp -r /sdcard/MyProject ~/MyProject`
 2. Run gradle from there: `cd ~/MyProject && ./gradlew assembleDebug`
 OR:
-1. Run `idesetup -c` first (installs JDK + build tools in Android Code Studio)
+1. Tell user: "Open AndroidIDE-Rv2 terminal and run `idesetup -c` to install JDK + build tools"
 2. Use the IDE's built-in build system
 
+**IMPORTANT: Pass timeout=300 for builds** (default 120s is too short for Gradle):
 ```
-Build debug APK:   run_command(command="source ~/.profile 2>/dev/null; cd /sdcard/MyProject && ./gradlew assembleDebug 2>&1")
-Build release:     run_command(command="source ~/.profile 2>/dev/null; cd /sdcard/MyProject && ./gradlew assembleRelease 2>&1")
+Build debug APK:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleDebug 2>&1", timeout=300)
+Build release:     run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleRelease 2>&1", timeout=300)
 ```
 
-### Install Packages (Android Code Studio / Termux)
+### Install Packages (AndroidIDE-Rv2 / Termux)
+NOTE: `pkg install` prints 4 "apt WARNING" lines — IGNORE them. They are not errors.
+NOTE: Pass `timeout=180` for installs (downloads can take a while).
 ```
-Update packages:   run_command(command="source ~/.profile 2>/dev/null; pkg update -y && pkg upgrade -y")
-Install Node.js:   run_command(command="source ~/.profile 2>/dev/null; pkg install -y nodejs")
-Install Python:    run_command(command="source ~/.profile 2>/dev/null; pkg install -y python")
-Install Java:      run_command(command="source ~/.profile 2>/dev/null; pkg install -y openjdk-17")
-Install Git:       run_command(command="source ~/.profile 2>/dev/null; pkg install -y git")
+Update packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg update -y 2>&1; echo EXIT=$?", timeout=180)
+Install Node.js:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y nodejs 2>&1; echo EXIT=$?", timeout=180)
+Install Python:    run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y python 2>&1; echo EXIT=$?", timeout=180)
+Install Java:      run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y openjdk-17 2>&1; echo EXIT=$?", timeout=180)
+Install Git:       run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y git 2>&1; echo EXIT=$?", timeout=180)
+Search packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg search openjdk 2>&1")
 ```
+NOTE: `gradle` is NOT in the pkg repository. To build Gradle projects, you must:
+1. Download gradle manually: `curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/gradle.zip`
+2. Unzip: `cd /tmp && unzip gradle.zip`
+3. Use: `/tmp/gradle-8.5/bin/gradle build`
 
 ### Git Commands
 ```
@@ -95,15 +140,40 @@ Push:      run_command(command="cd /sdcard/MyProject && git push")
 Device model:   run_command(command="getprop ro.product.model")
 Android version: run_command(command="getprop ro.build.version.release")
 Storage:        run_command(command="df -h /sdcard")
-Memory:         run_command(command="free -h")
+Memory:         run_command(command="free -h 2>/dev/null || cat /proc/meminfo | head -5")
 ```
+
+## How to Interpret Command Results (v4.0.49+)
+
+When run_command returns, the response JSON now includes:
+1. `"success": true/false` — command completed (exit code 0 + not timed out)
+2. `"exitCode": 0` — shell exit code (0 = success, non-zero = failure)
+3. `"timedOut": true/false` — if true, command exceeded the timeout and was killed
+4. `"output": "..."` — cleaned stdout (ANSI codes stripped)
+5. `"stderr": "..."` — cleaned stderr
+6. `"elapsed": "5s"` — how long the command took
+7. `"pty": "script"` or `"spawn"` — PTY mode used
+
+### Decision logic:
+- If `timedOut: true` → re-run with higher timeout: `run_command(command="...", timeout=300)`
+- If `exitCode: 0` → command succeeded (even if stderr has apt warnings — IGNORE those)
+- If `exitCode: 1` and output has "not found" → check PATH, prefix with `export PATH=...`
+- If `success: false` but output looks correct → check exitCode; some commands return non-zero on success
+
+### Old response format (pre-v4.0.49):
+If the response doesn't have `exitCode`/`timedOut`/`pty` fields, the server is old.
+Tell the user: "Please restart the terminal server: open terminal, Ctrl+C, then run: node /sdcard/Aira/aira-server.js &"
 
 ## Important Notes
 
-- Commands run via the HTTP server in Android Code Studio's terminal environment
-- The server's shell is NON-INTERACTIVE — always source ~/.profile first
+- Commands run via the HTTP server in AndroidIDE-Rv2's terminal environment
+- v4.0.49+: PTY support via `script` command (interactive prompts auto-answered with 'y' after 3s)
+- v4.0.49+: Timeout parameter — pass `timeout=300` for builds, `timeout=600` max (default 120s)
+- DO NOT use `which` — use `command -v`
+- DO NOT use `idesetup` via run_command — it's interactive + bash-only (even with PTY, prefer manual)
 - /sdcard is mounted with noexec — can't execute binaries from there
 - Use `pkg` to install packages (nodejs, python, openjdk-17, git)
-- Run `idesetup -c` to set up the full IDE environment
-- The server has a 120-second timeout — long builds may be killed
+- `apt` warnings from `pkg` are expected — IGNORE them
+- If `timedOut: true` in response → re-run with higher timeout
+- If response has no `pty`/`exitCode` fields → server is old, tell user to restart it
 - If the server dies, tell user to restart: open terminal → "node /sdcard/Aira/aira-server.js &"

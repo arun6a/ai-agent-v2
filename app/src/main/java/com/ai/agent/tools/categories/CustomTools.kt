@@ -27,9 +27,13 @@ import java.util.concurrent.TimeUnit
  */
 object CustomTools {
     private const val TAG = "CustomTools"
+    // v4.0.49: Bumped readTimeout from 30s → 305s to support long-running commands
+    // (builds, package installs). The server-side default is 120s, max 600s.
+    // 305s = 300s (5 min build) + 5s buffer for network overhead.
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(305, TimeUnit.SECONDS)
+        .callTimeout(310, TimeUnit.SECONDS)
         .build()
     private val jsonMediaType = "application/json".toMediaType()
 
@@ -233,7 +237,10 @@ object CustomTools {
                 body = body.replace("{$key}", value.toString())
             }
 
-            // v4.0.46: Fix regex crash — same fix as executeShell. Use string scan.
+            // v4.0.49: Support optional parameters for HTTP tools.
+            // Instead of failing when {param} placeholders remain unresolved,
+            // strip them (and their &param= prefix) from the URL. This allows
+            // tools like run_command to have optional params like timeout.
             val unresolved = mutableListOf<String>()
             var i = 0
             while (i < url.length) {
@@ -246,7 +253,20 @@ object CustomTools {
                 } else { i++ }
             }
             if (unresolved.isNotEmpty()) {
-                return ToolExecutor.ToolResult(false, "missing parameters in URL: $unresolved. Required: ${tool.parameters}")
+                // Strip each unresolved placeholder + its query param prefix
+                for (placeholder in unresolved) {
+                    val paramName = placeholder.trim('{', '}')
+                    // Remove "&param={param}" (param in the middle of query string)
+                    url = url.replace("&$paramName=$placeholder", "")
+                    // Remove "?param={param}&" → "?" (param at start, followed by others)
+                    url = url.replace("?$paramName=$placeholder&", "?")
+                    // Remove "?param={param}" (param is the only query param)
+                    url = url.replace("?$paramName=$placeholder", "")
+                    // Remove any remaining literal placeholder (safety)
+                    url = url.replace(placeholder, "")
+                }
+                Log.i(TAG, "HTTP tool '${tool.name}': stripped optional params $unresolved from URL")
+                // Don't fail — proceed with cleaned URL. The server will use its defaults.
             }
 
             Log.i(TAG, "Executing custom HTTP tool '${tool.name}': $method $url")
