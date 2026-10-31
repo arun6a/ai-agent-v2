@@ -80,11 +80,88 @@ object RuleTools {
                     }
                 }
 
+                // v4.0.52: Normalize triggerValue for notification rules — convert display
+                // names to package names so the NotificationListener can match them.
+                // E.g., "WhatsApp" → "com.whatsapp", "Telegram" → "com.telegram.messenger"
+                var normalizedTriggerValue = triggerValue
+                if (triggerType == "notification" && !triggerValue.contains(":")) {
+                    val knownPackages = mapOf(
+                        "whatsapp" to "com.whatsapp",
+                        "telegram" to "com.telegram.messenger",
+                        "facebook" to "com.facebook.katana",
+                        "messenger" to "com.facebook.orca",
+                        "instagram" to "com.instagram.android",
+                        "gmail" to "com.google.android.gm",
+                        "youtube" to "com.google.android.youtube",
+                        "twitter" to "com.twitter.android",
+                        "x" to "com.twitter.android",
+                        "tiktok" to "com.zhiliaoapp.musically",
+                        "snapchat" to "com.snapchat.android",
+                        "discord" to "com.discord",
+                        "slack" to "com.slack",
+                        "teams" to "com.microsoft.teams",
+                        "outlook" to "com.microsoft.office.outlook",
+                        "messages" to "com.google.android.apps.messaging",
+                        "sms" to "com.google.android.apps.messaging",
+                        "phone" to "com.android.dialer",
+                        "calls" to "com.android.dialer",
+                        "linkedin" to "com.linkedin.android",
+                        "spotify" to "com.spotify.music",
+                        "instagram" to "com.instagram.android"
+                    )
+                    val lookup = triggerValue.lowercase().trim()
+                    val packageName = knownPackages[lookup]
+                    if (packageName != null) {
+                        normalizedTriggerValue = packageName
+                        Log.i("RuleTools", "Normalized triggerValue: '$triggerValue' → '$packageName'")
+                    } else if (!triggerValue.contains(".")) {
+                        // Doesn't look like a package name (no dots) and not in our known list
+                        return ToolExecutor.ToolResult(false,
+                            "triggerValue '$triggerValue' looks like a display name, not a package name. " +
+                            "Use the Android package name, e.g., 'com.whatsapp' (not 'WhatsApp'). " +
+                            "Known packages: whatsapp→com.whatsapp, telegram→com.telegram.messenger, " +
+                            "messenger→com.facebook.orca, gmail→com.google.android.gm. " +
+                            "Or use format 'package:sender' e.g., 'com.whatsapp:Mom'.")
+                    }
+                } else if (triggerType == "notification" && triggerValue.contains(":")) {
+                    // Format: "package:sender" — normalize the package part
+                    val parts = triggerValue.split(":", limit = 2)
+                    val pkgPart = parts[0].lowercase().trim()
+                    val senderPart = parts.getOrNull(1) ?: ""
+                    val knownPackages = mapOf(
+                        "whatsapp" to "com.whatsapp",
+                        "telegram" to "com.telegram.messenger",
+                        "facebook" to "com.facebook.katana",
+                        "messenger" to "com.facebook.orca",
+                        "instagram" to "com.instagram.android",
+                        "gmail" to "com.google.android.gm"
+                    )
+                    val packageName = knownPackages[pkgPart]
+                    if (packageName != null) {
+                        normalizedTriggerValue = "$packageName:$senderPart"
+                        Log.i("RuleTools", "Normalized triggerValue: '$triggerValue' → '$normalizedTriggerValue'")
+                    }
+                }
+
+                // v4.0.52: Validate action for notification rules — if action is "replyToNotification"
+                // without parentheses, reject + tell AI the correct format.
+                if (triggerType == "notification") {
+                    val cleanAction = action.removePrefix("direct:").removePrefix("tool:").trim()
+                    // Check if action is just a bare tool name with no parentheses
+                    if (cleanAction.matches(Regex("^[a-zA-Z_][a-zA-Z0-9_]*$")) &&
+                        cleanAction.lowercase().contains("reply")) {
+                        return ToolExecutor.ToolResult(false,
+                            "action '$action' is missing arguments. For direct reply, use the FULL tool call: " +
+                            "replyToNotification(package=\"com.whatsapp\", message=\"your reply text\"). " +
+                            "For smart reply (AI decides), use natural language like 'Reply in Tamil as my assistant'.")
+                    }
+                }
+
                 // v2.5.2: Duplicate rule detection — don't create a rule if an identical one exists.
                 val existingRules = database.getRules(enabledOnly = false)
                 val duplicate = existingRules.find { existing ->
                     existing.triggerType == triggerType &&
-                    existing.triggerValue == triggerValue &&
+                    existing.triggerValue == normalizedTriggerValue &&
                     existing.action == action
                 }
                 if (duplicate != null) {
@@ -92,7 +169,8 @@ object RuleTools {
                         "Use listRules to see all rules, or deleteRule(${duplicate.id}) to remove it.")
                 }
 
-                val ruleId = database.addRule(name, triggerType, triggerValue, action, days)
+                // v4.0.52: Use normalizedTriggerValue (display name → package name conversion done above)
+                val ruleId = database.addRule(name, triggerType, normalizedTriggerValue, action, days)
                 // Schedule with AlarmManager if it's a time rule
                 if (triggerType == "time") {
                     try {
@@ -103,7 +181,10 @@ object RuleTools {
                         Log.e(TAG, "Failed to schedule rule", e)
                     }
                 }
-                ToolExecutor.ToolResult(true, "Created rule '$name' (id=$ruleId, trigger=$triggerType:$triggerValue" +
+                val normalizedNote = if (normalizedTriggerValue != triggerValue) {
+                    " (normalized from '$triggerValue')"
+                } else ""
+                ToolExecutor.ToolResult(true, "Created rule '$name' (id=$ruleId, trigger=$triggerType:$normalizedTriggerValue$normalizedNote" +
                     (if (days != null) ", days=$days" else "") + "). " +
                     if (triggerType == "time") "It has been scheduled with the system AlarmManager and will fire even if the app is closed." else "")
             }

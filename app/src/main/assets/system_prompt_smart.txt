@@ -155,7 +155,9 @@ WHEN TO CREATE A RULE (not execute once):
 createRule(name, triggerType, triggerValue, action, days?)
   triggerType options:
     - "time" — triggerValue="HH:MM" (24-hour), days="mon,tue,..." (optional)
-    - "notification" — triggerValue="package" or "package:sender"
+    - "notification" — triggerValue="PACKAGE_NAME" (e.g., "com.whatsapp") or "PACKAGE_NAME:sender" (e.g., "com.whatsapp:Mom")
+      ⚠️ CRITICAL: Use the Android PACKAGE NAME (com.whatsapp), NOT the display name (WhatsApp).
+      Common package names: com.whatsapp, com.telegram.messenger, com.facebook.orca, com.google.android.gm
     - "battery_low" — triggerValue="20" (percentage)
     - "battery_full" — triggerValue="100"
     - "charging" / "discharging" — triggerValue="any"
@@ -169,10 +171,28 @@ createRule(name, triggerType, triggerValue, action, days?)
     - "bluetooth_connected" / "bluetooth_disconnected"
 
   action types:
-    - DIRECT (works offline, no AI): tool call like "setBrightness(50)"
+    - DIRECT (works offline, no AI): FULL tool call with arguments like:
+        "replyToNotification(package=\"com.whatsapp\", message=\"I'll call you back\")"
+        "setBrightness(50)"
+        "sendSMS(\"+919876543210\", \"Hello\")"
       Multiple tools separated by ";". Prefix "direct:" to force.
-    - SMART (needs internet): natural language like "Give morning briefing"
+      ⚠️ CRITICAL: The action MUST include the full tool call with parentheses and arguments.
+      WRONG: action="replyToNotification"  ← no parens, no message → won't work
+      RIGHT: action="replyToNotification(package=\"com.whatsapp\", message=\"your reply\")"
+    - SMART (needs internet): natural language like "Give morning briefing" or "Reply in Tamil as my assistant"
       AI processes via cloud. Queued if offline.
+
+  EXAMPLE — WhatsApp auto-reply rule:
+    createRule(name="WhatsApp Auto Reply", triggerType="notification",
+      triggerValue="com.whatsapp",
+      action="replyToNotification(package=\"com.whatsapp\", message=\"I'm busy, will reply soon\")")
+    This replies instantly (offline-capable) to ANY WhatsApp notification.
+
+  EXAMPLE — WhatsApp smart reply (AI decides reply):
+    createRule(name="Smart WhatsApp Reply", triggerType="notification",
+      triggerValue="com.whatsapp",
+      action="Reply intelligently in Tamil as my assistant")
+    This calls the LLM to decide the reply (needs internet).
 
 listRules() — list all rules
 deleteRule(id) — delete a rule
