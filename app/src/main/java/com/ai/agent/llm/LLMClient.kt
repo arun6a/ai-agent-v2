@@ -699,8 +699,11 @@ tools array. Call tools using the standard tool_calls format.
 
         // Path 2: Manual JSON in content (Z.ai, older models, Claude without tools)
         if (contentStr.isBlank()) {
+            Log.w("LLMClient", "parseOpenAIResponse: contentStr is BLANK. message=$message")
             return LLMResponse("(empty response)", emptyList())
         }
+        // v4.0.56: Debug GLM-5.3-Flash — log what contentStr looks like before parseResponse
+        Log.d("LLMClient", "parseOpenAIResponse: contentStr length=${contentStr.length}, first80='${contentStr.take(80)}'")
         return parseResponse(contentStr)
     }
 
@@ -798,9 +801,13 @@ tools array. Call tools using the standard tool_calls format.
 
         return try {
             val json = JSONObject(jsonStr)
+            // v4.0.56: Debug GLM-5.3-Flash JSON-in-content issue.
+            // Log what we're parsing so we can see why it fails (if it does).
+            Log.d("LLMClient", "parseResponse: JSON parsed OK. keys=${json.keys().asSequence().toList()}")
             val reply = json.optString("reply", "Done.")
             val toolCalls = mutableListOf<ToolCall>()
             val callsArray = json.optJSONArray("tool_calls")
+            Log.d("LLMClient", "parseResponse: reply='${reply.take(80)}', callsArray=$callsArray")
             if (callsArray != null) {
                 for (i in 0 until callsArray.length()) {
                     val call = callsArray.optJSONObject(i) ?: continue
@@ -852,6 +859,7 @@ tools array. Call tools using the standard tool_calls format.
                 LLMResponse(cleanReply.ifEmpty { "Executing..." }, textCalls)
             } else {
                 Log.w("LLMClient", "Failed to parse JSON from response: ${content.take(200)}")
+                Log.w("LLMClient", "parseResponse FAILED. content length=${content.length}, startsWith={${content.take(5)}}, jsonStr=${jsonStr.take(200)}")
                 LLMResponse(content, emptyList())
             }
         }
