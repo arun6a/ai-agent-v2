@@ -520,8 +520,12 @@ class LLMClient(private val context: Context) {
         val body = JSONObject().apply {
             put("model", model)
             put("messages", messages)
-            // v3.6.2: max_tokens per tier — stops brain from rambling on simple tasks.
-            put("max_tokens", maxTokens)
+            // v4.0.58: FIX — only include max_tokens when it's > 0.
+            // v4.0.46 set maxTokens to null (intended "no limit") but line 122 converted
+            // null → 0, sending "max_tokens": 0 to the API. Most models reject this or
+            // return empty content → no tool calls → task fails.
+            // Now: omit the field entirely when maxTokens <= 0 (truly "no limit").
+            if (maxTokens > 0) put("max_tokens", maxTokens)
             // Z.ai (both proxy and direct) uses "thinking" param
             // v3.9.2: ENABLED thinking — was "disabled" since v3.7.1, which turned OFF
             // the model's reasoning capability. This was the root cause of 18 versions
@@ -699,11 +703,8 @@ tools array. Call tools using the standard tool_calls format.
 
         // Path 2: Manual JSON in content (Z.ai, older models, Claude without tools)
         if (contentStr.isBlank()) {
-            Log.w("LLMClient", "parseOpenAIResponse: contentStr is BLANK. message=$message")
             return LLMResponse("(empty response)", emptyList())
         }
-        // v4.0.56: Debug GLM-5.3-Flash — log what contentStr looks like before parseResponse
-        Log.d("LLMClient", "parseOpenAIResponse: contentStr length=${contentStr.length}, first80='${contentStr.take(80)}'")
         return parseResponse(contentStr)
     }
 
@@ -801,13 +802,9 @@ tools array. Call tools using the standard tool_calls format.
 
         return try {
             val json = JSONObject(jsonStr)
-            // v4.0.56: Debug GLM-5.3-Flash JSON-in-content issue.
-            // Log what we're parsing so we can see why it fails (if it does).
-            Log.d("LLMClient", "parseResponse: JSON parsed OK. keys=${json.keys().asSequence().toList()}")
             val reply = json.optString("reply", "Done.")
             val toolCalls = mutableListOf<ToolCall>()
             val callsArray = json.optJSONArray("tool_calls")
-            Log.d("LLMClient", "parseResponse: reply='${reply.take(80)}', callsArray=$callsArray")
             if (callsArray != null) {
                 for (i in 0 until callsArray.length()) {
                     val call = callsArray.optJSONObject(i) ?: continue
@@ -846,7 +843,7 @@ tools array. Call tools using the standard tool_calls format.
 
             LLMResponse(reply, toolCalls)
         } catch (e: Exception) {
-            // JSON parsing failed — try to extract tool calls from plain text
+            // JSON parse failed — try to extract tool calls from plain text
             // v4.0.21: Skip when 0 tools were sent (Tier 1 — false positives).
             val textCalls = if (lastToolFilterSize != 0) extractToolCallsFromText(content) else emptyList()
             if (textCalls.isNotEmpty()) {
@@ -859,7 +856,6 @@ tools array. Call tools using the standard tool_calls format.
                 LLMResponse(cleanReply.ifEmpty { "Executing..." }, textCalls)
             } else {
                 Log.w("LLMClient", "Failed to parse JSON from response: ${content.take(200)}")
-                Log.w("LLMClient", "parseResponse FAILED. content length=${content.length}, startsWith={${content.take(5)}}, jsonStr=${jsonStr.take(200)}")
                 LLMResponse(content, emptyList())
             }
         }
