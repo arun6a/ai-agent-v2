@@ -1139,14 +1139,32 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         // v4.0.37: Pattern Learning — save successful tool sequences.
                         // When a task succeeds, save the tool sequence so the AI can reuse it
                         // next time a similar request comes in (saves exploration calls).
+                        // v4.0.55: Filter out tools that failed during the task — don't save
+                        // failed tool calls as part of a "successful pattern". Previously,
+                        // if the AI called complete(success=true) after a tool timed out,
+                        // the failed tool was saved in the pattern, misleading future runs.
                         if (success && toolCallHistory.isNotEmpty()) {
                             try {
-                                com.ai.agent.learning.PatternLearner.saveSuccessfulPattern(
-                                    context = context,
-                                    userMessage = userMessage,
-                                    toolSequence = toolCallHistory.distinct().take(10),  // unique tools, max 10
-                                    reason = reason
-                                )
+                                // v4.0.55: Filter out tools that are in previouslyFailedSignatures
+                                val filteredSequence = toolCallHistory.distinct()
+                                    .filter { it !in previouslyFailedSignatures }
+                                    .take(10)
+                                if (filteredSequence.isNotEmpty()) {
+                                    com.ai.agent.learning.PatternLearner.saveSuccessfulPattern(
+                                        context = context,
+                                        userMessage = userMessage,
+                                        toolSequence = filteredSequence,
+                                        reason = reason
+                                    )
+                                    // v4.0.55: If we filtered out failed tools, log it
+                                    val skipped = toolCallHistory.distinct().size - filteredSequence.size
+                                    if (skipped > 0) {
+                                        LogCapture.w(TAG, "Pattern saved but $skipped failed tool(s) excluded from sequence")
+                                    }
+                                } else {
+                                    // All tools in the history failed — don't save a pattern at all
+                                    LogCapture.w(TAG, "Skipping pattern save — all tools in history failed (success claim is suspicious)")
+                                }
                             } catch (_: Exception) {}
                         }
 
@@ -1172,7 +1190,28 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
                     // === If no tool calls → task complete ===
                     if (llmResponse.toolCalls.isEmpty()) {
-                        finalReply = llmResponse.reply.ifBlank { "Done." }
+                        // v4.0.55: Fix false "Done." — distinguish real completion from API failure.
+                        // OLD: finalReply = llmResponse.reply.ifBlank { "Done." }
+                        // This masked empty API responses (Gemini偶发空响应) as successful completion.
+                        // NEW: If reply is blank AND iteration 1 AND no prior work → API failed, retry once.
+                        if (llmResponse.reply.isBlank()) {
+                            if (iteration == 1 && workLog.isEmpty()) {
+                                // v4.0.55: Empty response on first iteration with no work done = API failure.
+                                // Retry the LLM call instead of falsely claiming "Done."
+                                // Return true = "step completed, continue loop" (retry on next iteration).
+                                LogCapture.w(TAG, "Empty reply on iteration 1 (likely API failure) — will retry")
+                                conversation.append("\n\n[System: Previous API response was empty. Please respond to the user's request.]")
+                                return@withTimeoutOrNull true  // continue loop → retry
+                            }
+                            // Non-first iteration OR work was done → assume task complete (real "no tools" case)
+                            finalReply = if (workLog.isNotEmpty()) {
+                                "✅ $workLog"
+                            } else {
+                                "Done."
+                            }
+                        } else {
+                            finalReply = llmResponse.reply
+                        }
 
                         // v3.5.0: Always learn — save successful workflow for future use.
                         // Now respects the alwaysLearn toggle (was a dead switch before).

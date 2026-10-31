@@ -27,6 +27,20 @@ object MemoryTools {
             "remember" -> {
                 val key = call.args["key"] as? String ?: return ToolExecutor.ToolResult(false, "missing key")
                 val value = call.args["value"] as? String ?: return ToolExecutor.ToolResult(false, "missing value")
+                // v4.0.55: Reserve system-managed prefixes. The AI must not write directly
+                // to pattern_*, avoid_*, or calib_* — these are managed by PatternLearner
+                // which only saves after verifying success/failure. The AI was saving false
+                // memories like pattern_idesetup_c="Successfully ran..." even when the
+                // command timed out. Reject these + tell AI to use a different key.
+                val reservedPrefixes = listOf("pattern_", "avoid_", "calib_", "workflow_")
+                val reservedMatch = reservedPrefixes.find { key.startsWith(it) }
+                if (reservedMatch != null) {
+                    return ToolExecutor.ToolResult(false,
+                        "Key prefix '$reservedMatch' is reserved for system-managed memories. " +
+                        "Pattern memories (pattern_*) are saved automatically when complete(success=true) is called. " +
+                        "Failure memories (avoid_*) are saved automatically when a tool gets stuck. " +
+                        "Use a different key prefix, e.g., 'fact_*' or 'note_*' or 'user_*'.")
+                }
                 database.remember(key, value)
                 ToolExecutor.ToolResult(true, "Remembered: $key = $value")
             }
