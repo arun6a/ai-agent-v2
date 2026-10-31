@@ -109,6 +109,12 @@ class LLMClient(private val context: Context) {
                 val isGeminiEndpoint = endpoint.contains("generativelanguage.googleapis.com") ||
                     provider.id == "gemini"
 
+                // v4.0.59: Detect Anthropic's direct API (not via OpenRouter/Cline).
+                // Anthropic uses /v1/messages format, NOT OpenAI /chat/completions.
+                // Only trigger for the "anthropic" provider ID (gateways use "openrouter"/"cline").
+                val isAnthropicEndpoint = provider.id == "anthropic" ||
+                    endpoint.contains("api.anthropic.com")
+
                 // v4.0.43: Strip "google/" prefix from model name when using Gemini's direct API.
                 // OpenRouter uses "google/gemini-2.5-flash" but Gemini's API expects "gemini-2.5-flash".
                 val effectiveModel = if (isGeminiEndpoint && model.startsWith("google/")) {
@@ -119,6 +125,7 @@ class LLMClient(private val context: Context) {
 
                 val requestBody = when {
                     isGeminiEndpoint -> buildGeminiRequest(effectiveModel, userMessage, systemPrompt)
+                    isAnthropicEndpoint -> buildAnthropicRequest(effectiveModel, userMessage, systemPrompt, effectiveToolFilter, maxTokens ?: 0)
                     else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, effectiveToolFilter, maxTokens ?: 0)
                 }
 
@@ -144,14 +151,16 @@ class LLMClient(private val context: Context) {
                         requestBuilder.header("HTTP-Referer", "https://github.com/arun6a/ai-agent-apk")
                         requestBuilder.header("X-Title", "AI Agent Phone")
                     }
+                    "anthropic" -> {
+                        // v4.0.59: Anthropic uses x-api-key header (NOT Bearer)
+                        // + anthropic-version header (required by all Anthropic API calls)
+                        requestBuilder.header("x-api-key", apiKey)
+                        requestBuilder.header("anthropic-version", "2023-06-01")
+                    }
                     "zai_direct", "groq", "together", "openai", "cerebras", "mistral",
-                    "deepinfra", "fireworks", "anthropic", "apikeys_in", "cline" -> {
+                    "deepinfra", "fireworks", "apikeys_in", "cline" -> {
                         // All OpenAI-compatible — Bearer token
                         requestBuilder.header("Authorization", "Bearer $apiKey")
-                        // Anthropic also needs anthropic-version header
-                        if (provider.id == "anthropic") {
-                            requestBuilder.header("anthropic-version", "2023-06-01")
-                        }
                     }
                     "gemini" -> {
                         // Gemini uses query param, not header — handled in endpoint
@@ -344,8 +353,9 @@ class LLMClient(private val context: Context) {
                 }
 
                 // Parse response based on provider format
-                val llmResponse = when (provider.id) {
-                    "gemini" -> parseGeminiResponse(responseBody)
+                val llmResponse = when {
+                    isAnthropicEndpoint -> parseAnthropicResponse(responseBody)
+                    isGeminiEndpoint -> parseGeminiResponse(responseBody)
                     else -> parseOpenAIResponse(responseBody)
                 }
 
@@ -605,6 +615,161 @@ tools array. Call tools using the standard tool_calls format.
         // Covers all 130 tools — see ToolSchemas.kt for the full registry.
         // v4.0.26: Pass context so custom tools (created via createCustomTool) are included.
         return com.ai.agent.llm.ToolSchemas.buildToolsArray(filter, context)
+    }
+
+    /**
+     * v4.0.59: Build request body for Anthropic's /v1/messages API.
+     * Anthropic uses a DIFFERENT format from OpenAI:
+     *   - System prompt is a separate top-level field (not in messages array)
+     *   - Messages have role "user" or "assistant" (no "system" role in messages)
+     *   - Tools are defined in a "tools" array (similar to OpenAI but different schema)
+     *   - max_tokens is REQUIRED (not optional like OpenAI)
+     *   - tool_choice can be {"type": "auto"} or {"type": "any"} or {"type": "tool", "name": "..."}
+     *
+     * Auth: x-api-key header (not Bearer) + anthropic-version header
+     * Endpoint: https://api.anthropic.com/v1/messages
+     */
+    private fun buildAnthropicRequest(
+        model: String,
+        userMessage: String,
+        systemPrompt: String,
+        toolFilter: List<String>? = null,
+        maxTokens: Int = 4096
+    ): String {
+        // v4.0.59: Strip the JSON Response Format section — Anthropic uses native tools
+        // (same as adaptPromptForNativeTools, but always applied for Anthropic)
+        val effectivePrompt = adaptPromptForNativeTools(systemPrompt)
+
+        val messages = JSONArray()
+        messages.put(JSONObject().apply {
+            put("role", "user")
+            put("content", userMessage)
+        })
+
+        val body = JSONObject().apply {
+            put("model", model)
+            put("system", effectivePrompt)  // Anthropic: system prompt is top-level field
+            put("messages", messages)
+            // v4.0.59: Anthropic REQUIRES max_tokens (unlike OpenAI where it's optional)
+            // Default to 4096 if not specified — enough for reasoning + tool calls
+            put("max_tokens", if (maxTokens > 0) maxTokens else 4096)
+
+            // Add tools if we have any (Anthropic format)
+            val tools = buildAnthropicToolsArray(toolFilter)
+            if (tools.length() > 0) {
+                put("tools", tools)
+                put("tool_choice", JSONObject().put("type", "auto"))
+            }
+        }
+
+        return body.toString()
+    }
+
+    /**
+     * v4.0.59: Build tools array in Anthropic format.
+     * Anthropic schema:
+     *   {"name": "toolName", "description": "...", "input_schema": {"type": "object", "properties": {...}}}
+     * (OpenAI uses "parameters" instead of "input_schema")
+     */
+    private fun buildAnthropicToolsArray(filter: List<String>? = null): JSONArray {
+        val tools = JSONArray()
+        val availableTools = com.ai.agent.llm.ToolSchemas.buildToolsArray(filter, context)
+        // Convert OpenAI-format tools to Anthropic format
+        for (i in 0 until availableTools.length()) {
+            val openaiTool = availableTools.optJSONObject(i) ?: continue
+            val function = openaiTool.optJSONObject("function") ?: continue
+            val name = function.optString("name", "")
+            val description = function.optString("description", "")
+            val parameters = function.optJSONObject("parameters") ?: JSONObject()
+
+            val anthropicTool = JSONObject().apply {
+                put("name", name)
+                put("description", description)
+                put("input_schema", parameters)  // Anthropic uses "input_schema" instead of "parameters"
+            }
+            tools.put(anthropicTool)
+        }
+        return tools
+    }
+
+    /**
+     * v4.0.59: Parse Anthropic /v1/messages response.
+     * Anthropic returns content as an array of blocks:
+     *   {"content": [
+     *     {"type": "text", "text": "I'll search for that."},
+     *     {"type": "tool_use", "id": "toolu_123", "name": "webSearch", "input": {"query": "X"}}
+     *   ]}
+     *
+     * We extract text blocks → reply, tool_use blocks → tool calls.
+     */
+    private fun parseAnthropicResponse(responseBody: String): LLMResponse {
+        try {
+            val json = JSONObject(responseBody)
+
+            // Track token usage
+            try {
+                val usage = json.optJSONObject("usage")
+                if (usage != null) {
+                    val promptTokens = usage.optInt("input_tokens", 0)
+                    val completionTokens = usage.optInt("output_tokens", 0)
+                    val provider = AIProvider.getProviderId(context)
+                    ApiUsageTracker.recordCall(context, promptTokens, completionTokens, provider)
+                }
+            } catch (e: Exception) {
+                Log.w("LLMClient", "Could not parse Anthropic usage: ${e.message}")
+            }
+
+            val contentArray = json.optJSONArray("content")
+            if (contentArray == null) {
+                // Check for error response
+                val error = json.optJSONObject("error")
+                if (error != null) {
+                    val errorMsg = error.optString("message", "Unknown Anthropic error")
+                    Log.e("LLMClient", "Anthropic API error: $errorMsg")
+                    return LLMResponse("Error: $errorMsg", emptyList())
+                }
+                return LLMResponse("No content in Anthropic response", emptyList())
+            }
+
+            val replyParts = mutableListOf<String>()
+            val toolCalls = mutableListOf<ToolCall>()
+
+            for (i in 0 until contentArray.length()) {
+                val block = contentArray.optJSONObject(i) ?: continue
+                val type = block.optString("type", "")
+
+                when (type) {
+                    "text" -> {
+                        val text = block.optString("text", "")
+                        if (text.isNotEmpty()) replyParts.add(text)
+                    }
+                    "tool_use" -> {
+                        // Extract tool call from tool_use block
+                        val name = block.optString("name", "")
+                        val input = block.optJSONObject("input") ?: JSONObject()
+                        val args = mutableMapOf<String, Any>()
+                        val keys = input.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            args[key] = input.get(key)
+                        }
+                        if (name.isNotEmpty()) {
+                            toolCalls.add(ToolCall(name, args))
+                        }
+                    }
+                    // Skip "thinking" blocks (Claude's reasoning) — same as OpenRouter handling
+                    "thinking" -> { /* skip */ }
+                }
+            }
+
+            val reply = replyParts.joinToString("\n").ifEmpty { "Executing..." }
+            Log.i("LLMClient", "Anthropic response: ${toolCalls.size} tool call(s): ${toolCalls.map { it.name }}")
+            return LLMResponse(reply, toolCalls)
+        } catch (e: Exception) {
+            Log.e("LLMClient", "Failed to parse Anthropic response: ${e.message}")
+            Log.w("LLMClient", "Response body: ${responseBody.take(300)}")
+            return LLMResponse("Error parsing Anthropic response: ${e.message}", emptyList())
+        }
     }
 
     /**
