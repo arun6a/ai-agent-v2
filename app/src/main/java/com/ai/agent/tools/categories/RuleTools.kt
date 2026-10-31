@@ -87,6 +87,9 @@ object RuleTools {
                 if (triggerType == "notification" && !triggerValue.contains(":")) {
                     val knownPackages = mapOf(
                         "whatsapp" to "com.whatsapp",
+                        "whatsapp business" to "com.whatsapp.w4b",
+                        "whatsapp bus" to "com.whatsapp.w4b",
+                        "wa business" to "com.whatsapp.w4b",
                         "telegram" to "com.telegram.messenger",
                         "facebook" to "com.facebook.katana",
                         "messenger" to "com.facebook.orca",
@@ -130,6 +133,9 @@ object RuleTools {
                     val senderPart = parts.getOrNull(1) ?: ""
                     val knownPackages = mapOf(
                         "whatsapp" to "com.whatsapp",
+                        "whatsapp business" to "com.whatsapp.w4b",
+                        "whatsapp bus" to "com.whatsapp.w4b",
+                        "wa business" to "com.whatsapp.w4b",
                         "telegram" to "com.telegram.messenger",
                         "facebook" to "com.facebook.katana",
                         "messenger" to "com.facebook.orca",
