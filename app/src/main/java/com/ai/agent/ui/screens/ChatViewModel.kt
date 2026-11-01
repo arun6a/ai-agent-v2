@@ -1376,7 +1376,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                                     if (cachingEnabled) {
                                         conversation.append("\n\n[EXPANDED]: Added ${group.name} tools. You can now use ${call.name}.")
                                     } else {
-                                        systemPrompt = com.ai.agent.llm.ContextualPromptBuilder.buildExpandedPrompt(userMessage, group) + "\n\n## What I Remember About the User\n$memoryStr"
+                                        systemPrompt = com.ai.agent.llm.ContextualPromptBuilder.buildExpandedPrompt(context, userMessage, group) + "\n\n## What I Remember About the User\n$memoryStr"
                                     }
                                     // v3.2.9: also expand the tool filter so the next LLM call
                                     // actually exposes the new tool via function-calling.

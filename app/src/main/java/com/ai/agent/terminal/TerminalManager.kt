@@ -6,20 +6,51 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * v4.0.63: TerminalManager — manages terminal connections + capability probing.
+ * v4.0.64: Added live output broadcasting for TerminalPreviewScreen.
  *
  * Handles:
  * 1. Connecting to a terminal (HTTP test)
  * 2. Probing capabilities (command -v pkg node java ...)
  * 3. Running commands on a specific terminal
  * 4. Status tracking
+ * 5. v4.0.64: Broadcasting command output to subscribers (live preview)
  *
  * Uses HTTP (not WebSocket) for simplicity. Same-WiFi security is just the token.
  */
 object TerminalManager {
     private const val TAG = "TerminalManager"
+
+    // v4.0.64: Live output broadcasting — TerminalPreviewScreen subscribes to this
+    interface TerminalListener {
+        fun onCommandRun(terminalName: String, command: String)
+        fun onCommandResult(terminalName: String, output: String, success: Boolean)
+    }
+
+    private val listeners = CopyOnWriteArrayList<TerminalListener>()
+
+    fun addListener(listener: TerminalListener) {
+        listeners.addIfAbsent(listener)
+    }
+
+    fun removeListener(listener: TerminalListener) {
+        listeners.remove(listener)
+    }
+
+    private fun broadcastCommand(terminalName: String, command: String) {
+        for (listener in listeners) {
+            try { listener.onCommandRun(terminalName, command) } catch (_: Exception) {}
+        }
+    }
+
+    private fun broadcastResult(terminalName: String, output: String, success: Boolean) {
+        for (listener in listeners) {
+            try { listener.onCommandResult(terminalName, output, success) } catch (_: Exception) {}
+        }
+    }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -77,6 +108,8 @@ object TerminalManager {
      * Returns the stdout output, or null on failure.
      */
     fun runCommand(conn: TerminalConnection, command: String, timeout: Int = 120): String? {
+        // v4.0.64: Broadcast that a command is about to run (for live preview)
+        broadcastCommand(conn.name, command)
         return try {
             val encodedCmd = URLEncoder.encode(command, "UTF-8")
             val timeoutParam = if (timeout != 120) "&timeout=$timeout" else ""
@@ -87,14 +120,19 @@ object TerminalManager {
             val body = response.body?.string() ?: return null
             // Parse JSON response: {"success":true,"output":"...","exitCode":0,...}
             val json = org.json.JSONObject(body)
-            if (json.optBoolean("success", false)) {
+            val success = json.optBoolean("success", false)
+            val output = if (success) {
                 json.optString("output", "")
             } else {
                 val err = json.optString("stderr", json.optString("error", "Unknown error"))
                 "Error: $err\nOutput: ${json.optString("output", "")}"
             }
+            // v4.0.64: Broadcast the result (for live preview)
+            broadcastResult(conn.name, output, success)
+            output
         } catch (e: Exception) {
             Log.e(TAG, "Run command failed on ${conn.name}: ${e.message}")
+            broadcastResult(conn.name, "Error: ${e.message}", false)
             null
         }
     }

@@ -105,6 +105,14 @@ fun TerminalSection(
                             refresh()
                         }
                     },
+                    onDelete = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                TerminalStore.remove(conn.name, context)
+                            }
+                            refresh()
+                        }
+                    },
                     onOpenPreview = onOpenTerminal,
                     loading = loading,
                 )
@@ -177,6 +185,7 @@ private fun TerminalCard(
     conn: TerminalConnection,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    onDelete: () -> Unit,
     onOpenPreview: () -> Unit,
     loading: Boolean,
 ) {
@@ -218,7 +227,10 @@ private fun TerminalCard(
 
             // Buttons
             Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 when (conn.status) {
                     TerminalStatus.CONNECTED -> {
                         OutlinedButton(onClick = onOpenPreview) { Text("Open Preview") }
@@ -230,6 +242,19 @@ private fun TerminalCard(
                     TerminalStatus.TESTING -> {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
+                }
+                // v4.0.64: Delete button — always visible (can delete any terminal)
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = "Delete terminal",
+                        tint = custom.fg3,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
         }

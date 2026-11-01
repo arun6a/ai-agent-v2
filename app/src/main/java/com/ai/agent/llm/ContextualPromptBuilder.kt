@@ -342,11 +342,11 @@ object ContextualPromptBuilder {
                 val expandedGroups = expandGroupsForMediumTasks(relevantGroups)
                 val expandedSize = expandedGroups.sumOf { it.tools.size }
                 Log.i(TAG, "Tier 2.5: Expanded contextual → ${expandedGroups.size} groups, $expandedSize tools (was ${relevantGroups.size} groups, $promptSize tools)")
-                return buildGroupPrompt(expandedGroups)
+                return buildGroupPrompt(expandedGroups, context)
             }
 
             Log.i(TAG, "Tier 2: Contextual → ${relevantGroups.size} groups, $promptSize tools")
-            return buildGroupPrompt(relevantGroups)
+            return buildGroupPrompt(relevantGroups, context)
         }
 
         // TIER 3: Full prompt (complex/unknown tasks)
@@ -576,15 +576,38 @@ If the user asks what you can do, mention: control phone apps, browse web, set r
     }
 
     /**
-     * Tier 2: Contextual prompt — only relevant tool groups.
+     * v4.0.64: Tier 2/2.5 — FULL system prompt + filtered tool groups.
+     *
+     * ROOT CAUSE FIX: Previously Tier 2 used a 2-line summary instead of the full
+     * 318-line system prompt. The AI got NO thinking instructions, NO failure
+     * reflection, NO guardrails, NO terminal guidance. This caused the AI to:
+     *   - Not think before acting
+     *   - Not follow failure reflection
+     *   - Use old tools (runShellCommand) instead of new ones (connectTerminal)
+     *   - Write Python servers instead of using aira-server.js
+     *
+     * Now: the FULL system prompt is prepended. Only the TOOL LIST is filtered
+     * (sends ~26 tools instead of 158, saving ~1300 tokens).
+     * The instructions (thinking, failure, guardrails) are ALWAYS present.
      */
-    private fun buildGroupPrompt(groups: List<ToolGroup>): String {
+    private fun buildGroupPrompt(groups: List<ToolGroup>, context: Context? = null): String {
         val sb = StringBuilder()
-        sb.append("You are an AI agent on the user's Android phone. Respond in JSON only.\n")
-        sb.append("Format: {\"reply\":\"short msg\",\"tool_calls\":[{\"name\":\"...\",\"args\":{...}}]}\n")
-        sb.append("Complete (no tools): {\"reply\":\"Done!\",\"tool_calls\":[]}\n\n")
 
-        sb.append("## Available Tools\n\n")
+        // v4.0.64: Include the FULL system prompt — thinking, failure, guardrails, etc.
+        val fullPrompt = try {
+            context?.assets?.open("system_prompt_smart.txt")?.bufferedReader()?.use { it.readText() }
+        } catch (e: Exception) { null }
+
+        if (fullPrompt != null) {
+            sb.append(fullPrompt)
+            sb.append("\n\n")
+        } else {
+            // Fallback if context not available (shouldn't happen, but safe)
+            sb.append("You are Aira — an AI agent on an Android phone. Respond in JSON only.\n")
+            sb.append("Format: {\"reply\":\"...\",\"tool_calls\":[{\"name\":\"...\",\"args\":{...}}]}\n\n")
+        }
+
+        sb.append("## Available Tools (filtered for this task — use these)\n\n")
 
         // Always-included tools
         sb.append("### Always Available\n")
@@ -593,7 +616,7 @@ If the user asks what you can do, mention: control phone apps, browse web, set r
         }
         sb.append("\n")
 
-        // Selected groups
+        // Selected groups (filtered — not all 158, just relevant ones)
         for (group in groups) {
             sb.append("### ${group.name}\n")
             for (desc in group.toolDescs) {
@@ -601,22 +624,6 @@ If the user asks what you can do, mention: control phone apps, browse web, set r
             }
             sb.append("\n")
         }
-
-        sb.append("## Rules\n")
-        // v3.7.0: Updated to allow action chains (was "NEVER batch action tools")
-        sb.append("1. BATCH read-only tools freely. Use actionChain() for sequential actions when UI is predictable.\n")
-        sb.append("2. Keep replies SHORT (1-2 sentences)\n")
-        sb.append("3. After tool results, decide next step. Don't repeat successful tools.\n")
-        sb.append("4. If a tool fails, try a different approach.\n")
-        sb.append("5. recallSimilar(request) at task START. remember(\"workflow_X\",\"steps\") on success.\n")
-        sb.append("\n## Action Chains (compact)\n")
-        sb.append("actionChain({\"actions\": [{\"name\":\"tap\",\"args\":{...},\"safe\":true}, ...]})\n")
-        sb.append("- Executes ALL actions in 1 call. Stops on first failure.\n")
-        sb.append("- safe: false → pauses chain, you verify before continuing.\n")
-        sb.append("- safe: false for: Send, Delete, Call, Confirm buttons.\n")
-        sb.append("- safe: true for: Navigation, Selection, Typing, Scrolling.\n")
-        sb.append("- When in doubt: safe: false.\n")
-        sb.append("- Don't chain after launchApp (screen might not be loaded).\n")
 
         return sb.toString()
     }
@@ -646,13 +653,13 @@ If the user asks what you can do, mention: control phone apps, browse web, set r
      * Build an expanded prompt by adding a new group to existing groups.
      * Used when auto-expand is triggered (AI needs a tool not in the prompt).
      */
-    fun buildExpandedPrompt(userMessage: String, extraGroup: ToolGroup): String {
+    fun buildExpandedPrompt(context: Context, userMessage: String, extraGroup: ToolGroup): String {
         val msg = userMessage.lowercase().trim()
         val groups = getRelevantGroups(msg).toMutableList()
         if (extraGroup !in groups) {
             groups.add(extraGroup)
         }
-        return buildGroupPrompt(groups)
+        return buildGroupPrompt(groups, context)
     }
 
     /**

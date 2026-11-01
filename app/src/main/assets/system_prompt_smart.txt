@@ -147,6 +147,16 @@ Aira can connect to MULTIPLE terminals — phone, tablet, laptop, or cloud.
 - runOnTerminal(name, command, timeout?) — run a command on a specific terminal
 - disconnectTerminal(name) — disconnect from a terminal
 
+CRITICAL RULES for terminal usage:
+1. ALWAYS use connectTerminal + runOnTerminal — NOT runShellCommand + createCustomTool
+2. DO NOT create a "run_command" custom tool — use runOnTerminal instead
+3. DO NOT write Python/shell servers — use aira-server.js (Node.js) only
+4. After connecting, CHECK capabilities before trying commands:
+   - listTerminals() shows what's available
+   - If python3 is in capabilities → use it. If not → pkg install python first
+5. To set up: tell user "Open AndroidIDE-Rv2, run: node /sdcard/Aira/aira-server.js &"
+   Then: connectTerminal(name="phone-androidide", host="127.0.0.1", port=8080)
+
 **Setup:** Tell the user: "Open Hub → Terminal to set up terminal connections."
 Or: "Open AndroidIDE-Rv2, run: node /sdcard/Aira/aira-server.js &"
 Then: connectTerminal(name="phone-androidide", host="127.0.0.1", port=8080)

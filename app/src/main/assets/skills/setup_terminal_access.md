@@ -5,6 +5,13 @@ keywords: terminal, setup, server, command, termux, shell, run command, build, i
 ---
 # Setup Terminal Access
 
+## ⚠️ CRITICAL — READ THIS FIRST
+- Use aira-server.js (Node.js) ONLY. Do NOT write Python servers, shell servers, or any alternative.
+- aira-server.js requires Node.js, which is available in AndroidIDE-Rv2 and Termux.
+- After writing the file, tell the user to start it: `node /sdcard/Aira/aira-server.js &`
+- Then use connectTerminal to connect + auto-detect capabilities.
+- Do NOT use runShellCommand or createCustomTool for terminal access — use connectTerminal + runOnTerminal.
+
 ## What This Does
 Sets up a local HTTP server (Node.js) in your terminal app (Termux or Android Code Studio).
 Once running, Aira can execute ANY shell command directly via 1 API call — no need to
