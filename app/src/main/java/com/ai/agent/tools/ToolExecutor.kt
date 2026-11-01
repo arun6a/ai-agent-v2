@@ -111,6 +111,8 @@ class ToolExecutor(private val context: Context) {
             "complete",
             // v4.0.62: TodoWrite — planning + progress tracking
             "todoWrite",
+            // v4.0.69: delegateTask — sub-agent delegation
+            "delegateTask",
             // v4.0.26: Custom tool management
             "createCustomTool", "listCustomTools", "deleteCustomTool",
             // v4.0.61: Tool search — search ALL tools by keyword
@@ -258,6 +260,8 @@ class ToolExecutor(private val context: Context) {
             "complete",  // v4.0.19: Just sets a flag, doesn't need accessibility
             // v4.0.62: TodoWrite — just stores the todo list, no accessibility
             "todoWrite",
+            // v4.0.69: delegateTask — spawns sub-agent, no accessibility needed
+            "delegateTask",
             // v4.0.26: Custom tool management + custom tools don't need accessibility
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
             // v4.0.61: searchTools — just searches schemas, no accessibility
@@ -822,6 +826,21 @@ class ToolExecutor(private val context: Context) {
                 val formatted = com.ai.agent.tools.planning.TodoStore.update(todosJson)
                 LogCapture.i(TAG, "todoWrite: ${com.ai.agent.tools.planning.TodoStore.getTodos().size} items")
                 ToolResult(true, "Todo list updated. This will be shown to you in subsequent prompts.\n\n$formatted")
+            }
+            // v4.0.69: delegateTask — spawn a sub-agent
+            "delegateTask" -> {
+                val description = call.args["description"] as? String
+                    ?: return ToolResult(false, "missing description. Example: delegateTask(description=\"Download a car wallpaper\", agentType=\"research\")")
+                val agentType = call.args["agentType"] as? String ?: "general"
+                LogCapture.i(TAG, "delegateTask: type=$agentType, task=${description.take(80)}")
+                kotlinx.coroutines.runBlocking {
+                    val result = com.ai.agent.agent.SubAgentRunner.run(context, description, agentType)
+                    ToolResult(result.success,
+                        "Sub-agent (${agentType}) completed in ${result.iterations} iterations, ${result.toolCalls} tool calls.\n" +
+                        "Success: ${result.success}\n" +
+                        "Result: ${result.reply}"
+                    )
+                }
             }
 
             else -> {

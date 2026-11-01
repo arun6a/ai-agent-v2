@@ -346,6 +346,12 @@ object ToolSchemas {
             mapOf(
                 "todos" to Param("string", "JSON array of todo items. Each item: {\"content\":\"step description\",\"status\":\"pending\"|\"in_progress\"|\"completed\"}. Pass the FULL list every time (not just changes). Max 10 items.", required = true),
             )),
+        // v4.0.69: delegateTask — spawn a sub-agent for focused tasks (saves tokens)
+        Schema("delegateTask", "Delegate a task to a sub-agent. The sub-agent runs its own mini agent loop with LIMITED tools + a FOCUSED prompt (saves ~60% tokens vs doing it in the main loop). Use for: research (web search), terminal (install packages, run scripts), screen (tap/type/click). The sub-agent returns its result to you. Example: delegateTask(description=\"Find and download a car wallpaper\", agentType=\"research\").",
+            mapOf(
+                "description" to Param("string", "The task for the sub-agent. Be specific — the sub-agent only sees this description, not the conversation history. E.g., 'Download a car wallpaper image to /sdcard/Pictures/car.jpg'.", required = true),
+                "agentType" to Param("string", "Agent type: 'research' (web search + download), 'terminal' (runOnTerminal + connectTerminal), 'screen' (readScreen + tap + type), or 'general' (all tools). Default: 'general'.", required = false),
+            )),
         // v4.0.26: Custom tool management — lets the AI create new tools at runtime.
         Schema("createCustomTool", "Create a NEW custom tool at runtime. Use when you need a tool that doesn't exist (e.g., call a custom API, run a specific shell command). The tool persists across app restarts. Two handler types: 'shell' (runs a shell command with {param} substitution) or 'http' (makes an HTTP GET/POST with {param} substitution in URL+body). Example: createCustomTool(name='check_server', description='Check server status', handlerType='http', handler='{\"method\":\"GET\",\"url\":\"https://myserver.com/health\"}', parameters=[]). After creating, call the tool by its name directly.",
             mapOf(

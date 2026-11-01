@@ -282,11 +282,11 @@ fun ChatScreen(
                 // as the first item so it scrolls with messages instead of
                 // floating on top of (and overlapping) the first chat bubble.
                 val showBanner = state.isThinking || state.isExecuting || state.currentIteration > 0
-                
-                // v2.3.2: Group consecutive step messages into one collapsed card.
-                // Final AI reply (no [N/M] prefix) is always expanded separately.
-                var stepsExpanded by remember { mutableStateOf(false) }
-                
+
+                // v4.0.69: Removed StepGroupCard — now each message shows individually.
+                // Each ChatMessageItem has its own thinking bubble + per-call expand.
+                // This makes the chat look like Z.ai Code's chat interface.
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -309,86 +309,23 @@ fun ChatScreen(
                         }
                     }
 
-                    // v2.3.2: Render messages — step messages grouped into one collapsed card.
-                    // Iterate through messages, grouping consecutive step messages.
-                    var i = 0
-                    while (i < state.messages.size) {
-                        val msg = state.messages[i]
-                        
-                        if (!msg.isUser && msg.text.startsWith("[")) {
-                            // This is a step message — find all consecutive step messages
-                            val stepStart = i
-                            while (i < state.messages.size && 
-                                   !state.messages[i].isUser && 
-                                   state.messages[i].text.startsWith("[")) {
-                                i++
-                            }
-                            val stepEnd = i  // exclusive
-                            val stepCount = stepEnd - stepStart
-                            val totalTools = (stepStart until stepEnd).sumOf { state.messages[it].toolCalls.size }
-                            
-                            if (stepsExpanded) {
-                                // Show all step messages individually + a collapse button
-                                item(key = "steps-collapse-btn-$stepStart") {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                                            .clickable { stepsExpanded = false },
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text(
-                                            text = "📁 $stepCount steps · $totalTools tool calls · tap to collapse ▼",
-                                            color = custom.fg3,
-                                            fontFamily = MonoFontFamily,
-                                            fontSize = 11.sp,
-                                        )
-                                    }
-                                }
-                                for (j in stepStart until stepEnd) {
-                                    val stepMsg = state.messages[j]
-                                    item(key = "step-${stepMsg.id}") {
-                                        ChatMessageItem(
-                                            message = stepMsg,
-                                            isLastAi = false,
-                                            thinking = false,
-                                            // v2.3.3: NO animateItem() here — animating items that appear/disappear
-                                            // on toggle causes crash on some devices (IllegalStateException in LazyColumn).
-                                            modifier = Modifier,
-                                        )
-                                    }
-                                }
-                            } else {
-                                // Show ONE collapsed card for all steps
-                                item(key = "steps-group-$stepStart") {
-                                    StepGroupCard(
-                                        stepCount = stepCount,
-                                        toolCount = totalTools,
-                                        firstLine = state.messages[stepStart].text.substringBefore("\n").take(100),
-                                        onExpand = { stepsExpanded = true },
-                                    )
-                                }
-                            }
-                        } else {
-                            // Non-step message (user message or final AI reply) — render normally
-                            val isLastAi = !msg.isUser && i == state.messages.lastIndex
-                            item(key = msg.id) {
-                                ChatMessageItem(
-                                    message = msg,
-                                    isLastAi = isLastAi,
-                                    thinking = state.isThinking,
-                                    modifier = Modifier.animateItem(),
-                                    // v2.4.0: Removed onShowBrowser — browser is now a separate screen.
-                                    // User navigates via header globe icon or bottom nav.
-                                )
-                            }
-                            i++
+                    // v4.0.69: Show each message individually — no grouping.
+                    // Each step message shows its own thinking bubble + tool call cards.
+                    // Each tool call card expands/collapses independently.
+                    state.messages.forEachIndexed { index, msg ->
+                        val isLastAi = !msg.isUser && index == state.messages.lastIndex
+                        item(key = msg.id) {
+                            ChatMessageItem(
+                                message = msg,
+                                isLastAi = isLastAi,
+                                thinking = state.isThinking,
+                                modifier = Modifier.animateItem(),
+                            )
                         }
                     }
 
                     // Inline thinking indicator at the very end while the LLM is responding.
                     if (state.isThinking && (state.messages.isEmpty() || !state.messages.last().isUser)) {
-                        // Don't double-show if the last AI message already has the inline indicator.
                         val last = state.messages.lastOrNull()
                         if (last == null || last.text.isNotBlank() || last.toolCalls.isNotEmpty()) {
                             item(key = "thinking-tail") {

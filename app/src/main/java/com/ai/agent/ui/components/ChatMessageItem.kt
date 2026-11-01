@@ -108,11 +108,12 @@ fun ChatMessageItem(
         }
     } else {
         // ----- AI message: left-aligned with emerald orb avatar -----
-        // v2.3.1: Step messages are always collapsed (show summary only).
-        // Only the final AI reply (no [N/M] prefix) shows full text.
-        // Tap a step message to expand/collapse its full text + tool calls.
+        // v4.0.69: Redesigned to look like Z.ai Code's chat:
+        // 1. Thinking bubble (collapsible) — shows AI's reasoning
+        // 2. Tool call cards — always visible, each independently expandable
+        // 3. Reasoning text — shown before/after tool calls (what AI is doing + what's next)
         val isStepMessage = message.text.startsWith("[")
-        var expanded by remember { mutableStateOf(false) }  // steps always start collapsed
+        var thinkingExpanded by remember { mutableStateOf(false) }
 
         Column(
             modifier = modifier
@@ -143,103 +144,136 @@ fun ChatMessageItem(
                     val isError = message.status == MessageStatus.ERROR
                     val isExecuting = message.status == MessageStatus.EXECUTING
 
+                    // v4.0.69: Thinking bubble — collapsible reasoning
+                    // Shows the AI's thought process. Tap to expand/collapse.
                     if (message.text.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateContentSize()  // v2.2.4: smooth expand/collapse
-                                .clickable(enabled = isStepMessage) { expanded = !expanded }  // tap to toggle
-                                .background(
-                                    if (isError) custom.error.copy(alpha = 0.12f) else custom.surface2,
-                                    RoundedCornerShape(
-                                        topStart = 16.dp,
-                                        topEnd = 16.dp,
-                                        bottomEnd = 16.dp,
-                                        bottomStart = 4.dp,
-                                    ),
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isError) custom.error.copy(alpha = 0.4f) else custom.inkBorder,
-                                    RoundedCornerShape(
-                                        topStart = 16.dp,
-                                        topEnd = 16.dp,
-                                        bottomEnd = 16.dp,
-                                        bottomStart = 4.dp,
-                                    ),
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                        ) {
-                            Column {
-                                if (isError) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(6.dp)
-                                                .background(custom.error, CircleShape),
-                                        )
-                                        Spacer(Modifier.width(6.dp))
+                        // v4.0.69: For step messages, show thinking bubble (collapsed by default)
+                        // For final reply, show the text directly (no collapse)
+                        if (isStepMessage) {
+                            // THINKING BUBBLE (for step messages)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateContentSize()
+                                    .clickable { thinkingExpanded = !thinkingExpanded }
+                                    .background(
+                                        if (isError) custom.error.copy(alpha = 0.08f) else custom.surface3,
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isError) custom.error.copy(alpha = 0.3f) else custom.inkBorder.copy(alpha = 0.5f),
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            ) {
+                                Column {
+                                    // Header: 💭 Thinking + expand/collapse indicator
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "💭",
+                                                fontSize = 11.sp,
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                text = if (isError) "Error" else "Thinking",
+                                                color = if (isError) custom.error else custom.fg3,
+                                                fontFamily = MonoFontFamily,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                        }
                                         Text(
-                                            text = "ERROR",
-                                            color = custom.error,
-                                            fontFamily = MonoFontFamily,
+                                            text = if (thinkingExpanded) "▼" else "▶",
+                                            color = custom.fg3,
                                             fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
                                         )
                                     }
-                                    Spacer(Modifier.height(4.dp))
-                                }
 
-                                // v2.3.1: Collapsible step messages
-                                if (isStepMessage && !expanded) {
-                                    // COLLAPSED: show first line + tool count + expand hint
-                                    val firstLine = message.text.substringBefore("\n").take(120)
-                                    val toolCount = message.toolCalls.size
-                                    Text(
-                                        text = renderMarkdown(firstLine),
-                                        color = if (isError) custom.error else m3.onSurface,
-                                        fontSize = 13.sp,
-                                        lineHeight = 18.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    if (toolCount > 0) {
-                                        Spacer(Modifier.height(4.dp))
+                                    // Content: collapsed = first line, expanded = full text
+                                    if (thinkingExpanded) {
+                                        Spacer(Modifier.height(6.dp))
                                         Text(
-                                            text = "$toolCount tool call${if (toolCount > 1) "s" else ""} · tap to expand ▶",
-                                            color = custom.fg3,
-                                            fontFamily = MonoFontFamily,
-                                            fontSize = 11.sp,
+                                            text = renderMarkdown(message.text),
+                                            color = if (isError) custom.error else m3.onSurface,
+                                            fontSize = 13.sp,
+                                            lineHeight = 18.sp,
                                         )
                                     } else {
+                                        // Show first line as preview
+                                        Spacer(Modifier.height(2.dp))
+                                        val firstLine = message.text.substringBefore("\n").take(120)
                                         Text(
-                                            text = "tap to expand ▶",
-                                            color = custom.fg3,
-                                            fontFamily = MonoFontFamily,
-                                            fontSize = 11.sp,
+                                            text = renderMarkdown(firstLine),
+                                            color = if (isError) custom.error else custom.fg2,
+                                            fontSize = 12.sp,
+                                            lineHeight = 16.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
-                                } else {
-                                    // EXPANDED step OR final reply (not a step): show full text
+                                }
+                            }
+                        } else {
+                            // FINAL REPLY — show full text directly (no thinking bubble)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (isError) custom.error.copy(alpha = 0.12f) else custom.surface2,
+                                        RoundedCornerShape(
+                                            topStart = 16.dp,
+                                            topEnd = 16.dp,
+                                            bottomEnd = 16.dp,
+                                            bottomStart = 4.dp,
+                                        ),
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isError) custom.error.copy(alpha = 0.4f) else custom.inkBorder,
+                                        RoundedCornerShape(
+                                            topStart = 16.dp,
+                                            topEnd = 16.dp,
+                                            bottomEnd = 16.dp,
+                                            bottomStart = 4.dp,
+                                        ),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Column {
+                                    if (isError) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .background(custom.error, CircleShape),
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                text = "ERROR",
+                                                color = custom.error,
+                                                fontFamily = MonoFontFamily,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                    }
                                     Text(
                                         text = renderMarkdown(message.text),
                                         color = if (isError) custom.error else m3.onSurface,
                                         fontSize = 13.sp,
                                         lineHeight = 18.sp,
                                     )
-                                    // v2.3.1: Only show "tap to collapse" for step messages (not final reply)
-                                    if (isStepMessage && expanded) {
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(
-                                            text = "tap to collapse ▼",
-                                            color = custom.fg3,
-                                            fontFamily = MonoFontFamily,
-                                            fontSize = 11.sp,
-                                        )
-                                    }
                                 }
                             }
                         }
+                        // Timestamp + running indicator
                         Row(
                             modifier = Modifier.padding(top = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -268,8 +302,9 @@ fun ChatMessageItem(
                         }
                     }
 
-                    // Tool call cards stack — only show when expanded
-                    if (message.toolCalls.isNotEmpty() && (expanded || !isStepMessage)) {
+                    // v4.0.69: Tool call cards — ALWAYS visible (not hidden behind expand)
+                    // Each ToolCallCard has its OWN expand/collapse state (independent)
+                    if (message.toolCalls.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
                         Column(
                             modifier = Modifier.fillMaxWidth(),
