@@ -130,18 +130,25 @@ http.createServer((req, res) => {
   let timedOut = false;
   let sawPrompt = false;  // v4.0.50: only auto-Y if a prompt char appears in output
 
+  // v4.0.68: Auto-prepend PATH export so pkg/node/python3/java are found.
+  // This was the #1 cause of runOnTerminal failures — the AI called
+  // 'python3 --version' but python3 wasn't in PATH.
+  // Now ALL commands get the AndroidIDE bin path automatically.
+  const PATH_PREFIX = 'export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin:/data/data/com.termux/files/usr/bin 2>/dev/null; ';
+  const fullCmd = PATH_PREFIX + cmd;
+
   let proc;
   if (ptyMode === 'script') {
     // v4.0.50: Use 'inherit'-style stdio via pipe but flush immediately.
     // script -qfc runs the command; output is captured but NOT buffered
     // because we read 'data' events as they arrive (no coalescing).
-    proc = spawn('script', ['-qfc', cmd, '/dev/null'], {
+    proc = spawn('script', ['-qfc', fullCmd, '/dev/null'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, TERM: 'dumb', SCRIPT_USE_CRLF: '0' }
     });
   } else {
     // Fallback: direct spawn with /system/bin/sh (no PTY)
-    proc = spawn(cmd, { shell: '/system/bin/sh', stdio: ['pipe', 'pipe', 'pipe'] });
+    proc = spawn(fullCmd, { shell: '/system/bin/sh', stdio: ['pipe', 'pipe', 'pipe'] });
   }
 
   // v4.0.51: Register this proc so /kill endpoint can find it.
