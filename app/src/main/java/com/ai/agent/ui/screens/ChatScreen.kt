@@ -43,6 +43,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.Code  // v4.0.63: Terminal icon
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pending
@@ -117,6 +118,7 @@ fun ChatScreen(
     onOpenHub: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
     onOpenBackgroundTasks: () -> Unit = {},
+    onOpenTerminal: () -> Unit = {},  // v4.0.63: Terminal preview button
     /** v2.2.0 Issue 113e — session id passed from Hub → History's "Continue" tap. */
     pendingSessionId: Long? = null,
     /** Called after the pending session id has been consumed by the ViewModel. */
@@ -238,6 +240,7 @@ fun ChatScreen(
                 onOpenHub = onOpenHub,
                 onOpenBrowser = onOpenBrowser,
                 onOpenBackgroundTasks = onOpenBackgroundTasks,
+                onOpenTerminal = onOpenTerminal,
                 onClear = { viewModel.clearChat() },
                 onNewChat = { viewModel.createNewChatSession() },  // v2.2.0 Issue 113c
             )
@@ -553,6 +556,7 @@ private fun ChatTopBar(
     onOpenHub: () -> Unit,
     onOpenBrowser: () -> Unit,
     onOpenBackgroundTasks: () -> Unit,
+    onOpenTerminal: () -> Unit,
     onClear: () -> Unit,
     onNewChat: () -> Unit,
 ) {
@@ -622,6 +626,15 @@ private fun ChatTopBar(
                 imageVector = if (isThinking) Icons.Filled.Pending else Icons.Outlined.History,
                 contentDescription = "Background tasks",
                 tint = if (isThinking) custom.accent else custom.fg2,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        // v4.0.63: Terminal button — opens terminal preview
+        IconButton(onClick = onOpenTerminal, modifier = Modifier.size(36.dp)) {
+            Icon(
+                imageVector = Icons.Outlined.Code,
+                contentDescription = "Terminal",
+                tint = custom.fg2,
                 modifier = Modifier.size(20.dp),
             )
         }

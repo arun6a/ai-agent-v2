@@ -48,8 +48,10 @@ const http = require('http');
 const { spawn, execSync } = require('child_process');
 
 const PORT = 8080;
-const HOST = '127.0.0.1';
-const VERSION = '4.0.51';
+// v4.0.63: Listen on 0.0.0.0 to accept connections from other devices on same WiFi.
+// Use '127.0.0.1' if you only want localhost access (no other devices).
+const HOST = '0.0.0.0';
+const VERSION = '4.0.63';
 
 // v4.0.49: Detect PTY support via 'script' command at startup.
 // If 'script' is available, commands run in a real PTY (interactive prompts work).

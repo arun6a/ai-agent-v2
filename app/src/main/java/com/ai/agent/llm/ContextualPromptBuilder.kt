@@ -51,6 +51,11 @@ object ContextualPromptBuilder {
         "recallAll()" to "list all memories",
         // v4.0.61: searchTools — ALWAYS available so brain can find relevant tools
         "searchTools(query)" to "search ALL tools by keyword. Use when unsure which tool to use or to check if a tool exists before creating a custom one.",
+        // v4.0.63: Terminal management — ALWAYS available
+        "connectTerminal(name, host, port?, token?, type?)" to "connect to a terminal server (AndroidIDE/Termux/laptop/cloud). Auto-detects capabilities.",
+        "listTerminals()" to "list all configured terminals + status + capabilities",
+        "runOnTerminal(name, command, timeout?)" to "run a shell command on a specific terminal",
+        "disconnectTerminal(name)" to "disconnect from a terminal",
     )
 
     private val TOOL_GROUPS = listOf(

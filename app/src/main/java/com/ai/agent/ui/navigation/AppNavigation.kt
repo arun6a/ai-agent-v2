@@ -37,6 +37,7 @@ import com.ai.agent.ui.screens.ProviderSettingsScreen
 import com.ai.agent.ui.screens.SkillEditorScreen
 import com.ai.agent.ui.screens.SplashScreen
 import com.ai.agent.ui.screens.SystemPromptEditorScreen
+import com.ai.agent.ui.screens.TerminalPreviewScreen  // v4.0.63
 
 // ============================================================================
 // AppNavigation — root nav graph for the v2 app.
@@ -169,6 +170,11 @@ fun AppNavigation() {
                                 launchSingleTop = true
                             }
                         },
+                        onOpenTerminal = {
+                            nav.navigate(Routes.TERMINAL) {
+                                launchSingleTop = true
+                            }
+                        },
                         pendingSessionId = pendingSessionId,
                         onSessionIdConsumed = {
                             backStackEntry.savedStateHandle.remove<Long>("session_id")
@@ -218,6 +224,7 @@ fun AppNavigation() {
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
                         },
                         onOpenSystemPromptEditor = { nav.navigate(Routes.SYSTEM_PROMPT_EDITOR) },
+                        onOpenTerminal = { nav.navigate(Routes.TERMINAL) },
                         onContinueSession = { sessionId ->
                             // v2.2.0 Issue 113e — hand the session id to the Chat
                             // destination via its savedStateHandle, then navigate.
@@ -263,6 +270,7 @@ fun AppNavigation() {
                             nav.navigate(Routes.skillEditorRoute(skillName, isReadOnly))
                         },
                         onOpenSystemPromptEditor = { nav.navigate(Routes.SYSTEM_PROMPT_EDITOR) },
+                        onOpenTerminal = { nav.navigate(Routes.TERMINAL) },
                         onContinueSession = { sessionId ->
                             try {
                                 nav.getBackStackEntry(Routes.CHAT)
@@ -340,6 +348,19 @@ fun AppNavigation() {
                 ) {
                     SystemPromptEditorScreen(
                         initialMode = "custom",
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+
+                // ---- Terminal Preview (v4.0.63) ----
+                composable(
+                    route = Routes.TERMINAL,
+                    enterTransition = { slideInVertically(tween(300)) { it / 3 } + fadeIn(tween(300)) },
+                    exitTransition = { slideOutVertically(tween(250)) { it / 3 } + fadeOut(tween(200)) },
+                    popEnterTransition = { fadeIn(tween(300)) },
+                    popExitTransition = { slideOutVertically(tween(250)) { -it / 3 } + fadeOut(tween(200)) },
+                ) {
+                    TerminalPreviewScreen(
                         onBack = { nav.popBackStack() },
                     )
                 }

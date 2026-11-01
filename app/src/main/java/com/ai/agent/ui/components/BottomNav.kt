@@ -34,6 +34,7 @@ object Routes {
     const val PROVIDER_SETTINGS = "provider_settings"
     const val BACKGROUND_TASKS = "background_tasks"
     const val SYSTEM_PROMPT_EDITOR = "system_prompt_editor"
+    const val TERMINAL = "terminal"  // v4.0.63: Terminal preview screen
 
     // Skill editor — argument pattern: "skill_editor/{skillName}/{isReadOnly}"
     // skillName = "__new__" for create mode (avoids nullable path segments).

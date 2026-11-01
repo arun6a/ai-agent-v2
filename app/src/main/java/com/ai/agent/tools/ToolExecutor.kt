@@ -115,6 +115,8 @@ class ToolExecutor(private val context: Context) {
             "createCustomTool", "listCustomTools", "deleteCustomTool",
             // v4.0.61: Tool search — search ALL tools by keyword
             "searchTools",
+            // v4.0.63: Terminal management tools
+            "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools
@@ -260,6 +262,8 @@ class ToolExecutor(private val context: Context) {
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
             // v4.0.61: searchTools — just searches schemas, no accessibility
             "searchTools",
+            // v4.0.63: Terminal management — HTTP calls, no accessibility
+            "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools (no accessibility needed)
@@ -721,6 +725,11 @@ class ToolExecutor(private val context: Context) {
             "deleteCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             // v4.0.61: searchTools — search ALL tools by keyword
             "searchTools" -> searchTools(call, context)
+            // v4.0.63: Terminal management tools
+            "connectTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.connectTerminal(call.args, context)
+            "listTerminals" -> com.ai.agent.terminal.TerminalTools.Handler.listTerminals(call.args, context)
+            "runOnTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.runOnTerminal(call.args, context)
+            "disconnectTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.disconnectTerminal(call.args, context)
             // v4.0.28: Wallpaper
             "setWallpaper" -> com.ai.agent.tools.categories.WallpaperTools.execute(call, context, service, database)
             // v4.0.29: On-demand context tools

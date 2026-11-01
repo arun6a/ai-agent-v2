@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.Code  // v4.0.63: Terminal icon
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
@@ -98,6 +99,7 @@ enum class HubSection(val label: String, val icon: ImageVector) {
     PERMISSIONS("Permissions", Icons.Outlined.Verified),
     LOGS("Logs", Icons.Outlined.Description),
     SETTINGS("Settings", Icons.Outlined.Settings),
+    TERMINAL("Terminal", Icons.Outlined.Code),  // v4.0.63: Terminal management
 }
 
 /** Category group for the hub home grid. */
@@ -105,7 +107,7 @@ enum class HubCategory(val title: String, val sections: List<HubSection>) {
     AUTOMATION("AUTOMATION", listOf(HubSection.RULES, HubSection.SKILLS)),
     AI("AI CONFIGURATION", listOf(HubSection.AI_SETTINGS, HubSection.USAGE, HubSection.PERMISSIONS)),
     DATA("DATA & MEMORY", listOf(HubSection.MEMORY, HubSection.KNOWLEDGE, HubSection.FILES)),
-    SYSTEM("SYSTEM", listOf(HubSection.TOOLS, HubSection.LOGS, HubSection.SETTINGS)),
+    SYSTEM("SYSTEM", listOf(HubSection.TOOLS, HubSection.LOGS, HubSection.SETTINGS, HubSection.TERMINAL)),
     CONVERSATION("CONVERSATION", listOf(HubSection.HISTORY)),
 }
 
@@ -117,6 +119,7 @@ fun HubScreen(
     onEditSkill: (skillName: String?, isReadOnly: Boolean) -> Unit = { _, _ -> },
     onOpenSystemPromptEditor: () -> Unit = {},
     onContinueSession: (Long) -> Unit = {},
+    onOpenTerminal: () -> Unit = {},  // v4.0.63: Open terminal preview screen
 ) {
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
@@ -151,6 +154,7 @@ fun HubScreen(
                 onEditSkill = onEditSkill,
                 onOpenSystemPromptEditor = onOpenSystemPromptEditor,
                 onContinueSession = onContinueSession,
+                onOpenTerminal = onOpenTerminal,
             )
         }
     }
@@ -255,6 +259,7 @@ private fun SectionDetailPage(
     onEditSkill: (String?, Boolean) -> Unit,
     onOpenSystemPromptEditor: () -> Unit,
     onContinueSession: (Long) -> Unit,
+    onOpenTerminal: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
 
@@ -284,6 +289,7 @@ private fun SectionDetailPage(
                 HubSection.PERMISSIONS -> PermissionsSection()
                 HubSection.LOGS -> LogsSection()
                 HubSection.SETTINGS -> SettingsSection(onOpenSystemPromptEditor = onOpenSystemPromptEditor)
+                HubSection.TERMINAL -> com.ai.agent.ui.screens.hub.TerminalSection(onOpenTerminal = onOpenTerminal)
             }
         }
     }
@@ -334,7 +340,7 @@ private fun HubTopBar(
 // open the Hub directly on the Settings section).
 // ---------------------------------------------------------------------------
 
-enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, LOGS, SETTINGS
+enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, LOGS, SETTINGS, TERMINAL
     ;
     fun toHubSection(): HubSection = when (this) {
         HubSectionArg.HISTORY -> HubSection.HISTORY
@@ -349,5 +355,6 @@ enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FIL
         HubSectionArg.PERMISSIONS -> HubSection.PERMISSIONS
         HubSectionArg.LOGS -> HubSection.LOGS
         HubSectionArg.SETTINGS -> HubSection.SETTINGS
+        HubSectionArg.TERMINAL -> HubSection.TERMINAL
     }
 }

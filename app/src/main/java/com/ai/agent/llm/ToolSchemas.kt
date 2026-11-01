@@ -367,6 +367,26 @@ object ToolSchemas {
             mapOf(
                 "query" to Param("string", "Search query — keyword or phrase. Matches tool names AND descriptions (case-insensitive). E.g., 'download file', 'whatsapp', 'rule', 'brightness'.", required = true),
             )),
+        // v4.0.63: Terminal management tools — connect to any terminal (AndroidIDE, Termux, laptop, cloud)
+        Schema("connectTerminal", "Connect to a terminal server (aira-server.js). Tests connection + auto-detects capabilities (pkg, node, java, git, etc.). The terminal must be running aira-server.js. For AndroidIDE-Rv2 on the same phone, use host='127.0.0.1'. For other devices on same WiFi, use their IP (e.g., '192.168.1.100'). Example: connectTerminal(name='phone-androidide', host='127.0.0.1', port=8080, token='aira', type='androidide').",
+            mapOf(
+                "name" to Param("string", "Unique name for this terminal. E.g., 'phone-androidide', 'laptop-linux', 'tablet-termux'.", required = true),
+                "host" to Param("string", "IP address or hostname. '127.0.0.1' for localhost, or WiFi IP like '192.168.1.100'.", required = true),
+                "port" to Param("number", "Port number. Default: 8080.", required = false),
+                "token" to Param("string", "Auth token. Default: 'aira'. Must match the server's token.", required = false),
+                "type" to Param("string", "Terminal type: 'androidide', 'termux', 'laptop', 'cloud', or 'custom'.", required = false),
+            )),
+        Schema("listTerminals", "List all configured terminal connections + their status (connected/disconnected) + capabilities. No parameters."),
+        Schema("runOnTerminal", "Run a shell command on a specific terminal. The terminal must be connected first (call connectTerminal). Returns stdout. Example: runOnTerminal(name='phone-androidide', command='ls /sdcard/').",
+            mapOf(
+                "name" to Param("string", "Terminal name (must match a configured terminal).", required = true),
+                "command" to Param("string", "Shell command to run.", required = true),
+                "timeout" to Param("number", "Timeout in seconds (default: 120, max: 600).", required = false),
+            )),
+        Schema("disconnectTerminal", "Disconnect from a terminal. The terminal stays configured but won't accept commands until reconnected.",
+            mapOf(
+                "name" to Param("string", "Terminal name to disconnect.", required = true),
+            )),
         // v4.0.28: Wallpaper tool
         Schema("setWallpaper", "Set an image file as the phone wallpaper. Works with any image path (e.g., /storage/emulated/0/Pictures/car.jpg). Use after downloadFile to set the downloaded image as wallpaper.",
             mapOf(

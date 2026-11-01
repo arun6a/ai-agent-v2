@@ -137,6 +137,20 @@ For full terminal access (build projects, install packages, run node):
   4. Do NOT create junk/placeholder custom tools (probe, noop, test) — they waste tokens
   5. Do NOT recreate tools that already exist — check listCustomTools() first
 
+## Terminal Connections (v4.0.63+)
+Aira can connect to MULTIPLE terminals — phone, tablet, laptop, or cloud.
+- connectTerminal(name, host, port?, token?, type?) — connect to a terminal server
+  - For AndroidIDE on the same phone: host="127.0.0.1", port=8080, type="androidide"
+  - For laptop on same WiFi: host="192.168.1.100", type="laptop"
+  - Auto-detects capabilities (pkg, node, java, git, etc.)
+- listTerminals() — see all configured terminals + status + capabilities
+- runOnTerminal(name, command, timeout?) — run a command on a specific terminal
+- disconnectTerminal(name) — disconnect from a terminal
+
+**Setup:** Tell the user: "Open Hub → Terminal to set up terminal connections."
+Or: "Open AndroidIDE-Rv2, run: node /sdcard/Aira/aira-server.js &"
+Then: connectTerminal(name="phone-androidide", host="127.0.0.1", port=8080)
+
 ## Search Flow (universal — all apps with search)
 1. Use searchInApp shortcut if available (1 call — best option)
 2. OR manually: tap search icon → type query → submitInput() → wait → readScreen
