@@ -1008,6 +1008,22 @@ tools array. Call tools using the standard tool_calls format.
 
             LLMResponse(reply, toolCalls)
         } catch (e: Exception) {
+            // v4.0.66: JSON parsing failed. Gemini often returns malformed JSON:
+            // - "-name" instead of '{"name"'
+            // - Unescaped quotes inside strings
+            // - <memory> tags appended after JSON
+            // - Code fences (```json ... ```)
+            // Before falling back to text extraction, try regex-based extraction
+            // which can handle malformed JSON by pattern-matching.
+            if (lastToolFilterSize != 0) {
+                val regexCalls = extractToolCallsViaRegex(content)
+                if (regexCalls.isNotEmpty()) {
+                    val regexReply = extractReplyViaRegex(content)
+                    Log.i("LLMClient", "JSON parse failed but regex extracted ${regexCalls.size} tool call(s): ${regexCalls.map { it.name }}")
+                    return LLMResponse(regexReply.ifEmpty { "Executing..." }, regexCalls)
+                }
+            }
+
             // JSON parse failed — try to extract tool calls from plain text
             // v4.0.21: Skip when 0 tools were sent (Tier 1 — false positives).
             val textCalls = if (lastToolFilterSize != 0) extractToolCallsFromText(content) else emptyList()
@@ -1024,6 +1040,66 @@ tools array. Call tools using the standard tool_calls format.
                 LLMResponse(content, emptyList())
             }
         }
+    }
+
+    /**
+     * v4.0.66: Regex-based extraction of tool_calls from JSON-in-content.
+     * Used as a fallback when JSONObject() fails (Gemini returns malformed JSON).
+     *
+     * Extracts patterns like:
+     *   {"name":"browserListClickable","args":{}}
+     *   {"name":"webSearch","args":{"query":"BLACKPINK"}}
+     *   "name": "run_command", "args": {"command": "ls /sdcard/"}
+     *
+     * Returns a list of ToolCall objects. Empty list if none found.
+     */
+    private fun extractToolCallsViaRegex(content: String): List<ToolCall> {
+        val calls = mutableListOf<ToolCall>()
+        // Match "name":"toolName" followed by "args":{...}
+        // Handle both compact and spaced JSON
+        val pattern = Regex(
+            """"name"\s*:\s*"([^"]+)"\s*,?\s*"args"\s*:\s*(\{[^}]*\})""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        for (match in pattern.findAll(content)) {
+            val toolName = match.groupValues[1].lowercase().trim()
+            val argsStr = match.groupValues[2].trim()
+            // Accept any tool name (built-in or custom) — the executor will validate
+            if (toolName.isNotEmpty()) {
+                val args = mutableMapOf<String, Any>()
+                try {
+                    val argsJson = JSONObject(argsStr)
+                    val keys = argsJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        args[key] = argsJson.get(key)
+                    }
+                } catch (_: Exception) {
+                    // Args not valid JSON — try key=value parse
+                    parseArgsAsKeyValue(argsStr, args)
+                }
+                calls.add(ToolCall(toolName, args))
+                Log.d("LLMClient", "Regex extracted: $toolName($args)")
+            }
+        }
+        return calls
+    }
+
+    /**
+     * v4.0.66: Extract the "reply" field value from JSON-in-content via regex.
+     * Used as a fallback when JSONObject() fails.
+     */
+    private fun extractReplyViaRegex(content: String): String {
+        val pattern = Regex(
+            """"reply"\s*:\s*"((?:[^"\\]|\\.)*)"""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        val match = pattern.find(content) ?: return ""
+        return match.groupValues[1]
+            .replace("\\\"", "\"")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\\", "\\")
     }
 
     /**
