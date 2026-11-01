@@ -8,6 +8,7 @@ import com.ai.agent.browser.BrowserController
 import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.LLMClient
 import com.ai.agent.llm.SavedModelsStore
+import com.ai.agent.llm.ToolSchemas
 import com.ai.agent.llm.ApiKeyStore
 import com.ai.agent.llm.ProviderEndpoints
 import com.ai.agent.llm.BindingHealthStore
@@ -110,6 +111,8 @@ class ToolExecutor(private val context: Context) {
             "complete",
             // v4.0.26: Custom tool management
             "createCustomTool", "listCustomTools", "deleteCustomTool",
+            // v4.0.61: Tool search — search ALL tools by keyword
+            "searchTools",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools
@@ -251,6 +254,8 @@ class ToolExecutor(private val context: Context) {
             "complete",  // v4.0.19: Just sets a flag, doesn't need accessibility
             // v4.0.26: Custom tool management + custom tools don't need accessibility
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
+            // v4.0.61: searchTools — just searches schemas, no accessibility
+            "searchTools",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools (no accessibility needed)
@@ -710,6 +715,8 @@ class ToolExecutor(private val context: Context) {
             "createCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             "listCustomTools" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             "deleteCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+            // v4.0.61: searchTools — search ALL tools by keyword
+            "searchTools" -> searchTools(call, context)
             // v4.0.28: Wallpaper
             "setWallpaper" -> com.ai.agent.tools.categories.WallpaperTools.execute(call, context, service, database)
             // v4.0.29: On-demand context tools
@@ -1216,5 +1223,88 @@ class ToolExecutor(private val context: Context) {
             else -> args.entries.joinToString("\n") { "${it.key}: ${it.value}" }
         }
         return description to details
+    }
+
+    /**
+     * v4.0.61: searchTools — search ALL tools (built-in + custom) by keyword.
+     *
+     * Searches tool names + descriptions (case-insensitive) and returns matching
+     * tools with their descriptions. Max 15 results to keep output concise.
+     *
+     * Use cases:
+     * - "I need to create a rule" → searchTools("rule") → createRule, listRules, etc.
+     * - "I need to reply to WhatsApp" → searchTools("whatsapp reply") → replyToNotification
+     * - "Does a download tool exist?" → searchTools("download") → downloadFile, openUrl
+     *
+     * If no results → tells the AI it can create a custom tool via createCustomTool.
+     */
+    private fun searchTools(call: LLMClient.ToolCall, context: Context): ToolResult {
+        val query = call.args["query"] as? String
+            ?: return ToolResult(false, "missing query. Example: searchTools(query=\"download file\")")
+
+        if (query.isBlank()) {
+            return ToolResult(false, "query is empty. Example: searchTools(query=\"whatsapp notification\")")
+        }
+
+        // Normalize query for matching
+        val queryLower = query.lowercase().trim()
+        val queryWords = queryLower.split(Regex("\\s+")).filter { it.isNotEmpty() }
+
+        // Collect all tools (name + description) from ToolSchemas
+        val allSchemas: List<ToolSchemas.Schema> = ToolSchemas.allSchemas()
+        val results = mutableListOf<Pair<String, String>>()  // (name, description)
+
+        for (schema in allSchemas) {
+            val nameLower = schema.name.lowercase()
+            val descLower = schema.description.lowercase()
+
+            // Match if query appears in name or description, OR any query word matches
+            val matches = queryLower in nameLower || queryLower in descLower ||
+                queryWords.any { word -> nameLower.contains(word) || descLower.contains(word) }
+
+            if (matches) {
+                results.add(Pair(schema.name, schema.description))
+            }
+        }
+
+        // Also search custom tools
+        try {
+            val customTools = com.ai.agent.tools.custom.CustomToolStore.load(context)
+            for (tool in customTools) {
+                val nameLower = tool.name.lowercase()
+                val descLower = tool.description.lowercase()
+                val matches = queryLower in nameLower || queryLower in descLower ||
+                    queryWords.any { word -> nameLower.contains(word) || descLower.contains(word) }
+                if (matches) {
+                    results.add(Pair(tool.name, "(custom) ${tool.description}"))
+                }
+            }
+        } catch (_: Exception) {
+            // Custom tools not available — skip
+        }
+
+        return if (results.isEmpty()) {
+            ToolResult(true,
+                "No tools found for '$query'.\n\n" +
+                "No built-in or custom tool matches. You can CREATE one:\n" +
+                "  createCustomTool(name=\"my_tool\", description=\"...\", handlerType=\"shell\" or \"http\", handler=\"...\", parameters=\"param1,param2\")\n\n" +
+                "Or try a broader search (e.g., 'file' instead of 'download file to sdcard').")
+        } else {
+            // Sort: name matches first (more relevant), then description matches
+            val sorted = results.sortedWith(compareByDescending { (name, _) ->
+                queryWords.any { word -> name.contains(word) }
+            })
+
+            val sb = StringBuilder("Tools matching '$query' (${sorted.size} found):\n\n")
+            for ((name, desc) in sorted.take(15)) {  // max 15 results
+                sb.append("• $name\n")
+                sb.append("  $desc\n\n")
+            }
+            if (sorted.size > 15) {
+                sb.append("... and ${sorted.size - 15} more. Try a more specific query.\n")
+            }
+            sb.append("\nCall any tool above by its name. If none fit, use createCustomTool.")
+            ToolResult(true, sb.toString())
+        }
     }
 }

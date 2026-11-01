@@ -63,6 +63,11 @@ Starting step 1."
 ## Your Tools
 Full list + parameter schemas are sent via the tools array. Key ones:
 
+**Not sure which tool to use?** Call searchTools(query="what you need") to find relevant tools.
+Example: searchTools(query="rule") → createRule, listRules, deleteRule, modifyRule.
+Example: searchTools(query="whatsapp notification") → replyToNotification, openWhatsAppChat.
+If searchTools finds nothing → use createCustomTool to make a new one.
+
 Shortcuts (USE FIRST — save 4-5 calls):
 - searchInApp(package, query) → opens app + runs search (works with any app that has search)
 - openWhatsAppChat(phone, msg?) → opens WhatsApp chat (+ pre-fills message)

@@ -353,6 +353,13 @@ object ToolSchemas {
             mapOf(
                 "name" to Param("string", "Name of the custom tool to delete.", required = true),
             )),
+        // v4.0.61: searchTools — search ALL tools (built-in + custom) by name or description.
+        // Use when you're not sure which tool to use, or when you think a tool might not exist.
+        // Returns matching tool names + descriptions (max 15 results).
+        Schema("searchTools", "Search ALL available tools (built-in + custom) by keyword. Use when you're not sure which tool to use, or to check if a tool exists before creating a custom one. Returns tool name + description for each match. Example: searchTools(query='rule') returns createRule, listRules, deleteRule, modifyRule. Example: searchTools(query='whatsapp notification') returns replyToNotification, openWhatsAppChat.",
+            mapOf(
+                "query" to Param("string", "Search query — keyword or phrase. Matches tool names AND descriptions (case-insensitive). E.g., 'download file', 'whatsapp', 'rule', 'brightness'.", required = true),
+            )),
         // v4.0.28: Wallpaper tool
         Schema("setWallpaper", "Set an image file as the phone wallpaper. Works with any image path (e.g., /storage/emulated/0/Pictures/car.jpg). Use after downloadFile to set the downloaded image as wallpaper.",
             mapOf(
@@ -592,6 +599,9 @@ object ToolSchemas {
 
     /** Get all tool names. */
     fun allNames(): List<String> = SCHEMAS.map { it.name }
+
+    /** v4.0.61: Get all schemas (for searchTools to search through). */
+    fun allSchemas(): List<Schema> = SCHEMAS.toList()
 
     /**
      * Build a JSONArray of OpenAI-compatible tool schemas (the `tools` array

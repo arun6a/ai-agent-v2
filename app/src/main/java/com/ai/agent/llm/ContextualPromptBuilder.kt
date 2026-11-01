@@ -47,6 +47,8 @@ object ContextualPromptBuilder {
         "wait(seconds)" to "wait for N seconds",
         "recallSimilar(query)" to "search memory for relevant past experiences",
         "recallAll()" to "list all memories",
+        // v4.0.61: searchTools — ALWAYS available so brain can find relevant tools
+        "searchTools(query)" to "search ALL tools by keyword. Use when unsure which tool to use or to check if a tool exists before creating a custom one.",
     )
 
     private val TOOL_GROUPS = listOf(
