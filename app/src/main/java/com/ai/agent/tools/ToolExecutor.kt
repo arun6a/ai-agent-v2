@@ -109,6 +109,8 @@ class ToolExecutor(private val context: Context) {
             "actionChain",
             // v3.9.6: Completion tool
             "complete",
+            // v4.0.62: TodoWrite — planning + progress tracking
+            "todoWrite",
             // v4.0.26: Custom tool management
             "createCustomTool", "listCustomTools", "deleteCustomTool",
             // v4.0.61: Tool search — search ALL tools by keyword
@@ -252,6 +254,8 @@ class ToolExecutor(private val context: Context) {
             "mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto",
             "forceStopApp", "uninstallApp",  // v4.0.17: Use ActivityManager, not accessibility
             "complete",  // v4.0.19: Just sets a flag, doesn't need accessibility
+            // v4.0.62: TodoWrite — just stores the todo list, no accessibility
+            "todoWrite",
             // v4.0.26: Custom tool management + custom tools don't need accessibility
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
             // v4.0.61: searchTools — just searches schemas, no accessibility
@@ -801,6 +805,14 @@ class ToolExecutor(private val context: Context) {
                 val reason = call.args["reason"] as? String ?: "No reason given"
                 LogCapture.i(TAG, "complete(success=$success, reason=$reason)")
                 ToolResult(true, "TASK_COMPLETE:$success:$reason")
+            }
+            // v4.0.62: TodoWrite — plan + track multi-step tasks
+            "todoWrite" -> {
+                val todosJson = call.args["todos"] as? String
+                    ?: return ToolResult(false, "missing todos. Example: todoWrite(todos='[{\"content\":\"step 1\",\"status\":\"pending\"}]')")
+                val formatted = com.ai.agent.tools.planning.TodoStore.update(todosJson)
+                LogCapture.i(TAG, "todoWrite: ${com.ai.agent.tools.planning.TodoStore.getTodos().size} items")
+                ToolResult(true, "Todo list updated. This will be shown to you in subsequent prompts.\n\n$formatted")
             }
 
             else -> {

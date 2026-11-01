@@ -339,6 +339,13 @@ object ToolSchemas {
                 "success" to Param("boolean", "true if task succeeded, false if it failed or is impossible.", required = true),
                 "reason" to Param("string", "Why the task is complete. Include what you see on screen as proof (e.g., 'Video playing at 9:07, 212M views').", required = true),
             )),
+        // v4.0.62: TodoWrite — structured planning + progress tracking.
+        // The AI creates a todo list at task start, then updates it as steps complete.
+        // The list is injected into subsequent prompts so the AI stays on track.
+        Schema("todoWrite", "Plan + track a multi-step task. Call this BEFORE starting complex tasks (3+ steps). Break the task into ordered steps. Update statuses as you progress. The list persists across iterations + is shown to you in subsequent prompts so you never lose track. Status: 'pending' (not started), 'in_progress' (currently working on it — only ONE at a time), 'completed' (done + verified). Example: todoWrite(todos='[{\"content\":\"Search for wallpaper\",\"status\":\"in_progress\"},{\"content\":\"Download image\",\"status\":\"pending\"},{\"content\":\"Set as wallpaper\",\"status\":\"pending\"}]')",
+            mapOf(
+                "todos" to Param("string", "JSON array of todo items. Each item: {\"content\":\"step description\",\"status\":\"pending\"|\"in_progress\"|\"completed\"}. Pass the FULL list every time (not just changes). Max 10 items.", required = true),
+            )),
         // v4.0.26: Custom tool management — lets the AI create new tools at runtime.
         Schema("createCustomTool", "Create a NEW custom tool at runtime. Use when you need a tool that doesn't exist (e.g., call a custom API, run a specific shell command). The tool persists across app restarts. Two handler types: 'shell' (runs a shell command with {param} substitution) or 'http' (makes an HTTP GET/POST with {param} substitution in URL+body). Example: createCustomTool(name='check_server', description='Check server status', handlerType='http', handler='{\"method\":\"GET\",\"url\":\"https://myserver.com/health\"}', parameters=[]). After creating, call the tool by its name directly.",
             mapOf(

@@ -558,6 +558,8 @@ class ChatViewModel(
 
     private suspend fun runAgentLoop(userMessage: String) {
         LogCapture.i(TAG, "===== Agent loop started: ${userMessage.take(80)} =====")
+        // v4.0.62: Clear the todo list from the previous task
+        com.ai.agent.tools.planning.TodoStore.clear()
         val workLog = StringBuilder()
         try {
             // v3.0.8: Contextual Prompts — select relevant tool groups based on user message
@@ -1108,6 +1110,14 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     // v3.9.6: Inject <memory> from previous iteration if available.
                     if (memoryBuffer.isNotEmpty()) {
                         conversation.append("\n\n[MEMORY]: $memoryBuffer")
+                    }
+
+                    // v4.0.62: Inject the current todo list (from todoWrite) so the AI
+                    // always sees its plan + progress. This is what makes Aira a real
+                    // agent — it can plan, track, and stay focused across iterations.
+                    val todoList = com.ai.agent.tools.planning.TodoStore.formatForPrompt()
+                    if (todoList.isNotEmpty()) {
+                        conversation.append(todoList)
                     }
 
                     val llmResponse = llmClient.chatWithFailover(conversation.toString(), execPrompt, contextualToolFilter)
