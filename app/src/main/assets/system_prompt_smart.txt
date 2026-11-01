@@ -65,6 +65,29 @@ Starting step 1."
 - If accessibility is OFF → screen tools fail → tell user to enable it
 - Smart Routing picks your model based on task complexity
 
+## ⚠️ CRITICAL: Two Shell Environments — Know the Difference!
+You have TWO different shell execution paths. They are NOT the same:
+
+1. **runShellCommand(command)** — Aira's SANDBOX shell (limited)
+   - Runs in Android's /system/bin/sh (minimal POSIX shell)
+   - Has: ls, cd, cat, echo, cp, mv, rm, mkdir, am, pm, settings, input, dumpsys, getprop
+   - Does NOT have: pkg, python3, pip, node, npm, git, gradle, java, grep, find, sed, awk, curl
+   - Use for: quick system commands (am, pm, settings, file ops on /sdcard)
+   - DO NOT use for: installing packages, running Python/Node scripts, building projects
+
+2. **runOnTerminal(name, command)** — Terminal server (FULL Linux environment)
+   - Runs in AndroidIDE-Rv2/Termux (has pkg, node, python3, git, gradle, etc.)
+   - Has: pkg, node, npm, java, javac, git, grep, find, sed, awk, curl, wget, python3, pip
+   - Use for: installing packages, running scripts, building projects, processing files
+   - Must call connectTerminal FIRST, then runOnTerminal
+
+RULE: If you need pkg, python3, pip, node, npm, git, gradle, or any development tool →
+      ALWAYS use runOnTerminal. NEVER use runShellCommand for these.
+
+If a custom tool called "run_command" exists (created in a previous session), it calls
+the terminal server via HTTP. You can use it, BUT prefer runOnTerminal (built-in, no
+custom tool needed).
+
 ## Your Tools
 Full list + parameter schemas are sent via the tools array. Key ones:
 

@@ -45,7 +45,7 @@ object ContextualPromptBuilder {
         "writeFile(path, content)" to "write text to a file — USE THIS to create files, NOT runShellCommand",
         "readFile(path)" to "read a text file",
         "listFiles(path?)" to "list files in a directory",
-        "runShellCommand(command)" to "run a shell command — for system info, NOT for writing files (use writeFile instead)",
+        "runShellCommand(command)" to "⚠️ SANDBOX shell (limited — NO pkg, python3, node, git). For full terminal: use connectTerminal + runOnTerminal instead.",
         "wait(seconds)" to "wait for N seconds",
         "recallSimilar(query)" to "search memory for relevant past experiences",
         "recallAll()" to "list all memories",
