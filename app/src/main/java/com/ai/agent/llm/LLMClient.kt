@@ -967,7 +967,7 @@ tools array. Call tools using the standard tool_calls format.
 
         return try {
             val json = JSONObject(jsonStr)
-            val reply = json.optString("reply", "Done.")
+            val reply = json.optString("reply", "")  // v4.0.60: was "Done." — now empty, ChatViewModel handles fallback
             val toolCalls = mutableListOf<ToolCall>()
             val callsArray = json.optJSONArray("tool_calls")
             if (callsArray != null) {
@@ -1033,10 +1033,26 @@ tools array. Call tools using the standard tool_calls format.
      *   "calling: tap(970, 180)"
      *   "I'll use type(text=hello)"
      *
+     * v4.0.60: CRITICAL FIX — only match REAL tool names, not random words followed by ().
+     * Previously, patterns like "browser(0=Chrome)" or "result(0=...)" in the brain's
+     * analysis text were misinterpreted as tool calls → 10 fake tool calls → all fail.
+     *
      * Returns a list of ToolCall objects. Empty list if none found.
      */
     private fun extractToolCallsFromText(text: String): List<ToolCall> {
         val calls = mutableListOf<ToolCall>()
+
+        // v4.0.60: Get the set of real tool names ONCE. Only match these — not any word().
+        val realToolNames = try {
+            com.ai.agent.tools.ToolExecutor.getAvailableToolNames().toSet()
+        } catch (e: Exception) {
+            emptySet<String>()
+        }
+
+        if (realToolNames.isEmpty()) {
+            // Can't verify tool names — don't extract anything (safer than extracting fakes)
+            return emptyList()
+        }
 
         // Pattern: optional "Tool:" or "Calling:" prefix, then toolName(key=value, key=value, ...)
         // Also matches: toolName("value", 123, key=value)
@@ -1048,13 +1064,14 @@ tools array. Call tools using the standard tool_calls format.
             val toolName = match.groupValues[1].lowercase()
             val argsStr = match.groupValues[2].trim()
 
-            // Skip common false positives (English words that look like function calls)
-            if (toolName in setOf("e.g", "example", "see", "note", "if", "when", "for", "step", "the", "this", "that")) {
+            // v4.0.60: ONLY accept real tool names. Skip any word that's not an actual tool.
+            // This prevents "browser(0=Chrome)", "result(0=...)", "mismatch(0=...)" from
+            // being treated as tool calls.
+            if (toolName !in realToolNames) {
                 continue
             }
 
             // v4.0.20: Use the robust arg parser (handles commas/colons inside values).
-            // Was: naive split(",") which broke values like action=reply: Hi Mom, I'll call back
             val args = mutableMapOf<String, Any>()
             parseArgsAsKeyValue(argsStr, args)
 

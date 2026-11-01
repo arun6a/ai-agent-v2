@@ -1131,9 +1131,28 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     val calledComplete = llmResponse.toolCalls.any { it.name == "complete" }
                     if (calledComplete) {
                         val completeCall = llmResponse.toolCalls.find { it.name == "complete" }
-                        val success = completeCall?.args?.get("success") as? Boolean ?: false
+                        var success = completeCall?.args?.get("success") as? Boolean ?: false
                         val reason = completeCall?.args?.get("reason") as? String ?: "No reason"
-                        finalReply = if (success) "✅ Done! $reason" else "❌ Task couldn't be completed. $reason"
+
+                        // v4.0.60: HONEST VERIFICATION — if the model claims success=true but
+                        // the last 2+ tools in this iteration failed, override to success=false.
+                        // This prevents the "goalpost shift" bug where the AI pivots to an
+                        // easier task, succeeds on that, and claims the original task is done.
+                        if (success && previouslyFailedSignatures.isNotEmpty()) {
+                            val recentFailures = previouslyFailedSignatures.size
+                            if (recentFailures >= 2) {
+                                LogCapture.w(TAG, "complete(success=true) but $recentFailures tools failed — overriding to success=false")
+                                success = false
+                                finalReply = "❌ Task couldn't be completed. $reason\n\n" +
+                                    "⚠️ HONEST CHECK: $recentFailures tool call(s) failed during this task:\n" +
+                                    previouslyFailedSignatures.joinToString("\n") { "  • $it" }.take(500) +
+                                    "\n\nThe success claim was overridden because the task had failures."
+                            } else {
+                                finalReply = "✅ Done! $reason"
+                            }
+                        } else {
+                            finalReply = if (success) "✅ Done! $reason" else "❌ Task couldn't be completed. $reason"
+                        }
                         LogCapture.i(TAG, "✓ complete tool called (success=$success) — stopping loop")
 
                         // v4.0.37: Pattern Learning — save successful tool sequences.
@@ -1190,26 +1209,27 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
                     // === If no tool calls → task complete ===
                     if (llmResponse.toolCalls.isEmpty()) {
-                        // v4.0.55: Fix false "Done." — distinguish real completion from API failure.
-                        // OLD: finalReply = llmResponse.reply.ifBlank { "Done." }
-                        // This masked empty API responses (Gemini偶发空响应) as successful completion.
-                        // NEW: If reply is blank AND iteration 1 AND no prior work → API failed, retry once.
+                        // v4.0.60: HONEST REPORTING — no more "Done." fallback.
+                        // "Done." was the original sin (since v2.0.0) — it masked ALL failures
+                        // as successes. Now we report exactly what happened.
                         if (llmResponse.reply.isBlank()) {
                             if (iteration == 1 && workLog.isEmpty()) {
-                                // v4.0.55: Empty response on first iteration with no work done = API failure.
-                                // Retry the LLM call instead of falsely claiming "Done."
-                                // Return true = "step completed, continue loop" (retry on next iteration).
+                                // Empty response on first iteration with no work = API failure.
+                                // Retry the LLM call instead of falsely claiming completion.
                                 LogCapture.w(TAG, "Empty reply on iteration 1 (likely API failure) — will retry")
                                 conversation.append("\n\n[System: Previous API response was empty. Please respond to the user's request.]")
                                 return@withTimeoutOrNull true  // continue loop → retry
                             }
-                            // Non-first iteration OR work was done → assume task complete (real "no tools" case)
+                            // Non-first iteration OR work was done but model went silent
                             finalReply = if (workLog.isNotEmpty()) {
-                                "✅ $workLog"
+                                "⚠️ Task ended after $iteration iterations. The model stopped responding.\n" +
+                                    "Actions taken ($iteration steps):\n$workLog\n\n" +
+                                    "The task may be incomplete — check the steps above."
                             } else {
-                                "Done."
+                                "⚠️ I couldn't accomplish the task. The model returned no actions after $iteration iteration(s)."
                             }
                         } else {
+                            // Model returned text but no tool calls — it chose to answer directly
                             finalReply = llmResponse.reply
                         }
 
@@ -1417,7 +1437,22 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         resultsForLLM.append("Result: ${dr.output.take(3000)}\n\n")
                     }
 
-                    // v3.9.12: Removed plan step tracking (was dead code — no plan to track).
+                    // v4.0.60: RESULT ANALYSIS — inject a summary of success/failure after each batch.
+                    // This forces the LLM to SEE which tools succeeded vs failed, instead of blindly
+                    // moving to the next step. Like how I (Z.ai Code) verify each tool's output.
+                    val successCount = results.count { it.success }
+                    val failCount = results.count { !it.success }
+                    if (failCount > 0) {
+                        val failedTools = llmResponse.toolCalls.filterIndexed { i, _ -> i < results.size && !results[i].success }
+                            .joinToString(", ") { it.name }
+                        val analysisMsg = "\n\n📊 RESULT ANALYSIS: $successCount succeeded, $failCount FAILED. " +
+                            "Failed tools: $failedTools. " +
+                            "IF a tool failed, do NOT retry it with the same args. " +
+                            "Analyze WHY it failed (read the error), then try a DIFFERENT approach or tool. " +
+                            "If you've tried 3+ different approaches and all failed, call complete(success=false, reason=\"...\")."
+                        conversation.append(analysisMsg)
+                        LogCapture.i(TAG, "Result analysis injected: $successCount ok, $failCount failed")
+                    }
 
                     // v3.8.9: "Screen didn't change" detection — catches "fake success" loops.
                     // v3.9.10: Updated to match new SCREEN STATE block format (was "[Screen after action]: ")
@@ -1524,12 +1559,16 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             }
 
             if (finalReply.isEmpty()) {
+                // v4.0.60: HONEST REPORTING — no more "Done." fallback.
                 finalReply = if (iteration >= MAX_ITERATIONS && !_state.value.stopRequested) {
-                    "I reached the maximum of $MAX_ITERATIONS steps. Here's what I accomplished:\n" +
+                    "⚠️ I reached the maximum of $MAX_ITERATIONS steps. Here's what I accomplished:\n" +
                         "$workLog\n\nThe task might need more steps — try asking me to continue, " +
                         "or break it into smaller parts."
+                } else if (workLog.isNotEmpty()) {
+                    "⚠️ Task ended. Actions taken:\n$workLog\n\n" +
+                        "The task may be incomplete — the model didn't explicitly confirm completion."
                 } else {
-                    workLog.toString().ifBlank { "Done." }
+                    "⚠️ I wasn't able to accomplish the task. No actions were taken."
                 }
             }
 

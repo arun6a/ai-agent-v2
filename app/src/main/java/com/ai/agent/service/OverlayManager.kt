@@ -526,7 +526,7 @@ class OverlayManager(private val context: Context) {
                 finalReply = if (iteration >= MAX_ITERATIONS) {
                     "I've done $MAX_ITERATIONS steps. Task may need more work."
                 } else {
-                    "Done."
+                    "⚠️ Task ended without a final response."  // v4.0.60: was "Done." — now honest
                 }
             }
 
