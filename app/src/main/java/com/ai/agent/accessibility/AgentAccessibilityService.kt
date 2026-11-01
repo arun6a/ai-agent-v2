@@ -492,18 +492,20 @@ class AgentAccessibilityService : AccessibilityService() {
                         }
                         Log.i(TAG, "Bitmap: ${bitmap.width}x${bitmap.height} config=${bitmap.config}")
 
-                        // Scale down to 480px wide (save tokens for VLM, speed for ML Kit)
+                        // v4.0.70: Increased screenshot quality: 480px → 720px wide, JPEG 70 → 85
+                        // Was too low quality for VLM to read text on screen.
+                        // Scale down to 720px wide (balance: quality vs token size for VLM)
                         val w = bitmap.width
                         val h = bitmap.height
-                        val scaled = if (w > 480) {
-                            val r = 480f / w
-                            android.graphics.Bitmap.createScaledBitmap(bitmap, 480, (h * r).toInt(), true)
+                        val scaled = if (w > 720) {
+                            val r = 720f / w
+                            android.graphics.Bitmap.createScaledBitmap(bitmap, 720, (h * r).toInt(), true)
                         } else bitmap
 
-                        // v4.0.0 approach: compress directly (works on most devices)
+                        // v4.0.70: JPEG quality 70 → 85 for better text readability
                         val stream = java.io.ByteArrayOutputStream()
                         val compressOk = try {
-                            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+                            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
                         } catch (e: Exception) {
                             Log.w(TAG, "Direct compress failed: ${e.message} — trying ARGB_8888 copy fallback")
                             false
@@ -514,12 +516,12 @@ class AgentAccessibilityService : AccessibilityService() {
                             Log.i(TAG, "Using ARGB_8888 copy fallback for compress")
                             val softwareBitmap = bitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
                             if (softwareBitmap != null) {
-                                val fallbackScaled = if (softwareBitmap.width > 480) {
-                                    val r = 480f / softwareBitmap.width
-                                    android.graphics.Bitmap.createScaledBitmap(softwareBitmap, 480, (softwareBitmap.height * r).toInt(), true)
+                                val fallbackScaled = if (softwareBitmap.width > 720) {
+                                    val r = 720f / softwareBitmap.width
+                                    android.graphics.Bitmap.createScaledBitmap(softwareBitmap, 720, (softwareBitmap.height * r).toInt(), true)
                                 } else softwareBitmap
                                 stream.reset()
-                                fallbackScaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+                                fallbackScaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
                                 if (fallbackScaled !== softwareBitmap) fallbackScaled.recycle()
                                 softwareBitmap.recycle()
                             }
@@ -562,17 +564,18 @@ class AgentAccessibilityService : AccessibilityService() {
 
     /**
      * Scale + compress bitmap to JPEG base64.
+     * v4.0.70: Increased quality: 480px → 720px, JPEG 70 → 85
      */
     private fun compressToBase64(bitmap: android.graphics.Bitmap): String {
         val w = bitmap.width
         val h = bitmap.height
-        val scaled = if (w > 480) {
-            val r = 480f / w
-            android.graphics.Bitmap.createScaledBitmap(bitmap, 480, (h * r).toInt(), true)
+        val scaled = if (w > 720) {
+            val r = 720f / w
+            android.graphics.Bitmap.createScaledBitmap(bitmap, 720, (h * r).toInt(), true)
         } else bitmap
 
         val stream = java.io.ByteArrayOutputStream()
-        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+        scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, stream)
         val b64 = android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
         Log.i(TAG, "Screenshot done: ${stream.toByteArray().size} bytes, base64: ${b64.length} chars")
 

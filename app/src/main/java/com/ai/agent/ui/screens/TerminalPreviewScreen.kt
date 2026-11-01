@@ -52,19 +52,23 @@ fun TerminalPreviewScreen(
     val listState = rememberLazyListState()
 
     // v4.0.64: Subscribe to TerminalManager broadcasts for LIVE output
+    // v4.0.70: Fixed — callbacks fire on background thread, must post to main thread
     DisposableEffect(Unit) {
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         val listener = object : TerminalManager.TerminalListener {
             override fun onCommandRun(terminalName: String, command: String) {
-                // Show the command being run (from AI or manual)
-                outputLines = outputLines + "[$terminalName] \$ $command"
+                mainHandler.post {
+                    outputLines = outputLines + "[$terminalName] \$ $command"
+                }
             }
             override fun onCommandResult(terminalName: String, output: String, success: Boolean) {
-                // Show the result
-                val prefix = if (success) "" else "⚠️ "
-                output.split("\n").forEach { line ->
-                    outputLines = outputLines + "$prefix$line"
+                mainHandler.post {
+                    val prefix = if (success) "" else "⚠️ "
+                    output.split("\n").forEach { line ->
+                        outputLines = outputLines + "$prefix$line"
+                    }
+                    outputLines = outputLines + ""  // blank line for readability
                 }
-                outputLines = outputLines + ""  // blank line for readability
             }
         }
         TerminalManager.addListener(listener)
