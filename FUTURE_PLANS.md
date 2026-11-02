@@ -1,260 +1,242 @@
-# Master Future Plans — AI Agent APK
+# Aira Future Plans — Comprehensive Roadmap
 
-**Date**: 2026-10-11
-**Merged by**: Sandbox-2 (combining Sandbox-1 + Sandbox-2 visions)
-**Current version**: v2.0.9 (Android Jetpack Compose rebuild)
+**Last updated:** November 2, 2026
+**Current version:** v4.0.71 (versionCode 199)
 
----
+## Near-Term (v4.0.72+)
 
-## v2 Status (as of v2.0.9)
+### 1. Capability Levels (escalateLevel)
+**Status:** Designed, not implemented
+**Effort:** 2 hours
+**Token savings:** ~56% on typical daily usage
 
-The v1 app has been fully rebuilt on Jetpack Compose (Material 3) as **Aira**.
-Backend parity with v1 is 100% — every tool, rule, skill, plugin, and provider
-that shipped in v1 is wired up and reachable from the new Compose UI.
+**Design:**
+- Level 1 (Basic): ~15 tools + condensed prompt (~800 tokens)
+  - Tools: speak, getTime, getBattery, setBrightness, createRule, remember, recall, searchTools, escalateLevel, complete
+  - Prompt: identity + "think before acting" + response format
+  - Use: greetings, battery check, rules, quick info
 
-### ✅ Completed v2 work
+- Level 2 (Standard): ~60 tools + medium prompt (~2000 tokens)
+  - Tools: Level 1 + screen, app, browser, file, media, contacts
+  - Prompt: thinking + failure reflection + shortcuts + guardrails
+  - Use: play music, download files, send messages, browse
 
-- ✅ Jetpack Compose UI (Material 3, dark mode + emerald accent theme)
-- ✅ Splash + Onboarding flow (3 steps: welcome → 5 permissions → provider setup)
-- ✅ Provider Settings screen (with Test button + per-provider model picker)
-- ✅ Skill Editor (View / Edit / Create modes — built-in & user skills)
-- ✅ In-app Browser (WebView with toolbar / quick-switch to chat)
-- ✅ Animations + dark mode (next-themes-style theme manager + persisted toggle)
-- ✅ Memory / Knowledge / Skill management in Hub
-- ✅ All 14 providers (13 v1 providers + apikeys.in aggregator)
-- ✅ Skill editor + delete (built-in skills get a `.deleted_*` marker; user
-  skills get a hard delete)
-- ✅ Rebrand to **Aira** (orb logo, copy, package id `com.ai.agent.v2`)
-- ✅ Overlay toggle in Settings (no more duplicate floating buttons)
-- ✅ TTS toggle (default off — user must opt-in)
-- ✅ Storage permission grant buttons (14 grouped perms + "Grant all" pill)
-- ✅ PluginManager + SkillManager wired into ChatViewModel
-  (`PluginManager.getEnabledPluginsPrompt()` + `SkillManager.loadSkills()`
-  + `generatePromptSection()` + `matchTrigger(userMessage)` are now injected
-  into the system prompt on every agent run)
-- ✅ Notification access prompt in onboarding (Task 92) — 5th permission row
-  opens `ACTION_NOTIFICATION_LISTENER_SETTINGS`, status auto-refreshes via
-  the on-`ON_RESUME` lifecycle observer. Enables NotificationListenerService
-  to read + auto-reply to WhatsApp / SMS notifications.
-- ✅ Timeout system (Task 93) — `runAgentLoop` now wraps each LLM call +
-  tool execution in `withTimeoutOrNull(30_000)` and breaks the loop when the
-  overall task budget (`180_000ms` = 3 minutes) is exceeded. Timed-out steps
-  surface a `[Step X timed out]` message in chat so the user knows the loop
-  is still alive.
-- ✅ Markdown rendering in chat (Task 94) — AI message bubbles now render
-  `**bold**`, `*italic*`, and `` `inline code` `` spans via a lightweight
-  `AnnotatedString` builder (no external markdown libraries — uses only
-  Compose's `buildAnnotatedString` + `withStyle`). User bubbles + tool cards
-  stay plain `Text` so their existing styling is preserved.
-- ✅ System Prompt Editor (Task 95) — full-screen editor for the user's
-  custom system prompt (`/storage/.../system_prompt_custom.txt`), with
-  read-only views of the four built-in prompts (Smart / Balanced / Fast /
-  Default) and a one-tap "Restore Original" that copies the Smart prompt
-  back over the custom file. Shows live char + token estimate at the bottom.
-  Reachable from Hub → Settings → PROMPT MODE → "Edit System Prompt".
+- Level 3 (Advanced): 158 tools + full prompt (~3500 tokens)
+  - Tools: all + terminal, custom tools, delegateTask
+  - Prompt: full system_prompt_smart.txt
+  - Use: terminal setup, build projects, install packages, scripts
 
-### Build verification (v2.0.9)
+**escalateLevel tool:**
+```kotlin
+"escalateLevel" -> {
+    val level = (call.args["level"] as? Number)?.toInt() ?: 2
+    // Add tools from the requested level
+    // Append level-specific instructions to conversation
+    // Return: "✅ Escalated to Level $level. You now have access to [tools]."
+}
+```
 
-- `./gradlew assembleDebug` → BUILD SUCCESSFUL
-- APK path: `ai-agent-v2.0.9-debug.apk` (served from `/home/z/my-project/public/`)
-- `versionCode = 9`, `versionName = "2.0.9"`
+**Simplifications:**
+- Removes Contextual Prompts toggle (replaced by levels)
+- Removes Periodic Reflection toggle (always on)
+- Removes Task Planning toggle (always on)
+- Removes Post-Action Verification toggle (always on)
+- Settings: 10 toggles → 5 toggles
 
 ---
 
-## What's Been Done (v1.0 → v6.3.2)
+### 2. Chat Screen Polish
+**Status:** Identified, not started
+**Effort:** 2 hours
 
-- ✅ 100+ tools (18 categories)
-- ✅ 36 trigger types
-- ✅ 20 skills + user-created via chat
-- ✅ 10 plugins
-- ✅ 12 AI providers
-- ✅ 5 prompt modes (Smart/Dynamic/Balanced/Fast/Custom)
-- ✅ Hub with 13 sections
-- ✅ File attachments + knowledge store
-- ✅ Strategy switching + always learn
-- ✅ HTTP server for remote control
-- ✅ Browser ↔ Chat quick switch
-- ✅ Google Voice input
-- ✅ Overlay fix (no duplicates)
-- ✅ App folders on install
-- ✅ Skill management (create/delete/get)
-- ✅ Direct web search (no proxy needed)
+- Show provider/model in header (ProviderChip already built, just wire it)
+- Add empty state with example prompts
+- Add "stopping..." state when stopRequested
+- Add IME "Send" action to keyboard
+- Group header icons (reduce clutter)
 
 ---
 
-## v6.4.0 — Bug Fixes (NEXT)
+### 3. Token Optimization
+**Status:** Planned
+**Effort:** Ongoing
 
-| # | Feature | Priority | From |
-|---|---|---|---|
-| 1 | Screenshot MIUI fix (PixelCopy/MediaProjection) | 🔴 Critical | Both |
-| 2 | Timeout system (30s/step, 3min/task) | 🔴 High | Both |
-| 3 | Browser stays foreground (all steps visible) | 🟡 Medium | Sandbox-1 |
-| 4 | Ask user for help (after 3 failures) | 🟡 Medium | Sandbox-1 |
-| 5 | Stop button polish | 🟢 Low | Both |
-| 6 | Empty catch blocks logging | 🟢 Low | Sandbox-1 |
-
-> **v2.0.9 note**: Item #2 (timeout system) is now **DONE** in v2 — see the
-> v2 Status section above. It remains open for v1's legacy Android-View UI
-> if anyone still maintains that path.
+- Capability levels (biggest win — ~56% savings)
+- Stop auto-injecting skills (let AI call getSkill) — saves ~200-2000 tokens
+- Reduce memory from top 10 to top 5 — saves ~250 tokens
+- Re-enable prompt caching (if provider supports) — saves ~3500 tokens
+- Batch tool tags (already done v4.0.70) — saves ~33% calls
 
 ---
 
-## v7.0.0 — Reliability + Trust
+## Medium-Term (v4.1.0+)
 
-| # | Feature | From |
-|---|---|---|
-| 7 | AI Confidence Score (show %, ask if <70%) | Sandbox-1 |
-| 8 | Undo Button (every action has undo) | Sandbox-1 |
-| 9 | Skill Recording (user does once → AI records → 1 call next time) | Sandbox-1 |
-| 10 | WhatsApp auto-send (tap send button automatically) | Sandbox-1 |
-| 11 | Timeout: graceful stop + tell user what failed | Both |
-| 12 | Better error messages (distinguish "no text" from "screenshot broken") | Both |
+### 4. Proactive Behavior System
+**Status:** Spec designed (by collaborator AI)
+**Effort:** 5 days
 
----
+**Components:**
+1. ProactiveSettings.kt — master toggle, quiet hours, proactive prompt
+2. ProactiveObserver.kt — hooks into existing receivers, records patterns
+3. ProactiveTickWorker.kt — every 5 min, small LLM call, suggests actions
+4. Settings UI — proactive prompt textarea, pattern review
 
-## v7.5.0 — Speed + Connectivity
+**Key design:**
+- User writes freeform personality: "Remind me to call Mom every Sunday"
+- LLM interprets each tick: suggest / execute / silent
+- Pattern confidence: 5+ occurrences across 3+ days
+- Cooldown: 1 hour per pattern, 3 dismissals = permanent
+- Quiet hours: 22:00-07:00 (no suggestions unless urgent)
+- Auto-execute: opt-in (default OFF for safety)
 
-| # | Feature | From |
-|---|---|---|
-| 13 | Cache common results (battery, time — don't re-fetch) | Sandbox-1 |
-| 14 | Predictive actions (AI learns user's routine) | Sandbox-1 |
-| 15 | Local LLM for simple tasks (no API call needed) | Both |
-| 16 | Background pre-loading (AI predicts next step) | Sandbox-1 |
-| 17 | Telegram bot (control phone from laptop/anywhere) | Both |
-| 18 | AI Diary (nightly summary: what I did, calls used, failures) | Sandbox-1 |
+**Token requirement:**
+- Needs capability levels (Level 1 at ~800 tokens/call)
+- 288 calls/day × 800 tokens = 230K tokens/day (fits Gemini free tier)
+- Without levels: 288 × 10K = 2.88M/day (DOESN'T FIT)
 
----
-
-## v8.0.0 — Proactive AI + Developer Agent
-
-| # | Feature | From |
-|---|---|---|
-| 19 | Proactive AI (7am → morning briefing, battery low → suggest) | Sandbox-1 |
-| 20 | Context awareness (location, time, calendar, recent apps) | Sandbox-1 |
-| 21 | Code execution (write Python/JS → run on-device via Termux) | Sandbox-2 |
-| 22 | Code generation ("write a script that logs battery hourly") | Sandbox-2 |
-| 23 | GitHub integration (push code, create PRs, manage issues) | Sandbox-2 |
-| 24 | Debug mode (AI reads own logcat, identifies bugs) | Sandbox-2 |
-| 25 | Skill compiler (AI writes skills from natural language) | Sandbox-2 |
-| 26 | Auto-testing (AI tests own tools + reports failures) | Sandbox-2 |
-| 27 | APK self-modify (AI can modify code, rebuild, install) | Sandbox-2 |
+**Spec source:** Provided by collaborator AI, full spec in conversation history.
 
 ---
 
-## v8.5.0 — Image Editing + Generation
+### 5. Sub-Agent Improvements
+**Status:** v4.0.69 built (delegateTask)
+**Effort:** Ongoing
 
-| # | Feature | From |
-|---|---|---|
-| 28 | Image editing (crop, resize, rotate, filters via ffmpeg) | Sandbox-2 |
-| 29 | Image generation (Stable Diffusion on-device or cloud API) | Sandbox-2 |
-| 30 | Screenshot annotation (arrows, highlights, text) | Sandbox-2 |
-| 31 | Photo enhancement (auto brightness, contrast, noise reduction) | Sandbox-2 |
-| 32 | Batch processing ("resize all photos to 1080p") | Sandbox-2 |
-| 33 | Meme generator (templates + user text) | Sandbox-2 |
-| 34 | QR code generator + scanner | Sandbox-2 |
-| 35 | Collage maker (combine multiple photos) | Sandbox-2 |
+- Add more agent types: "rules", "memory", "files"
+- Sub-agent results shown in chat UI (dedicated card)
+- Sub-agent can escalate levels independently
+- Sub-agent can create sub-sub-agents (nested delegation)
 
 ---
 
-## v9.0.0 — Video Editing + Generation + Personal AI
+### 6. Settings Cleanup
+**Status:** Audited
+**Effort:** 1 hour
 
-| # | Feature | From |
-|---|---|---|
-| 36 | Video editing (trim, merge, add music, subtitles) | Sandbox-2 |
-| 37 | Text-to-video ("create 10s video of waves") | Sandbox-2 |
-| 38 | Photo-to-video (animate static photos, ken burns) | Sandbox-2 |
-| 39 | Slideshow video (photos + music) | Sandbox-2 |
-| 40 | GIF maker (create animated GIFs) | Sandbox-2 |
-| 41 | Screen recording (AI narrates while recording) | Sandbox-2 |
-| 42 | Video transcription (audio to text) | Sandbox-2 |
-| 43 | Video translation (subtitle translation) | Sandbox-2 |
-| 44 | Video compression (reduce file size) | Sandbox-2 |
-| 45 | Learn user schedule (calendar + usage patterns) | Sandbox-1 |
-| 46 | Learn contacts (who is Mom, who is boss) | Sandbox-1 |
-| 47 | Learn preferences (always opens YouTube at 8pm) | Sandbox-1 |
-| 48 | Learn apps (which apps you use most) | Sandbox-1 |
-| 49 | Voice ID (only responds to YOUR voice) | Sandbox-1 |
+Remove redundant toggles:
+- ❌ Contextual Prompts (replaced by capability levels)
+- ❌ Periodic Reflection (always on)
+- ❌ Task Planning (always on)
+- ❌ Post-Action Verification (always on)
+- Merge Auto-Fallback Bindings + Models → one toggle
+
+Keep:
+- ✅ Always Learn
+- ✅ Knowledge Auto-Recall
+- ✅ Consent Flow
+- ✅ Auto-Pick Cheapest
 
 ---
 
-## v9.5.0 — Advanced AI + Voice
+## Long-Term (v5.0+)
 
-| # | Feature | From |
-|---|---|---|
-| 50 | Anthropic prompt caching (90% token savings) | Sandbox-2 |
-| 51 | Multi-model routing (Groq simple, Claude complex) | Sandbox-2 |
-| 52 | Streaming responses (real-time, like ChatGPT) | Both |
-| 53 | Continuous voice conversation (push-to-talk → reply → listen) | Both |
-| 54 | Multi-turn context (full conversation memory) | Both |
-| 55 | AI Voice Personality (Friendly/Professional/Funny) | Sandbox-1 |
-| 56 | Custom wake word ("Hey Arun") | Sandbox-1 |
-| 57 | Voice emotions (happy when success, concerned when stuck) | Sandbox-1 |
-| 58 | Whisper STT (high-accuracy speech recognition) | Sandbox-2 |
-| 59 | ElevenLabs TTS (natural voice cloning) | Sandbox-2 |
+### 7. Hardware Tools (Phone as Software Flipper Zero)
+**Status:** Spec designed
+**Effort:** 1-3 weeks (phased)
 
----
+**Phase 1 — Use what phone has (1 week):**
+- `scanWifiNetworks()` — SSID, BSSID, signal, security
+- `scanBleDevices(duration)` — nearby BLE devices + RSSI
+- `findAirTag()` — detect nearby AirTags
+- `readNfcTag()` — UID + type + NDEF data
+- `irSend(protocol, device, command)` — IR blaster (Xiaomi only)
 
-## v10.0.0 — Connected Ecosystem
+**Phase 2 — USB OTG (2-3 weeks):**
+- `usbSerialSend(data)` — talk to Arduinos, ESP32s
+- `usbHidSend(keystrokes)` — BadUSB via USB OTG
+- Opens: RTL-SDR, Proxmark3, custom hardware
 
-| # | Feature | From |
-|---|---|---|
-| 60 | Web dashboard (browser-based control panel) | Both |
-| 61 | API server (other apps call AI Agent) | Sandbox-2 |
-| 62 | Tasker/Automate integration | Sandbox-2 |
-| 63 | Smart home control (lights, AC, TV via IoT) | Both |
-| 64 | Auto-pilot mode (AI monitors + acts autonomously) | Sandbox-2 |
-| 65 | Skill marketplace (share + download skills) | Both |
-| 66 | Plugin marketplace (download new tool plugins) | Both |
-| 67 | Cross-device sync (rules/memory across phones) | Both |
-| 68 | Family mode (each person has own AI profile) | Sandbox-1 |
-| 69 | AI-to-AI communication (phone talks to tablet) | Sandbox-1 |
+**Phase 3 — Flipper Zero integration (1-2 weeks, optional):**
+- Aira connects to Flipper via BLE
+- LLM decides what Flipper action to take
+- Pattern Learning saves hardware workflows
+
+**Safety:**
+- Read-only tools (scan, read) → no consent needed
+- Write tools (emulate, write, send) → consent required
+- All hardware ops → logged to action_log
+- Pattern Learning NEVER auto-executes hardware tools
 
 ---
 
-## v10.5.0 — Advanced Features
+### 8. Visual Terminal (inside Aira)
+**Status:** Discussed, not started
+**Effort:** 1-2 weeks
 
-| # | Feature | From |
-|---|---|---|
-| 70 | Context Camera (point at menu/product/sign → AI sees) | Sandbox-1 |
-| 71 | Music identification (like Shazam) | Sandbox-2 |
-| 72 | Audio recording + transcription | Sandbox-2 |
-| 73 | Wear OS companion (smartwatch app) | Sandbox-2 |
-| 74 | Home screen widget | Sandbox-2 |
-| 75 | Onboarding wizard (first-launch setup) | Both |
-| 76 | Markdown rendering in chat | Both |
-| 77 | Dark/Light theme toggle | Both |
-| 78 | UI polish (proper layouts, animations) | Both |
+**Option B (recommended):** Embed terminal emulator library
+- Terminal display (black bg, monospace, green text)
+- Input bar for manual commands
+- Uses Android's /system/bin/sh (limited but no external app needed)
 
----
+**Option C (full standalone):** Bundle Termux bootstrap
+- Full Linux environment (pkg, node, python, git)
+- APK size: +50-80 MB
+- First-launch: extract bootstrap (10-30s)
+- Fully standalone — no AndroidIDE dependency
 
-## UI/UX Improvements (Parallel — Any Version)
-
-| # | Feature |
-|---|---|
-| 79 | Bottom navigation (5 tabs) |
-| 80 | Status orb (animated agent state indicator) |
-| 81 | Live status card (per-step progress with elapsed time) |
-| 82 | Suggestion chips above input |
-| 83 | Proper XML layouts (replace programmatic UI) |
+**Decision:** Start with Option B, upgrade to C if needed.
 
 ---
 
-## Summary
+### 9. Telemetry / Remote Logging
+**Status:** Discussed, not started
+**Effort:** 4 hours
 
-| Phase | Version | Focus | Feature Count |
-|---|---|---|---|
-| Bug Fixes | v6.4.0 | Fix what's broken | 6 |
-| Reliability | v7.0.0 | Trust + undo + skill recording | 6 |
-| Speed + Connectivity | v7.5.0 | Fast + Telegram + diary | 6 |
-| Proactive + Developer | v8.0.0 | AI acts first + can code | 9 |
-| Image | v8.5.0 | Edit + generate images | 8 |
-| Video + Personal | v9.0.0 | Edit/generate video + learn user | 14 |
-| Advanced AI + Voice | v9.5.0 | Streaming + caching + voice personality | 10 |
-| Ecosystem | v10.0.0 | Web + IoT + marketplace + sync | 10 |
-| Advanced Features | v10.5.0 | Camera + audio + wearable + UI | 9 |
-| UI/UX | Parallel | Layouts + animations + nav | 5 |
-| **TOTAL** | | | **83 features** |
+- Give Aira to friends → collect usage logs → improve
+- Opt-in: "Send anonymous usage data"
+- Sends: task type, success/fail, tools used, token usage, errors
+- Does NOT send: message content, phone numbers, file contents
+- Uses existing Next.js project + Prisma database
+- Dashboard: success rates, common failures, tool usage patterns
 
-We build one by one. Everything stays in the plan. 🚀
+---
 
-— Sandbox-2 (merged with Sandbox-1's vision)
+### 10. Remote Screen Control (laptop/other devices)
+**Status:** Discussed, not started
+**Effort:** 3 hours
+
+- `remoteScreenshot()` — take screenshot on laptop via pyautogui
+- `remoteClick(x, y)` — click on laptop screen
+- `remoteType(text)` — type on laptop
+- `remoteKey(key)` — press key on laptop
+- Uses existing terminal connection (runOnTerminal)
+- VLM analyzes laptop screenshots (same as phone)
+- Could build Aira's APK on laptop remotely
+
+---
+
+## Priority Order
+
+| Priority | Feature | Effort | Depends on |
+|----------|---------|--------|------------|
+| 1 | Capability levels | 2h | Nothing |
+| 2 | Settings cleanup | 1h | Capability levels |
+| 3 | Chat screen polish | 2h | Nothing |
+| 4 | Token optimization | Ongoing | Capability levels |
+| 5 | Proactive behavior | 5 days | Capability levels |
+| 6 | Basic hardware (WiFi/BLE) | 1 week | Nothing |
+| 7 | Visual terminal | 1-2 weeks | Nothing |
+| 8 | Telemetry | 4h | Nothing |
+| 9 | Remote screen control | 3h | Terminal connection |
+| 10 | Advanced hardware (NFC/USB) | 2-3 weeks | Basic hardware |
+
+---
+
+## Build History Reference
+
+| Version | Key Change | Commit |
+|---------|-----------|--------|
+| v4.0.55 | Fix false "Done." + reserve pattern_ prefixes | f75b7de |
+| v4.0.58 | FIX max_tokens=0 regression | 3744e86 |
+| v4.0.60 | HONEST AGENT — remove all "Done." lies | 7b8fd40 |
+| v4.0.61 | searchTools — search ALL tools by keyword | 9f233c2 |
+| v4.0.62 | TodoWrite — structured planning | f6ec1d9 |
+| v4.0.63 | Multi-terminal support + Terminal Hub | 1ff127a |
+| v4.0.64 | Full system prompt at all tiers | 8c129a4 |
+| v4.0.65 | Sandbox vs terminal distinction | 8e171bc |
+| v4.0.66 | Regex fallback for malformed JSON | c334729 |
+| v4.0.67 | WhatsApp multi-message (per-contact cooldown) | 26768ed |
+| v4.0.68 | Auto-prepend PATH in terminal server | 8cf566e |
+| v4.0.69 | Chat redesign (thinking bubbles) + Sub-agents | 861bf8c |
+| v4.0.70 | Batch tags on 168 tools + screenshot fix | cdf633d |
+| v4.0.71 | listNotifications tool + new app icon | 6f2d384 |
