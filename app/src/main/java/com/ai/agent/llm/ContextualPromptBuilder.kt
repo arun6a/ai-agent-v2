@@ -58,6 +58,8 @@ object ContextualPromptBuilder {
         "listTerminals()" to "list all configured terminals + status + capabilities",
         "runOnTerminal(name, command, timeout?)" to "run a shell command on a specific terminal",
         "disconnectTerminal(name)" to "disconnect from a terminal",
+        // v4.0.71: listNotifications — ALWAYS available
+        "listNotifications()" to "list all active notifications (app, title, text, time). Use for 'what notifications do I have?'",
     )
 
     private val TOOL_GROUPS = listOf(

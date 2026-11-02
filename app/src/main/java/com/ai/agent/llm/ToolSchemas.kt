@@ -306,6 +306,8 @@ object ToolSchemas {
         // ==================== NOTIFICATION (1) ====================
         Schema("replyToNotification", "[SINGLE CALL] Reply to a notification from an app (e.g., WhatsApp message notification).",
             map_of_reply_notification()),
+        // v4.0.71: listNotifications — read ALL active notifications via NotificationListenerService
+        Schema("listNotifications", "[BATCHABLE] [NO VERIFY] List all active notifications on the phone. Returns app name, title, text, and time for each notification. Uses NotificationListenerService (requires notification access permission). Example: listNotifications() returns [{app: 'com.whatsapp', title: 'Mom', text: 'Call me'}, {app: 'com.google.android.gm', title: 'Amazon', text: 'Your order shipped'}]. Use to answer 'what notifications do I have?' or 'who texted me?'."),
 
         // ==================== MEDIA (4) ====================
         Schema("mediaPlayPause", "[VERIFY AFTER] Toggle media play/pause. No parameters."),

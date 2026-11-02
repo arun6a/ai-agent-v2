@@ -99,6 +99,7 @@ class ToolExecutor(private val context: Context) {
             "openGoogleSearch", "shareToApp",
             // Notification
             "replyToNotification",
+            "listNotifications",  // v4.0.71: list active notifications
             // Media
             "mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto",
             // Skills
@@ -251,6 +252,7 @@ class ToolExecutor(private val context: Context) {
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "listAttachments", "readAttachment", "sendAttachmentTo",
             "replyToNotification",
+            "listNotifications",  // v4.0.71: reads via NotificationListener, no accessibility needed
             "openActivity", "openDeepLink", "openAppWithData", "searchInApp",
             "listAppActivities", "openWhatsAppChat", "openYouTubeVideo", "openMapsLocation",
             "playSpotify", "openInstagramProfile", "openTelegramChat",
@@ -705,6 +707,43 @@ class ToolExecutor(private val context: Context) {
             "readScreenStructured" -> ScreenTools.execute(call, context, service, database)
             // ==================== NOTIFICATION REPLY ====================
             "replyToNotification" -> NotificationTools.execute(call, context, service, database)
+            // v4.0.71: listNotifications — read active notifications via NotificationListenerService
+            "listNotifications" -> {
+                val listener = com.ai.agent.rules.NotificationListener.instance
+                if (listener == null) {
+                    ToolResult(false, "NotificationListener is not connected. Enable notification access in Hub → Permissions.")
+                } else {
+                    try {
+                        val activeNotifs = listener.activeNotifications
+                        if (activeNotifs == null || activeNotifs.isEmpty()) {
+                            ToolResult(true, "No active notifications.")
+                        } else {
+                            val sb = StringBuilder("Active notifications (${activeNotifs.size}):\n\n")
+                            for (sbn in activeNotifs) {
+                                val pkg = sbn.packageName ?: "unknown"
+                                val extras = sbn.notification?.extras
+                                val title = extras?.getString(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
+                                val text = extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
+                                val bigText = extras?.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+                                val time = sbn.postTime
+                                val timeStr = if (time > 0) {
+                                    val minsAgo = (System.currentTimeMillis() - time) / 60000
+                                    if (minsAgo < 60) "${minsAgo}m ago" else "${minsAgo / 60}h ago"
+                                } else ""
+                                sb.append("📱 $pkg\n")
+                                if (title.isNotEmpty()) sb.append("  Title: $title\n")
+                                if (text.isNotEmpty()) sb.append("  Text: $text\n")
+                                if (bigText.isNotEmpty() && bigText != text) sb.append("  Full: ${bigText.take(200)}\n")
+                                if (timeStr.isNotEmpty()) sb.append("  Time: $timeStr\n")
+                                sb.append("\n")
+                            }
+                            ToolResult(true, sb.toString())
+                        }
+                    } catch (e: Exception) {
+                        ToolResult(false, "Failed to read notifications: ${e.message}")
+                    }
+                }
+            }
             // ==================== VECTOR MEMORY ====================
             "recallSimilar" -> MemoryTools.execute(call, context, service, database)
             "searchMemory" -> MemoryTools.execute(call, context, service, database)
