@@ -2,6 +2,7 @@ package com.ai.agent.llm.levels
 
 import android.content.Context
 import android.util.Log
+import com.ai.agent.llm.ContextualPromptBuilder
 
 object LevelManager {
     private const val TAG = "LevelManager"

@@ -646,7 +646,8 @@ class ChatViewModel(
             }
             // v4.0.73: Track the level used to build contextualToolFilter.
             // If AI escalates during the loop, we expand the filter on next iteration.
-            var filterLevel: Int = LevelManager.currentLevel
+            // Nullable so we can check initialization (local vars don't support ::isInitialized).
+            var filterLevel: Int? = LevelManager.currentLevel
             val promptTokens = com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(basePrompt)
             val toolCount = contextualToolFilter?.size ?: 158
             val toolTokens = toolCount * 40 / 4  // ~40 tokens per tool schema
@@ -1195,7 +1196,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     // v4.0.73: Combined approach — if AI called escalateLevel during the
                     // previous iteration, LevelManager.currentLevel is now higher. Expand
                     // the tool filter to include all tools at the new level.
-                    if (useCombined && ::filterLevel.isInitialized && LevelManager.currentLevel > filterLevel) {
+                    if (useCombined && filterLevel != null && LevelManager.currentLevel > filterLevel!!) {
                         val newLevel = LevelManager.currentLevel
                         LogCapture.i(TAG, "Level escalated $filterLevel → $newLevel — expanding tool filter to ALL Level $newLevel tools")
                         contextualToolFilter = LevelManager.getToolsForLevel(newLevel)
