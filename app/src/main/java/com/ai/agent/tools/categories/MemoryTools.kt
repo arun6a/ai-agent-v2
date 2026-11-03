@@ -130,6 +130,28 @@ object MemoryTools {
                     ToolExecutor.ToolResult(true, sb.toString())
                 }
             }
+            // v4.0.74: recallMemory — on-demand memory search for the pull architecture.
+            // Wraps recallSimilar (FTS5) with a clean name + limit param.
+            // Model calls this when it needs context from past experiences.
+            "recallMemory" -> {
+                val query = call.args["query"] as? String
+                    ?: return ToolExecutor.ToolResult(false, "missing query. Example: recallMemory(query=\"twitter post\")")
+                val limit = (call.args["limit"] as? Number)?.toInt() ?: 5
+                val results = try {
+                    database.recallSimilar(query, limit)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                if (results.isEmpty()) {
+                    ToolExecutor.ToolResult(true, "No relevant memories found for '$query'.")
+                } else {
+                    val sb = StringBuilder("Relevant memories (top ${results.size}):\n")
+                    for ((key, value, score) in results) {
+                        sb.append("- $key: $value\n")
+                    }
+                    ToolExecutor.ToolResult(true, sb.toString())
+                }
+            }
             "saveToKnowledge" -> {
                 val name = call.args["name"] as? String ?: return ToolExecutor.ToolResult(false, "missing name")
                 val content = call.args["content"] as? String ?: return ToolExecutor.ToolResult(false, "missing content")

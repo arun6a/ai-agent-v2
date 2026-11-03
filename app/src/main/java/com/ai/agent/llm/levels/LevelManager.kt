@@ -38,6 +38,34 @@ object LevelManager {
         else -> null  // Level 3 = all tools, no cap
     }
 
+    // v4.0.74: On-Demand Architecture — sends only meta-tools + quick-access upfront.
+    // Model searches for the rest via searchTools. Saves 60-80% tokens.
+    // When false → sends all tools at the level (v4.0.73 behavior).
+    const val USE_ON_DEMAND_ARCHITECTURE = true
+
+    // v4.0.74: Meta-tools — always available in on-demand mode.
+    // These are the "discovery" tools the model uses to find what it needs.
+    val META_TOOLS = listOf(
+        "searchTools", "recallMemory", "getSkill", "escalateLevel",
+        "createCustomTool", "listCustomTools", "deleteCustomTool",
+        "todoWrite", "delegateTask", "speak", "complete",
+        "listTerminals", "listSkills", "searchMemory",
+    )
+
+    // v4.0.74: Quick-access tools — always available (most common actions).
+    // These are the tools needed for almost every task.
+    val QUICK_ACCESS_TOOLS = listOf(
+        "launchApp", "readScreen", "readScreenStructured", "clickElement",
+        "type", "scrollDown", "scrollUp", "pressBack", "pressHome", "pressEnter",
+        "getBatteryLevel", "getCurrentTime", "getNetworkInfo",
+        "writeFile", "readFile", "listFiles", "runShellCommand",
+        "wait", "remember", "recall", "recallSimilar", "recallAll",
+    )
+
+    // v4.0.74: Combined upfront tools for on-demand mode.
+    // Meta-tools + quick-access = ~35 tools (~1200 tokens) vs 125-158 (~5000-6300 tokens)
+    val ON_DEMAND_UPFRONT_TOOLS: List<String> = META_TOOLS + QUICK_ACCESS_TOOLS
+
     @Volatile
     var currentLevel: Int = 2
 
@@ -45,7 +73,7 @@ object LevelManager {
         "speak", "getCurrentTime", "getBatteryLevel", "setBrightness",
         "getVolume", "setVolume", "getNetworkInfo",
         "createRule", "listRules", "deleteRule", "modifyRule",
-        "remember", "recall", "recallSimilar", "recallAll", "searchMemory",
+        "remember", "recall", "recallSimilar", "recallAll", "searchMemory", "recallMemory",
         "writeFile", "readFile", "listFiles",
         "searchTools", "escalateLevel", "getSkill", "listSkills",
         "listNotifications", "listTerminals",
@@ -360,6 +388,11 @@ Reply:"""
     }
 
     fun getPromptForLevel(level: Int, context: Context): String {
+        // v4.0.74: On-Demand mode uses the tiny level0.txt prompt
+        if (USE_ON_DEMAND_ARCHITECTURE) {
+            return try { context.assets.open("level0.txt").bufferedReader().use { it.readText() } }
+            catch (e: Exception) { context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() } }
+        }
         return when (level) {
             1 -> try { context.assets.open("level1.txt").bufferedReader().use { it.readText() } } catch (e: Exception) { context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() } }
             2 -> try { context.assets.open("level2.txt").bufferedReader().use { it.readText() } } catch (e: Exception) { context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() } }

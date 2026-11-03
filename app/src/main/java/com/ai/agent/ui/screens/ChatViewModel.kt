@@ -210,6 +210,11 @@ class ChatViewModel(
     /** Start a brand-new chat session and clear the message list. */
     fun createNewChatSession() {
         loopJob?.cancel()
+        // v4.0.74: FIX — reset LevelManager + TodoStore on new chat.
+        // Previously: level stayed at 3 from a previous terminal task → "hi" used Level 3 prompt.
+        // Now: level resets to 2 (default), todos cleared, fresh start.
+        LevelManager.resetForNewTask()
+        com.ai.agent.tools.planning.TodoStore.clear()
         val newId = try {
             database.createChatSession()
         } catch (e: Exception) {
@@ -586,7 +591,23 @@ class ChatViewModel(
             //   Falls back to v4.0.72 behavior (pure LevelManager OR pure ContextualPromptBuilder)
             val useCombined = LevelManager.USE_COMBINED_APPROACH
             val useLevels = LevelManager.USE_CAPABILITY_LEVELS
-            var contextualToolFilter: List<String>? = if (useCombined) {
+            // v4.0.74: On-Demand Architecture — send only meta-tools + quick-access upfront.
+            // Model searches for the rest via searchTools. Saves 60-80% tokens.
+            val useOnDemand = LevelManager.USE_ON_DEMAND_ARCHITECTURE
+            var contextualToolFilter: List<String>? = if (useOnDemand) {
+                // v4.0.74: On-Demand mode — send only ~35 tools upfront.
+                // Model uses searchTools/recallMemory/getSkill to pull the rest on-demand.
+                // Auto-expand (USE_AUTO_EXPAND) adds tools dynamically when model calls them.
+                LevelManager.resetForNewTask()
+                val groups = com.ai.agent.llm.ContextualPromptBuilder.getRelevantGroups(userMessage)
+                val groupNames = groups.map { it.name }
+                val level = LevelManager.classifyLevelWithIntent(userMessage, groupNames, context)
+                LevelManager.currentLevel = level
+                LogCapture.i(TAG, "On-Demand: Level=$level, UpfrontTools=${LevelManager.ON_DEMAND_UPFRONT_TOOLS.size}, Groups=${groupNames.ifEmpty {"(none)"}}")
+                // Always return the on-demand upfront tools (meta + quick-access)
+                // Auto-expand will add more tools when model searches/calls them
+                LevelManager.ON_DEMAND_UPFRONT_TOOLS
+            } else if (useCombined) {
                 // v4.0.73: Combined approach with 3-layer intent detection
                 LevelManager.resetForNewTask()
                 val groups = com.ai.agent.llm.ContextualPromptBuilder.getRelevantGroups(userMessage)
@@ -633,14 +654,18 @@ class ChatViewModel(
             } else if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.getRelevantToolNames(userMessage)
             } else null
-            val isTier1 = if (useCombined) {
+            val isTier1 = if (useOnDemand) {
+                // v4.0.74: In on-demand mode, Level 1 = greeting → no tools.
+                // Otherwise always send the on-demand upfront tools.
+                LevelManager.currentLevel == 1
+            } else if (useCombined) {
                 LevelManager.currentLevel == 1 && contextualToolFilter?.isEmpty() == true
             } else if (useLevels) {
                 LevelManager.currentLevel == 1 && contextualToolFilter?.isEmpty() == true
             } else if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.isTier1NoTools(userMessage)
             } else false
-            val basePrompt = if (useCombined || useLevels) {
+            val basePrompt = if (useOnDemand || useCombined || useLevels) {
                 LevelManager.getPromptForLevel(LevelManager.currentLevel, context)
             } else {
                 com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
@@ -687,7 +712,14 @@ class ChatViewModel(
                     regularMemories.take(10).joinToString("\n") { "- ${it.key}: ${it.value}" }
                 }
             }
-            var systemPrompt = "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
+            // v4.0.74: On-Demand mode skips memory auto-injection.
+            // Model calls recallMemory(query) when it needs context.
+            // This saves ~500 tokens per request in on-demand mode.
+            var systemPrompt = if (useOnDemand) {
+                basePrompt
+            } else {
+                "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
+            }
 
             // v3.4.1: Phase 2 — inject past failure lessons for THIS task type.
             // The avoid_* keys are saved when a tool gets stuck (line ~883).
@@ -901,7 +933,11 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // v3.7.5 only listed skill names — the brain ignored them and used tools directly.
             // Now the complete step-by-step instructions are in context → brain follows them naturally.
             // Keyword filtering ensures only 1-3 relevant skills get injected (scales to 500+ skills).
-            if (!isTier1) {
+            //
+            // v4.0.74: On-Demand mode skips skill auto-injection.
+            // Model calls getSkill(name) when it needs step-by-step instructions.
+            // This saves ~500-2000 tokens per request in on-demand mode.
+            if (!isTier1 && !useOnDemand) {
                 try {
                     val skillManager = com.ai.agent.skills.SkillManager(context)
                     skillManager.loadSkills()
@@ -912,6 +948,20 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     }
                 } catch (e: Exception) {
                     LogCapture.w(TAG, "Skill injection failed: ${e.message}")
+                }
+            } else if (useOnDemand && !isTier1) {
+                // v4.0.74: In on-demand mode, inject skill NAMES only (1-line descriptions).
+                // Model calls getSkill(name) to load the full body when needed.
+                try {
+                    val skillManager = com.ai.agent.skills.SkillManager(context)
+                    skillManager.loadSkills()
+                    val skillList = skillManager.generateRelevantSkillsSection(userMessage)
+                    if (skillList.isNotBlank()) {
+                        systemPrompt += "\n\n$skillList"
+                        LogCapture.i(TAG, "Skill names listed (on-demand): ${skillManager.findRelevantSkills(userMessage).map { it.name }}")
+                    }
+                } catch (e: Exception) {
+                    LogCapture.w(TAG, "Skill list failed: ${e.message}")
                 }
             }
 

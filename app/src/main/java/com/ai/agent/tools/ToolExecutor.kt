@@ -77,7 +77,7 @@ class ToolExecutor(private val context: Context) {
             // v3.0.0: speak tool for rules
             "speak",
             // Memory
-            "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
+            "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "getClipboard", "setClipboard",
             // Location
@@ -235,7 +235,7 @@ class ToolExecutor(private val context: Context) {
             "toggleFlashlight", "toggleWifi",
             // v3.0.0: speak tool for rules
             "speak",
-            "remember", "recall", "recallAll", "recallSimilar", "searchMemory",
+            "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
             "getClipboard", "setClipboard",
             "getCurrentLocation", "openMaps", "getWeather",
             "createRule", "listRules", "deleteRule", "modifyRule",
@@ -749,6 +749,7 @@ class ToolExecutor(private val context: Context) {
             // ==================== VECTOR MEMORY ====================
             "recallSimilar" -> MemoryTools.execute(call, context, service, database)
             "searchMemory" -> MemoryTools.execute(call, context, service, database)
+            "recallMemory" -> MemoryTools.execute(call, context, service, database)  // v4.0.74
             // ==================== KNOWLEDGE (v6.0.0) ====================
             "saveToKnowledge" -> MemoryTools.execute(call, context, service, database)
             "recallKnowledge" -> MemoryTools.execute(call, context, service, database)
