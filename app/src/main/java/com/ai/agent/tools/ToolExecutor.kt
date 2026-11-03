@@ -25,6 +25,7 @@ import com.ai.agent.tools.categories.AsyncTools
 import com.ai.agent.tools.categories.BrowserTools
 import com.ai.agent.tools.categories.ContactTools
 import com.ai.agent.tools.categories.DeviceTools
+import com.ai.agent.tools.categories.RemoteScreenTools  // v4.0.76
 import com.ai.agent.tools.categories.FileTools
 import com.ai.agent.tools.categories.LocationTools
 import com.ai.agent.tools.categories.MediaTools
@@ -78,6 +79,7 @@ class ToolExecutor(private val context: Context) {
             "speak",
             // Memory
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
+            "recallConversationStep", "summarizeProgress",
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "getClipboard", "setClipboard",
             // Location
@@ -121,6 +123,8 @@ class ToolExecutor(private val context: Context) {
             "searchTools",
             // v4.0.63: Terminal management tools
             "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
+            // v4.0.76: Remote Screen Control
+            "remoteScreenshot", "remoteClick", "remoteType", "remoteKey",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools
@@ -236,6 +240,7 @@ class ToolExecutor(private val context: Context) {
             // v3.0.0: speak tool for rules
             "speak",
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
+            "recallConversationStep", "summarizeProgress",
             "getClipboard", "setClipboard",
             "getCurrentLocation", "openMaps", "getWeather",
             "createRule", "listRules", "deleteRule", "modifyRule",
@@ -272,6 +277,8 @@ class ToolExecutor(private val context: Context) {
             "searchTools",
             // v4.0.63: Terminal management — HTTP calls, no accessibility
             "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
+            // v4.0.76: Remote Screen Control
+            "remoteScreenshot", "remoteClick", "remoteType", "remoteKey",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools (no accessibility needed)
@@ -750,6 +757,8 @@ class ToolExecutor(private val context: Context) {
             "recallSimilar" -> MemoryTools.execute(call, context, service, database)
             "searchMemory" -> MemoryTools.execute(call, context, service, database)
             "recallMemory" -> MemoryTools.execute(call, context, service, database)  // v4.0.74
+            "recallConversationStep" -> MemoryTools.execute(call, context, service, database)  // v4.0.76
+            "summarizeProgress" -> MemoryTools.execute(call, context, service, database)  // v4.0.76
             // ==================== KNOWLEDGE (v6.0.0) ====================
             "saveToKnowledge" -> MemoryTools.execute(call, context, service, database)
             "recallKnowledge" -> MemoryTools.execute(call, context, service, database)
@@ -776,6 +785,11 @@ class ToolExecutor(private val context: Context) {
             "listTerminals" -> com.ai.agent.terminal.TerminalTools.Handler.listTerminals(call.args, context)
             "runOnTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.runOnTerminal(call.args, context)
             "disconnectTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.disconnectTerminal(call.args, context)
+            // v4.0.76: Remote Screen Control
+            "remoteScreenshot" -> RemoteScreenTools.execute(call, context)
+            "remoteClick" -> RemoteScreenTools.execute(call, context)
+            "remoteType" -> RemoteScreenTools.execute(call, context)
+            "remoteKey" -> RemoteScreenTools.execute(call, context)
             // v4.0.28: Wallpaper
             "setWallpaper" -> com.ai.agent.tools.categories.WallpaperTools.execute(call, context, service, database)
             // v4.0.29: On-demand context tools

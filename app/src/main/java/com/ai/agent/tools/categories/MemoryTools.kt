@@ -195,6 +195,41 @@ object MemoryTools {
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("AI Agent", text))
                 ToolExecutor.ToolResult(true, "Copied to clipboard: $text")
             }
+            // v4.0.76: recallConversationStep — model requests a specific old iteration.
+            // Used when conversation compression is ON and model forgot early steps.
+            "recallConversationStep" -> {
+                val step = (call.args["step"] as? Number)?.toInt()
+                    ?: return ToolExecutor.ToolResult(false, "missing step. Example: recallConversationStep(step=3)")
+                val entry = com.ai.agent.tools.planning.ConversationStore.getIteration(step)
+                if (entry != null) {
+                    ToolExecutor.ToolResult(true, "Iteration ${entry.step}:\n" +
+                        "Brain: ${entry.brainReply}\n" +
+                        "Tools: ${entry.toolCallsSummary}\n" +
+                        "Results: ${entry.toolResultsSummary}")
+                } else {
+                    val total = com.ai.agent.tools.planning.ConversationStore.size()
+                    ToolExecutor.ToolResult(false, "Iteration $step not found. Only $total iterations exist (1 to $total).")
+                }
+            }
+            // v4.0.76: summarizeProgress — model requests a summary of progress so far.
+            "summarizeProgress" -> {
+                val cached = com.ai.agent.tools.planning.ConversationStore.getProgressSummary()
+                if (cached != null) {
+                    ToolExecutor.ToolResult(true, "Progress summary:\n$cached")
+                } else {
+                    val recent = com.ai.agent.tools.planning.ConversationStore.getRecentIterations(5)
+                    if (recent.isEmpty()) {
+                        ToolExecutor.ToolResult(true, "No iterations completed yet.")
+                    } else {
+                        val sb = StringBuilder("Recent progress (${recent.size} iterations):\n")
+                        for (entry in recent) {
+                            sb.append("Step ${entry.step}: ${entry.brainReply.take(100)}\n")
+                            sb.append("  Tools: ${entry.toolCallsSummary}\n")
+                        }
+                        ToolExecutor.ToolResult(true, sb.toString())
+                    }
+                }
+            }
             else -> ToolExecutor.ToolResult(false, "Unknown memory tool: ${call.name}")
         }
     }

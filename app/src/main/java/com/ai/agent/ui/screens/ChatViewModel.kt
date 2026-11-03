@@ -213,8 +213,10 @@ class ChatViewModel(
         // v4.0.74: FIX — reset LevelManager + TodoStore on new chat.
         // Previously: level stayed at 3 from a previous terminal task → "hi" used Level 3 prompt.
         // Now: level resets to 2 (default), todos cleared, fresh start.
+        // v4.0.76: Also clear ConversationStore.
         LevelManager.resetForNewTask()
         com.ai.agent.tools.planning.TodoStore.clear()
+        com.ai.agent.tools.planning.ConversationStore.clear()
         val newId = try {
             database.createChatSession()
         } catch (e: Exception) {
@@ -566,6 +568,8 @@ class ChatViewModel(
         LogCapture.i(TAG, "===== Agent loop started: ${userMessage.take(80)} =====")
         // v4.0.62: Clear the todo list from the previous task
         com.ai.agent.tools.planning.TodoStore.clear()
+        // v4.0.76: Clear conversation store for the new task
+        com.ai.agent.tools.planning.ConversationStore.clear()
         val workLog = StringBuilder()
         try {
             // v3.0.8: Contextual Prompts — select relevant tool groups based on user message
@@ -1668,14 +1672,39 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     // every step). This instruction is now in the system prompt once.
                     conversation.append("\n")  // minimal separator
 
-                    // Trim old history to prevent conversation from growing too long.
-                    if (conversation.length > MAX_CONVERSATION_CHARS) {
-                        val originalMsg = userMessage
-                        val recentHistory = conversation.substring(conversation.length - 6000)
+                    // v4.0.76: Record this iteration in ConversationStore for on-demand recall.
+                    val toolsSummaryStr = if (llmResponse.toolCalls.isEmpty()) "(none)"
+                        else llmResponse.toolCalls.joinToString(", ") { "${it.name}(${it.args.entries.joinToString(", ") { "${it.key}=${it.value}" }})" }
+                    com.ai.agent.tools.planning.ConversationStore.addIteration(
+                        step = iteration,
+                        brainReply = llmResponse.reply,
+                        toolCallsSummary = toolsSummaryStr,
+                        toolResultsSummary = resultsForLLM.toString()
+                    )
+
+                    // v4.0.76: Conversation compression — when ON and iterations > 5,
+                    // replace old conversation text with a compact summary.
+                    // This caps token cost on long tasks (20+ iterations).
+                    if (com.ai.agent.llm.AIProvider.isConvCompressionEnabled(context) && iteration > 5) {
+                        val summary = buildProgressSummary()
+                        com.ai.agent.tools.planning.ConversationStore.setProgressSummary(summary)
+                        // Replace conversation with: original message + summary + recent 3 iterations
+                        val recent3 = conversation.toString().lines().takeLast(50).joinToString("\n")
                         conversation.clear()
-                        conversation.append(originalMsg)
-                        conversation.append("\n\n[Previous steps omitted. Most recent steps:]")
-                        conversation.append(recentHistory)
+                        conversation.append(userMessage)
+                        conversation.append("\n\n[📋 PROGRESS SUMMARY (steps 1-$iteration)]:\n$summary\n")
+                        conversation.append("\n[RECENT STEPS]:\n$recent3\n")
+                        LogCapture.i(TAG, "Conversation compressed at iteration $iteration (${conversation.length} chars)")
+                    } else {
+                        // v3.6.2: Original truncation — prevent conversation from growing too long.
+                        if (conversation.length > MAX_CONVERSATION_CHARS) {
+                            val originalMsg = userMessage
+                            val recentHistory = conversation.substring(conversation.length - 6000)
+                            conversation.clear()
+                            conversation.append(originalMsg)
+                            conversation.append("\n\n[Previous steps omitted. Most recent steps:]")
+                            conversation.append(recentHistory)
+                        }
                     }
 
                     _state.update { it.copy(apiCallCount = callCount) }
@@ -1862,6 +1891,25 @@ ALWAYS state index + text + reason before clicking. No exceptions.
     private fun argsStr(args: Map<String, Any>): String {
         if (args.isEmpty()) return ""
         return args.entries.joinToString(", ") { "${it.key}=${it.value}" }
+    }
+
+    /**
+     * v4.0.76: Build a compact progress summary from ConversationStore.
+     * Used by conversation compression — replaces old iterations with a summary.
+     * Also returned by the summarizeProgress() tool.
+     *
+     * Format: "Step N: <brain reply (100 chars)> | Tools: <tool calls>"
+     * One line per iteration. Caps at 50 lines (50 iterations max).
+     */
+    private fun buildProgressSummary(): String {
+        val all = com.ai.agent.tools.planning.ConversationStore.getAllIterations()
+        if (all.isEmpty()) return "No iterations completed."
+        val sb = StringBuilder()
+        for (entry in all.takeLast(50)) {  // last 50 iterations
+            val replyShort = entry.brainReply.take(100).replace("\n", " ").trim()
+            sb.append("Step ${entry.step}: $replyShort | Tools: ${entry.toolCallsSummary}\n")
+        }
+        return sb.toString().trim()
     }
 
     /** Append a per-step AI message (with tool calls) to the chat. */

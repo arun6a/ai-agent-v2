@@ -55,6 +55,7 @@ object LevelManager {
         "createCustomTool", "listCustomTools", "deleteCustomTool",
         "todoWrite", "delegateTask", "speak", "complete",
         "listTerminals", "listSkills", "searchMemory",
+        "recallConversationStep", "summarizeProgress",  // v4.0.76: conversation memory
     )
 
     // v4.0.74: Quick-access tools — always available (most common actions).
@@ -79,6 +80,7 @@ object LevelManager {
         "getVolume", "setVolume", "getNetworkInfo",
         "createRule", "listRules", "deleteRule", "modifyRule",
         "remember", "recall", "recallSimilar", "recallAll", "searchMemory", "recallMemory",
+        "recallConversationStep", "summarizeProgress",
         "writeFile", "readFile", "listFiles",
         "searchTools", "escalateLevel", "getSkill", "listSkills",
         "listNotifications", "listTerminals",
@@ -112,6 +114,8 @@ object LevelManager {
         "webSearch", "fetchPageText", "makeHttpRequest",
         "createCustomTool", "listCustomTools", "deleteCustomTool",
         "getConversationHistory", "getFullMemory", "getConversationSummary",
+        // v4.0.76: Remote Screen Control — needs terminal connection
+        "remoteScreenshot", "remoteClick", "remoteType", "remoteKey",
     )
 
     val LEVEL_3_TOOLS: List<String>? = null
