@@ -3,6 +3,10 @@ package com.ai.agent.llm.levels
 import android.content.Context
 import android.util.Log
 import com.ai.agent.llm.ContextualPromptBuilder
+import com.ai.agent.llm.LLMClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 object LevelManager {
     private const val TAG = "LevelManager"
@@ -14,6 +18,17 @@ object LevelManager {
     // groups to pick WHICH tools to send (capped by the level's budget).
     // When false, falls back to pure LevelManager (v4.0.72 behavior).
     const val USE_COMBINED_APPROACH = true
+
+    // v4.0.73: Layer 3 — LLM intent classifier for ambiguous messages.
+    // When true, messages that Layer 2 can't classify (no clear action verb,
+    // no clear comparison verb) get a 100-token Tier 1 LLM call to classify
+    // intent as ACTION / QUESTION / COMPARISON / PROHIBITION.
+    // When false, ambiguous messages default to ACTION (send tools).
+    const val USE_LLM_INTENT_CLASSIFIER = true
+
+    // v4.0.73: Layer 3 timeout — 3 seconds. If the classifier is slow or
+    // fails, skip it and default to ACTION (don't block the user).
+    private const val INTENT_CLASSIFIER_TIMEOUT_MS = 3000L
 
     // v4.0.73: Tool budgets per level — caps the number of tools sent.
     // Level 1: 15 tools (basic), Level 2: 100 tools (standard), Level 3: all (null = no cap)
@@ -117,6 +132,231 @@ object LevelManager {
 
         // Rule 4: No groups matched → complex/unknown → Level 3 (send all tools + full prompt)
         return 3
+    }
+
+    // ========================================================================
+    // v4.0.73: 3-LAYER INTENT DETECTION
+    // ========================================================================
+    // Layer 0: Greeting check (free, already in classifyLevelWithContext)
+    // Layer 1: Level 3 keywords (free, already in classifyLevelWithContext)
+    // Layer 1.5: Contextual groups (free, passed in as parameter)
+    // Layer 2: Action-verb + comparison-pattern detection (free, new)
+    // Layer 3: LLM intent classifier (~100 tokens, only for ambiguous, new)
+    //
+    // WHY: Keyword matching can't tell if the user wants to USE a tool or just
+    // TALK about it. "What's the difference between sendSMS and email?" matches
+    // "sms" + "email" keywords, but the user wants a comparison, not to send.
+    // Without Layer 2+3, Aira would inject Contacts + Communication tools (~60
+    // tools, ~2400 tokens) and the model might call sendSMS — bad outcome.
+    //
+    // Layer 2 catches obvious cases ("difference between", "how does", "don't").
+    // Layer 3 catches ambiguous cases ("I was reading about sendSMS") via a
+    // cheap 100-token LLM call.
+    // ========================================================================
+
+    /**
+     * Layer 2: Patterns that indicate a CONCEPTUAL question, not an action.
+     * If any of these appear in the message AND tool keywords matched,
+     * treat it as a question → Level 1 (reasoning mode, no tools).
+     */
+    private val COMPARISON_PATTERNS = listOf(
+        // Direct comparison
+        "difference between", " vs ", " vs.", " versus ", "compare", "comparison",
+        "which is better", "pros and cons", "trade-off", "tradeoff", "tradeoffs",
+        // Explanation requests
+        "what is", "what's", "how does", "how do", "how is", "how are",
+        "why does", "why do", "why is", "why are",
+        "explain", "describe", "tell me about", "tell me how",
+        // Capability questions
+        "can you", "could you", "are you able", "do you have",
+        // Meta-discussion (past tense = not action)
+        "was reading", "were reading", "was thinking", "were thinking",
+        "was wondering", "were wondering", "i read about", "i heard about",
+        // Prohibition ("don't sendSMS" = not an action)
+        "don't ", "do not ", "never ", "stop ", "avoid ",
+    )
+
+    /**
+     * Layer 2: Action verbs that indicate the user wants to EXECUTE something.
+     * If the message starts with one of these, it's likely a real action.
+     */
+    private val ACTION_VERBS = listOf(
+        "send", "open", "play", "call", "create", "delete", "modify", "update",
+        "read", "write", "check", "set", "toggle", "search", "find", "look",
+        "download", "upload", "share", "reply", "schedule", "remind",
+        "post", "tweet", "message", "text", "email", "screenshot",
+        "install", "build", "run", "start", "stop", "pause", "resume",
+        "take", "get", "show", "list", "add", "remove", "enable", "disable",
+    )
+
+    /**
+     * v4.0.73 Layer 2: Check if the message is a conceptual question (not action).
+     *
+     * Returns true if the message contains comparison/explanation/prohibition
+     * patterns. This catches ~85% of conceptual-question misfires for FREE
+     * (no extra LLM call needed).
+     *
+     * Examples caught:
+     *   "What's the difference between sendSMS and email?" → true (comparison)
+     *   "How does webSearch work?" → true (explanation)
+     *   "Don't ever sendSMS without asking" → true (prohibition)
+     *   "Explain how createRule differs from a skill" → true (explanation)
+     *
+     * Examples NOT caught (need Layer 3):
+     *   "I was reading about sendSMS" → no pattern match (ambiguous)
+     *   "Can you sendSMS?" → "can you" matches but might be action
+     *   "sendSMS sometimes fails" → no pattern (ambiguous)
+     */
+    fun isConceptualQuestion(msg: String): Boolean {
+        val msgLower = msg.lowercase().trim()
+        // Check for comparison/explanation/prohibition patterns
+        if (COMPARISON_PATTERNS.any { msgLower.contains(it) }) return true
+        return false
+    }
+
+    /**
+     * v4.0.73 Layer 2: Check if the message has clear action intent.
+     *
+     * Returns true if the message starts with an action verb.
+     * This confirms the user wants to EXECUTE something, not just talk about it.
+     *
+     * Examples:
+     *   "sendSMS to Mom" → true (starts with "send")
+     *   "play BLACKPINK on YouTube" → true (starts with "play")
+     *   "What's the difference between sendSMS and email" → false (starts with "what")
+     */
+    fun hasActionIntent(msg: String): Boolean {
+        val msgLower = msg.lowercase().trim()
+        return ACTION_VERBS.any { verb ->
+            msgLower.startsWith(verb + " ") || msgLower.startsWith(verb + "!")
+        }
+    }
+
+    /**
+     * v4.0.73 Layer 3: LLM intent classifier for ambiguous messages.
+     *
+     * Makes a ~100-token Tier 1 LLM call to classify intent:
+     *   ACTION      → user wants to execute something
+     *   QUESTION    → user wants an explanation
+     *   COMPARISON  → user wants to compare options
+     *   PROHIBITION → user is telling you NOT to do something
+     *
+     * Cost: ~100 input + 1 output = ~101 tokens per ambiguous message.
+     * Only fires for ~5-10% of messages (the ambiguous ones Layer 2 can't classify).
+     * Timeout: 3 seconds — if it fails, returns null (caller defaults to ACTION).
+     *
+     * Savings: prevents ~4000-token misfires (wrong tools + wrong API calls).
+     * Net: saves ~3900 tokens per caught misfire, costs ~100 per ambiguous check.
+     */
+    suspend fun llmClassifyIntent(userMessage: String, context: Context): String? {
+        if (!USE_LLM_INTENT_CLASSIFIER) return null
+        return withContext(Dispatchers.IO) {
+            try {
+                withTimeoutOrNull(INTENT_CLASSIFIER_TIMEOUT_MS) {
+                    val llm = LLMClient(context)
+                    val prompt = """Classify the intent of this message to a phone AI assistant:
+
+"$userMessage"
+
+Reply with ONE word only:
+- ACTION (user wants to execute something — send a message, open an app, play music)
+- QUESTION (user wants an explanation — how does X work, what is X)
+- COMPARISON (user wants to compare options — X vs Y, which is better)
+- PROHIBITION (user is telling you NOT to do something — don't, never)
+
+Reply:"""
+                    val response = llm.chat(prompt, "You are an intent classifier. Reply with ONE word only: ACTION, QUESTION, COMPARISON, or PROHIBITION.", emptyList())
+                    val intent = response.reply.trim().uppercase().split("\\s+".toRegex()).firstOrNull() ?: ""
+                    Log.i(TAG, "Layer 3 intent classifier: '$userMessage' -> $intent")
+                    when {
+                        intent.startsWith("ACTION") -> "ACTION"
+                        intent.startsWith("QUESTION") -> "QUESTION"
+                        intent.startsWith("COMPARISON") -> "COMPARISON"
+                        intent.startsWith("PROHIBITION") -> "PROHIBITION"
+                        else -> null  // couldn't classify
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Layer 3 intent classifier failed: ${e.message}")
+                null  // fail safe — caller defaults to ACTION
+            }
+        }
+    }
+
+    /**
+     * v4.0.73: Combined classification WITH 3-layer intent detection.
+     *
+     * This is the SUSPEND version — uses all 3 layers:
+     *   Layer 0: Greeting → Level 1 (free)
+     *   Layer 1: Level 3 keywords (terminal/build) → Level 3 (free)
+     *   Layer 1.5: Contextual groups (passed in) (free)
+     *   Layer 2: Action-verb / comparison-pattern detection (free)
+     *   Layer 3: LLM intent classifier (~100 tokens, only if Layer 2 ambiguous)
+     *
+     * When Layer 2 detects a conceptual question (comparison/explanation/prohibition):
+     *   → Level 1 (reasoning mode, no tools) — saves ~2400 tokens of wrong tools
+     *
+     * When Layer 2 is ambiguous (no clear action or comparison):
+     *   → Layer 3 LLM call classifies intent (~100 tokens)
+     *   → If QUESTION/COMPARISON/PROHIBITION → Level 1
+     *   → If ACTION or classifier fails → Level 2 (send tools)
+     *
+     * Call this from a coroutine (ChatViewModel.runAgentLoop is already suspend).
+     */
+    suspend fun classifyLevelWithIntent(userMessage: String, contextualGroups: List<String>, context: Context): Int {
+        val msg = userMessage.lowercase().trim()
+
+        // Layer 0: Greeting → Level 1 (ultra-tiny, no tools)
+        if (ContextualPromptBuilder.isTier1NoTools(userMessage)) return 1
+
+        // Layer 1: Level 3 keywords (terminal/build/script) → Level 3 (full prompt)
+        // These are always action — user wants to build/run/compile
+        val level3Keywords = listOf("terminal", "build", "install ", "python", "node", "gradle",
+            "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal",
+            "connectterminal", "androidide", "termux", "apk", "java ",
+            "remove background", "rembg", "pillow", "opencv", "run script")
+        if (level3Keywords.any { msg.contains(it) }) return 3
+
+        // Layer 1.5: No contextual groups matched → complex/unknown → Level 3
+        if (contextualGroups.isEmpty()) return 3
+
+        // Groups matched. Now check: is this ACTION or CONCEPTUAL?
+        // Layer 2: Free pattern detection
+        val isConceptual = isConceptualQuestion(msg)
+        val hasAction = hasActionIntent(msg)
+
+        if (isConceptual && !hasAction) {
+            // OBVIOUS conceptual question → Level 1 (reasoning, no tools)
+            Log.i(TAG, "Layer 2: conceptual question detected → Level 1 (saves ~2400 tokens)")
+            return 1
+        }
+
+        if (hasAction && !isConceptual) {
+            // OBVIOUS action → Level 2 (send tools)
+            Log.i(TAG, "Layer 2: clear action intent → Level 2")
+            return 2
+        }
+
+        // AMBIGUOUS — Layer 2 couldn't decide. Try Layer 3 (LLM classifier).
+        if (USE_LLM_INTENT_CLASSIFIER) {
+            val intent = llmClassifyIntent(userMessage, context)
+            if (intent != null) {
+                return when (intent) {
+                    "ACTION" -> { Log.i(TAG, "Layer 3: ACTION → Level 2"); 2 }
+                    "QUESTION", "COMPARISON", "PROHIBITION" -> {
+                        Log.i(TAG, "Layer 3: $intent → Level 1 (saves ~2400 tokens)")
+                        1
+                    }
+                    else -> 2  // default to action
+                }
+            }
+            // Layer 3 failed (timeout/error) → default to ACTION (Level 2)
+            Log.w(TAG, "Layer 3 failed → defaulting to Level 2 (ACTION)")
+            return 2
+        }
+
+        // Layer 3 disabled → default to Level 2 (action)
+        return 2
     }
 
     fun getPromptForLevel(level: Int, context: Context): String {

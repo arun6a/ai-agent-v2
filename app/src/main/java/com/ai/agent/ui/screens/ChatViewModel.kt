@@ -587,17 +587,18 @@ class ChatViewModel(
             val useCombined = LevelManager.USE_COMBINED_APPROACH
             val useLevels = LevelManager.USE_CAPABILITY_LEVELS
             var contextualToolFilter: List<String>? = if (useCombined) {
-                // v4.0.73: Combined approach
+                // v4.0.73: Combined approach with 3-layer intent detection
                 LevelManager.resetForNewTask()
                 val groups = com.ai.agent.llm.ContextualPromptBuilder.getRelevantGroups(userMessage)
                 val groupNames = groups.map { it.name }
-                val level = LevelManager.classifyLevelWithContext(userMessage, groupNames)
+                // v4.0.73: Use the suspend version with Layer 3 LLM intent classifier
+                val level = LevelManager.classifyLevelWithIntent(userMessage, groupNames, context)
                 LevelManager.currentLevel = level
-                LogCapture.i(TAG, "Combined: Level=$level, Groups=${groupNames.ifEmpty {"(none)"}}, approach=hybrid")
+                LogCapture.i(TAG, "Combined: Level=$level, Groups=${groupNames.ifEmpty {"(none)"}}, approach=hybrid+intent")
                 // Compute tool filter: contextual groups capped by level budget
                 when {
                     level == 1 -> {
-                        // Tier 1 greeting → no tools
+                        // Tier 1 greeting OR conceptual question → no tools (reasoning mode)
                         emptyList()
                     }
                     groups.isNotEmpty() -> {
