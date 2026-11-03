@@ -4,6 +4,69 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.73 (versionCode 201) — Combined Approach + Universal Reasoning + Skill Fix
+**Date:** 2026-11-03
+
+### Problem
+v4.0.72 replaced ContextualPromptBuilder with LevelManager (capability levels). But this was an EITHER/OR choice — both systems had value:
+- **LevelManager** (budget): controls prompt size + tool count per level
+- **ContextualPromptBuilder** (relevance): picks WHICH tools based on task keywords
+
+Sending ALL 158 tools for "build apk" (Level 3) wasted tokens when only ~10 terminal tools were needed. Also: reasoning was disabled for all non-Z.ai providers, and skill files taught the AI to use the deprecated `run_command` tool.
+
+### Solution — 5 changes in one release
+
+#### 1. Combined Approach (LevelManager + ContextualPromptBuilder)
+- New flag: `LevelManager.USE_COMBINED_APPROACH = true`
+- New method: `LevelManager.classifyLevelWithContext(msg, groups)` — uses BOTH signals
+- Level (1/2/3) controls the PROMPT TEMPLATE (level1.txt / level2.txt / system_prompt_smart.txt)
+- Contextual groups control WHICH tools to send (capped by `getToolBudget(level)`)
+- Example: "play BLACKPINK" → Level 2 prompt + Screen+Shortcuts+Apps tools (~30 tools, not 125)
+- Example: "build apk" → Level 3 prompt + terminal tools only (~10 tools, not 158)
+- Savings: 40-58% fewer tokens than either approach alone
+
+#### 2. Universal Reasoning (ALL providers, not just Z.ai)
+- `LLMClient.buildOpenAIRequest()` now sends `thinking: { type: "enabled" }` for ALL providers
+- OpenAI o-series: sends `reasoning_effort: "medium"`
+- OpenRouter/Cline reasoning models: sends `reasoning: { effort: "medium" }`
+- Was: only `providerId == "zai" || "zai_direct"` got thinking
+- Fix: model can now reason before acting on ALL providers (OpenRouter, Groq, OpenAI, etc.)
+
+#### 3. Thinking-Compatible Prompt
+- `adaptPromptForNativeTools()` updated — old prompt said "Put FULL reasoning in text reply"
+- That caused DOUBLE reasoning: internal thinking + text narration → model stalled
+- New prompt: "DO NOT narrate — DO IT by calling the tool. Narration without action = failure"
+- Includes BAD vs GOOD examples to prevent the "narrate but don't act" bug
+
+#### 4. Skill Files Fixed (run_command → runOnTerminal)
+- `terminal_commands.md`: 30 `run_command(command="...")` → `runOnTerminal(name="...", command="...")`
+- `setup_terminal_access.md`: 12 occurrences replaced + Step 3 (createCustomTool) removed
+- Was: skills taught AI to use deprecated `run_command` → "unknown tool" errors + XML text output
+- Fix: skills now teach the correct native `runOnTerminal(name, command)` format
+
+#### 5. Escalation Expansion
+- When AI calls `escalateLevel(3)`, ChatViewModel detects the level change
+- Next iteration: tool filter expands to ALL Level 3 tools automatically
+- Was: escalateLevel changed the level but didn't expand the tool filter
+- Fix: AI gets the tools it needs immediately after escalation
+
+### Files Changed
+- `app/build.gradle.kts` — version 4.0.72 → 4.0.73, versionCode 200 → 201
+- `app/src/main/java/com/ai/agent/llm/levels/LevelManager.kt` — added `USE_COMBINED_APPROACH`, `getToolBudget()`, `classifyLevelWithContext()`
+- `app/src/main/java/com/ai/agent/llm/ContextualPromptBuilder.kt` — `getRelevantGroups()` made public, added `getAlwaysTools()` accessor
+- `app/src/main/java/com/ai/agent/llm/LLMClient.kt` — thinking enabled for ALL providers + thinking-compatible prompt
+- `app/src/main/java/com/ai/agent/ui/screens/ChatViewModel.kt` — combined prompt+tool assembly + escalation expansion + auto-expand in combined mode
+- `app/src/main/java/com/ai/agent/tools/ToolExecutor.kt` — escalateLevel result includes tool expansion notice
+- `app/src/main/assets/skills/terminal_commands.md` — 30 run_command → runOnTerminal
+- `app/src/main/assets/skills/setup_terminal_access.md` — 12 run_command → runOnTerminal + removed createCustomTool step
+
+### Backward Compatibility
+- `USE_COMBINED_APPROACH = false` → falls back to v4.0.72 pure LevelManager behavior
+- `USE_CAPABILITY_LEVELS = false` → falls back to v4.0.71 pure ContextualPromptBuilder behavior
+- Both flags default to true (combined approach active)
+
+---
+
 ## v4.0.51 (versionCode 179) — Cancellable HTTP Calls + Kill on Disconnect
 **Date:** 2026-10-30
 

@@ -5,9 +5,17 @@ keywords: build, install, command, shell, terminal, run, script, git, system, ch
 ---
 # Terminal Commands Reference
 
+> v4.0.73: Updated for native terminal tools (runOnTerminal). The old run_command custom tool is deprecated.
+
 ## Prerequisites
 This skill assumes you've already set up terminal access via the setup-terminal-access skill.
-The run_command custom tool should already exist + the server should be running.
+Terminal tools (runOnTerminal, connectTerminal, listTerminals, disconnectTerminal) are NATIVE in Aira v4.0.63+ — no custom tool creation needed. A terminal should already be connected via `connectTerminal`.
+
+**First, discover the connected terminal name:**
+```
+listTerminals()
+```
+Use the returned `name` for all `runOnTerminal` calls below. In this document, `<terminal-name>` is a placeholder for that name.
 
 ## CRITICAL: Environment Setup (read this first!)
 
@@ -23,14 +31,14 @@ The HTTP server runs commands with PTY support (v4.0.50+). Key facts:
 
 **FIRST COMMAND always run to find tools:**
 ```
-run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java git 2>/dev/null; echo DONE")
+runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java git 2>/dev/null; echo DONE")
 ```
 
 If you see output like `/data/data/com.tom.rv2ide/files/usr/bin/pkg` etc., tools are present.
 
 **Universal command pattern for ALL commands that need pkg/node/java:**
 ```
-run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; <YOUR COMMAND HERE>")
+runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; <YOUR COMMAND HERE>")
 ```
 
 ## CRITICAL: Known Shell Limitations
@@ -42,10 +50,10 @@ WRONG:  which pkg node java
 RIGHT:  command -v pkg node java
 ```
 
-### `idesetup` CANNOT run via run_command
+### `idesetup` CANNOT run via runOnTerminal
 The `idesetup` script uses bash-specific syntax (the minimal `sh` is dash and can't parse it),
 and `idesetup -c` is interactive (downloads JDK + build tools with prompts).
-If you run `idesetup -c` via run_command, you will see:
+If you run `idesetup -c` via runOnTerminal, you will see:
 ```
 Syntax error: word unexpected (expecting ")")
 ```
@@ -71,7 +79,7 @@ You CANNOT execute binaries from /sdcard. To build:
 
 ## Verify Server Is Running
 ```
-run_command(command="echo aira-server-check")
+runOnTerminal(name="<terminal-name>", command="echo aira-server-check")
 ```
 If this fails with "Connection refused": the server is not running.
 Tell the user: "Open AndroidIDE-Rv2 terminal and run: `node /sdcard/Aira/aira-server.js &`"
@@ -80,21 +88,21 @@ Tell the user: "Open AndroidIDE-Rv2 terminal and run: `node /sdcard/Aira/aira-se
 
 ### Environment Exploration (run these FIRST)
 ```
-Find available tools:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java javac git python3 2>/dev/null; echo DONE")
-Check PATH:            run_command(command="echo $PATH")
-List installed bins:   run_command(command="ls /data/data/com.tom.rv2ide/files/usr/bin/ 2>/dev/null | head -30")
-Check home directory:  run_command(command="echo HOME=$HOME && ls -la ~ 2>/dev/null")
+Find available tools:   runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java javac git python3 2>/dev/null; echo DONE")
+Check PATH:            runOnTerminal(name="<terminal-name>", command="echo $PATH")
+List installed bins:   runOnTerminal(name="<terminal-name>", command="ls /data/data/com.tom.rv2ide/files/usr/bin/ 2>/dev/null | head -30")
+Check home directory:  runOnTerminal(name="<terminal-name>", command="echo HOME=$HOME && ls -la ~ 2>/dev/null")
 ```
 
 ### File Operations
 ```
-List files:        run_command(command="ls -la /sdcard/Download/")
-Read file:         run_command(command="cat /sdcard/Aira/config.json")
-Copy file:         run_command(command="cp /sdcard/file1.txt /sdcard/file2.txt")
-Move file:         run_command(command="mv /sdcard/old.txt /sdcard/new.txt")
-Delete file:       run_command(command="rm /sdcard/unwanted.txt")
-Create directory:  run_command(command="mkdir -p /sdcard/Aira/projects")
-Find files:         run_command(command="find /sdcard -name '*.apk' -type f")
+List files:        runOnTerminal(name="<terminal-name>", command="ls -la /sdcard/Download/")
+Read file:         runOnTerminal(name="<terminal-name>", command="cat /sdcard/Aira/config.json")
+Copy file:         runOnTerminal(name="<terminal-name>", command="cp /sdcard/file1.txt /sdcard/file2.txt")
+Move file:         runOnTerminal(name="<terminal-name>", command="mv /sdcard/old.txt /sdcard/new.txt")
+Delete file:       runOnTerminal(name="<terminal-name>", command="rm /sdcard/unwanted.txt")
+Create directory:  runOnTerminal(name="<terminal-name>", command="mkdir -p /sdcard/Aira/projects")
+Find files:         runOnTerminal(name="<terminal-name>", command="find /sdcard -name '*.apk' -type f")
 ```
 
 ### Build Android Projects
@@ -108,20 +116,20 @@ OR:
 
 **IMPORTANT: OMIT timeout for builds** (v4.0.50+ default is infinite — let them finish):
 ```
-Build debug APK:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleDebug 2>&1")
-Build release:     run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleRelease 2>&1")
+Build debug APK:   runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleDebug 2>&1")
+Build release:     runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; cd ~/MyProject && ./gradlew assembleRelease 2>&1")
 ```
 
 ### Install Packages (AndroidIDE-Rv2 / Termux)
 NOTE: `pkg install` prints 4 "apt WARNING" lines — IGNORE them. They are not errors.
 NOTE: OMIT timeout (v4.0.50+ default is infinite — let installs finish).
 ```
-Update packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg update -y 2>&1; echo EXIT=$?")
-Install Node.js:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y nodejs 2>&1; echo EXIT=$?")
-Install Python:    run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y python 2>&1; echo EXIT=$?")
-Install Java:      run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y openjdk-17 2>&1; echo EXIT=$?")
-Install Git:       run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y git 2>&1; echo EXIT=$?")
-Search packages:   run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg search openjdk 2>&1")
+Update packages:   runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg update -y 2>&1; echo EXIT=$?")
+Install Node.js:   runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y nodejs 2>&1; echo EXIT=$?")
+Install Python:    runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y python 2>&1; echo EXIT=$?")
+Install Java:      runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y openjdk-17 2>&1; echo EXIT=$?")
+Install Git:       runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg install -y git 2>&1; echo EXIT=$?")
+Search packages:   runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; pkg search openjdk 2>&1")
 ```
 NOTE: `gradle` is NOT in the pkg repository. To build Gradle projects, you must:
 1. Download gradle manually: `curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o /tmp/gradle.zip`
@@ -130,23 +138,23 @@ NOTE: `gradle` is NOT in the pkg repository. To build Gradle projects, you must:
 
 ### Git Commands
 ```
-Status:    run_command(command="cd /sdcard/MyProject && git status")
-Clone:     run_command(command="cd /sdcard && git clone https://github.com/user/repo.git")
-Commit:    run_command(command="cd /sdcard/MyProject && git add -A && git commit -m 'update'")
-Push:      run_command(command="cd /sdcard/MyProject && git push")
+Status:    runOnTerminal(name="<terminal-name>", command="cd /sdcard/MyProject && git status")
+Clone:     runOnTerminal(name="<terminal-name>", command="cd /sdcard && git clone https://github.com/user/repo.git")
+Commit:    runOnTerminal(name="<terminal-name>", command="cd /sdcard/MyProject && git add -A && git commit -m 'update'")
+Push:      runOnTerminal(name="<terminal-name>", command="cd /sdcard/MyProject && git push")
 ```
 
 ### System Info
 ```
-Device model:   run_command(command="getprop ro.product.model")
-Android version: run_command(command="getprop ro.build.version.release")
-Storage:        run_command(command="df -h /sdcard")
-Memory:         run_command(command="free -h 2>/dev/null || cat /proc/meminfo | head -5")
+Device model:   runOnTerminal(name="<terminal-name>", command="getprop ro.product.model")
+Android version: runOnTerminal(name="<terminal-name>", command="getprop ro.build.version.release")
+Storage:        runOnTerminal(name="<terminal-name>", command="df -h /sdcard")
+Memory:         runOnTerminal(name="<terminal-name>", command="free -h 2>/dev/null || cat /proc/meminfo | head -5")
 ```
 
 ## How to Interpret Command Results (v4.0.51+)
 
-When run_command returns, the response JSON now includes:
+When runOnTerminal returns, the response JSON now includes:
 1. `"success": true/false` — command completed (exit code 0 + not timed out + not cancelled)
 2. `"exitCode": 0` — shell exit code (0 = success, non-zero = failure)
 3. `"timedOut": true/false` — if true, command exceeded the timeout YOU set and was killed
@@ -181,11 +189,11 @@ Tell the user: "Please restart the terminal server: open terminal, Ctrl+C, then 
 
 - Commands run via the HTTP server in AndroidIDE-Rv2's terminal environment
 - v4.0.50: Default timeout = INFINITE (no kill). AI decides per-command.
-- v4.0.50: Step timeout in ChatViewModel bumped from 60s → 600s (was killing run_command)
+- v4.0.50: Step timeout in ChatViewModel bumped from 60s → 600s (was killing runOnTerminal calls)
 - v4.0.50: Auto-Y now only fires when a prompt pattern is detected (not blindly after 3s)
 - v4.0.50: PTY uses `script -qfc` for unbuffered output (was hanging on simple commands)
 - DO NOT use `which` — use `command -v`
-- DO NOT use `idesetup` via run_command — it's interactive + bash-only (even with PTY, prefer manual)
+- DO NOT use `idesetup` via runOnTerminal — it's interactive + bash-only (even with PTY, prefer manual)
 - /sdcard is mounted with noexec — can't execute binaries from there
 - Use `pkg` to install packages (nodejs, python, openjdk-17, git)
 - `apt` warnings from `pkg` are expected — IGNORE them

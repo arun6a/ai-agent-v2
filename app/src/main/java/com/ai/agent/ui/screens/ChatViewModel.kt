@@ -569,11 +569,61 @@ class ChatViewModel(
             // v3.2.9: also compute the contextual tool filter (null = send all tools)
             // so we don't ship 95 tool definitions (~5000 tokens) for a "hi" message.
             // Mutable — auto-expand may add more tool groups during the loop.
-            // v4.0.72: Capability levels — replaces ContextualPromptBuilder
-            // If USE_CAPABILITY_LEVELS = true → use LevelManager (Level 1/2/3)
-            // If false → falls back to ContextualPromptBuilder (v4.0.71 behavior)
+            //
+            // v4.0.73: COMBINED APPROACH — merges capability levels (budget) with
+            // ContextualPromptBuilder (relevance). Uses BOTH signals:
+            //   - Level (1/2/3) controls the PROMPT TEMPLATE size
+            //   - Contextual groups control WHICH tools to send (capped by level budget)
+            //
+            // When USE_COMBINED_APPROACH = true:
+            //   1. Get contextual groups (relevance)
+            //   2. classifyLevelWithContext() picks level using BOTH signals
+            //   3. Prompt = level's template (level1.txt / level2.txt / system_prompt_smart.txt)
+            //   4. Tools = contextual groups' tools (capped by level budget)
+            //   5. If no groups matched → send all tools at this level
+            //
+            // When USE_COMBINED_APPROACH = false:
+            //   Falls back to v4.0.72 behavior (pure LevelManager OR pure ContextualPromptBuilder)
+            val useCombined = LevelManager.USE_COMBINED_APPROACH
             val useLevels = LevelManager.USE_CAPABILITY_LEVELS
-            var contextualToolFilter: List<String>? = if (useLevels) {
+            var contextualToolFilter: List<String>? = if (useCombined) {
+                // v4.0.73: Combined approach
+                LevelManager.resetForNewTask()
+                val groups = com.ai.agent.llm.ContextualPromptBuilder.getRelevantGroups(userMessage)
+                val groupNames = groups.map { it.name }
+                val level = LevelManager.classifyLevelWithContext(userMessage, groupNames)
+                LevelManager.currentLevel = level
+                LogCapture.i(TAG, "Combined: Level=$level, Groups=${groupNames.ifEmpty {"(none)"}}, approach=hybrid")
+                // Compute tool filter: contextual groups capped by level budget
+                when {
+                    level == 1 -> {
+                        // Tier 1 greeting → no tools
+                        emptyList()
+                    }
+                    groups.isNotEmpty() -> {
+                        // Contextual match → send just the relevant groups' tools
+                        val toolNames = mutableSetOf<String>()
+                        // Add ALWAYS_TOOLS (strip "(...)" suffix)
+                        for ((raw, _) in com.ai.agent.llm.ContextualPromptBuilder.getAlwaysTools()) {
+                            val n = raw.substringBefore("(").trim()
+                            if (n.isNotEmpty()) toolNames.add(n)
+                        }
+                        for (g in groups) toolNames.addAll(g.tools)
+                        // Cap at level budget (if level has a cap)
+                        val budget = LevelManager.getToolBudget(level)
+                        if (budget != null && toolNames.size > budget) {
+                            LogCapture.i(TAG, "Capped tools: ${toolNames.size} → $budget (Level $level budget)")
+                            toolNames.toList().take(budget)
+                        } else {
+                            toolNames.toList()
+                        }
+                    }
+                    else -> {
+                        // No contextual match → send all tools at this level
+                        LevelManager.getToolsForLevel(level)
+                    }
+                }
+            } else if (useLevels) {
                 LevelManager.resetForNewTask()
                 val level = LevelManager.classifyLevel(userMessage)
                 LevelManager.currentLevel = level
@@ -582,16 +632,21 @@ class ChatViewModel(
             } else if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.getRelevantToolNames(userMessage)
             } else null
-            val isTier1 = if (useLevels) {
+            val isTier1 = if (useCombined) {
+                LevelManager.currentLevel == 1 && contextualToolFilter?.isEmpty() == true
+            } else if (useLevels) {
                 LevelManager.currentLevel == 1 && contextualToolFilter?.isEmpty() == true
             } else if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.isTier1NoTools(userMessage)
             } else false
-            val basePrompt = if (useLevels) {
+            val basePrompt = if (useCombined || useLevels) {
                 LevelManager.getPromptForLevel(LevelManager.currentLevel, context)
             } else {
                 com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
             }
+            // v4.0.73: Track the level used to build contextualToolFilter.
+            // If AI escalates during the loop, we expand the filter on next iteration.
+            var filterLevel: Int = LevelManager.currentLevel
             val promptTokens = com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(basePrompt)
             val toolCount = contextualToolFilter?.size ?: 158
             val toolTokens = toolCount * 40 / 4  // ~40 tokens per tool schema
@@ -1137,6 +1192,16 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         conversation.append(todoList)
                     }
 
+                    // v4.0.73: Combined approach — if AI called escalateLevel during the
+                    // previous iteration, LevelManager.currentLevel is now higher. Expand
+                    // the tool filter to include all tools at the new level.
+                    if (useCombined && ::filterLevel.isInitialized && LevelManager.currentLevel > filterLevel) {
+                        val newLevel = LevelManager.currentLevel
+                        LogCapture.i(TAG, "Level escalated $filterLevel → $newLevel — expanding tool filter to ALL Level $newLevel tools")
+                        contextualToolFilter = LevelManager.getToolsForLevel(newLevel)
+                        filterLevel = newLevel
+                    }
+
                     val llmResponse = llmClient.chatWithFailover(conversation.toString(), execPrompt, contextualToolFilter)
 
                     // v3.8.6: Log the brain's reply text + tool calls so we can SEE what it said.
@@ -1378,7 +1443,9 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     var results = executeTimed(llmResponse.toolCalls)
 
                     // v3.0.9: Auto-expand contextual prompt if AI called a tool not in groups
-                    if (contextualEnabled && userMessage.isNotEmpty()) {
+                    // v4.0.73: Also trigger in combined approach mode — if AI calls a tool
+                    // not in the current contextual filter, add that tool's group dynamically.
+                    if ((contextualEnabled || useCombined) && userMessage.isNotEmpty()) {
                         val missingTools = llmResponse.toolCalls.filter { call ->
                             !com.ai.agent.llm.ContextualPromptBuilder.isToolAvailable(userMessage, call.name)
                         }

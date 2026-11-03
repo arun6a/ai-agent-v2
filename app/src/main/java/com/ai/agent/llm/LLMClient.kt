@@ -536,13 +536,47 @@ class LLMClient(private val context: Context) {
             // return empty content → no tool calls → task fails.
             // Now: omit the field entirely when maxTokens <= 0 (truly "no limit").
             if (maxTokens > 0) put("max_tokens", maxTokens)
-            // Z.ai (both proxy and direct) uses "thinking" param
-            // v3.9.2: ENABLED thinking — was "disabled" since v3.7.1, which turned OFF
-            // the model's reasoning capability. This was the root cause of 18 versions
-            // of brain failures. The model CAN reason — we just turned it off.
-            if (providerId == "zai" || providerId == "zai_direct") {
-                put("thinking", JSONObject().put("type", "enabled"))
+            // v4.0.73: REASONING ENABLED FOR ALL PROVIDERS — not just Z.ai.
+            //
+            // Previously only `providerId == "zai" || "zai_direct"` got thinking.
+            // OpenRouter, Cline, Groq, OpenAI, Gemini-via-gateway, etc. all ran
+            // WITHOUT explicit reasoning — the model just reacted.
+            //
+            // Now ALL OpenAI-compatible providers get reasoning params:
+            //   - Z.ai (zai, zai_direct, custom proxy): uses "thinking" field
+            //   - OpenAI o-series (o1, o3, o4): uses "reasoning_effort" field
+            //   - OpenRouter/Cline reasoning models (deepseek-r1, o1, o3): "reasoning"
+            //   - Others (Groq, Together, etc.): field is ignored harmlessly
+            //     (OpenAI-compatible APIs are forward-compatible — unknown fields
+            //     are silently dropped, not rejected)
+            //
+            // The system prompt ALSO says "THINK DEEPLY before every action"
+            // (level2.txt line 11) — this is the prompt-level reasoning nudge.
+            // The thinking/reasoning_effort fields enable the MODEL's native
+            // chain-of-thought capability where the provider supports it.
+            //
+            // WHY this matters: without reasoning, Aira jumps into tasks
+            // blindly (e.g. tapping wrong Twitter composer 13 times, calling
+            // non-existent run_command tool from stale skills). With reasoning,
+            // the model considers 2-3 approaches before acting — like Z.ai Code
+            // does when building this project.
+            put("thinking", JSONObject().put("type", "enabled"))
+
+            // v4.0.73: OpenAI o-series models use a DIFFERENT param name.
+            // "thinking" is Z.ai-specific; OpenAI uses "reasoning_effort".
+            // Values: "low" | "medium" | "high" (higher = more reasoning tokens).
+            // Use "medium" for balance of speed + quality.
+            if (providerId == "openai" && (model.contains("o1") || model.contains("o3") || model.contains("o4"))) {
+                put("reasoning_effort", "medium")
             }
+            // v4.0.73: OpenRouter + Cline pass reasoning params to underlying models.
+            // Format: {"reasoning": {"effort": "medium"}} — supported by OpenRouter
+            // for reasoning-capable models (deepseek-r1, o1, etc.).
+            if ((providerId == "openrouter" || providerId == "cline") &&
+                (model.contains("r1") || model.contains("o1") || model.contains("o3") || model.contains("o4") || model.contains("reasoning"))) {
+                put("reasoning", JSONObject().put("effort", "medium"))
+            }
+
             // v4.0.16: RE-ENABLED for providers with native function calling.
             // v4.0.20: supportsNativeTools is now computed at the top of this function.
             if (supportsNativeTools) {
@@ -578,17 +612,48 @@ class LLMClient(private val context: Context) {
      * - Use the "complete" tool to signal task completion
      */
     private fun adaptPromptForNativeTools(prompt: String): String {
-        // The native function calling instruction that replaces the JSON section.
+        // v4.0.73: Updated for thinking/reasoning mode compatibility.
+        //
+        // OLD prompt (v4.0.20) said: "Put your FULL reasoning + plan in your text reply"
+        // This WORKED when thinking was disabled — the model needed the text reply
+        // to reason before acting.
+        //
+        // But NOW thinking is ENABLED (v4.0.73). The model reasons INTERNALLY via
+        // the thinking mechanism. Telling it to ALSO put "full reasoning" in the
+        // text reply causes DOUBLE reasoning:
+        //   1. Internal thinking (correct)
+        //   2. Text narration of reasoning (REDUNDANT — and causes the model to
+        //      "feel done" after narrating, skipping the actual tool call)
+        //
+        // This was the root cause of "model narrates but doesn't act" — the model
+        // wrote "I need to verify the video is playing. Let me read the screen..."
+        // as TEXT, then stopped because it "said" what it would do.
+        //
+        // NEW prompt: thinking handles reasoning. Text reply = brief status only.
+        // The model MUST make a tool_call to act — narration is NOT action.
         val nativeSection = """## Response Format
-You have native function calling enabled. Tool definitions are provided via the
-tools array. Call tools using the standard tool_calls format.
+You have native function calling + thinking/reasoning enabled.
 
-- Put your FULL reasoning + plan in your text reply (can be very long — think deeply)
-- Call tools via the tool_calls array — the API handles the JSON format for you
-- Do NOT write tool calls as JSON text in your reply — use the native format
+CRITICAL: Your reasoning happens via the thinking mechanism (internal).
+DO NOT narrate what you will do — instead, DO IT by calling the tool.
+
+Rules:
+- Think internally (thinking mode) to plan your approach
+- Then IMMEDIATELY call the tool via tool_calls — do NOT write "I will..." as text
+- Your text reply (content) should be BRIEF: 1 sentence max, or empty
+- NEVER describe a tool call in text without also making the actual tool_calls
 - To COMPLETE a task: call the "complete" tool with {success: true/false, reason: "..."}
-- If no tools are needed (just answering a question): reply with text only, no tool_calls
-- You can call MULTIPLE tools in one reply (batch read-only tools for efficiency)"""
+- You can call MULTIPLE tools in one reply (batch read-only tools)
+
+BAD (narration only — task stalls):
+  content: "I'll read the screen to verify the video is playing."
+  tool_calls: (none)
+
+GOOD (brief text + actual tool call):
+  content: "Verifying playback..."
+  tool_calls: [{"name": "readScreen", "args": {}}]
+
+ALWAYS make the tool_call. Narration without action = task failure."""
 
         // Replace the "## Response Format" section (from the header to end of prompt).
         val marker = "## Response Format"

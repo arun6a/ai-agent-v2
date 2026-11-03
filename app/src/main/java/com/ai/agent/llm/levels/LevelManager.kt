@@ -7,6 +7,21 @@ object LevelManager {
     private const val TAG = "LevelManager"
     const val USE_CAPABILITY_LEVELS = true
 
+    // v4.0.73: Combined approach — merges capability levels (budget) with
+    // ContextualPromptBuilder (relevance). When true, classifyLevelWithContext()
+    // is used instead of classifyLevel(), and ChatViewModel uses contextual
+    // groups to pick WHICH tools to send (capped by the level's budget).
+    // When false, falls back to pure LevelManager (v4.0.72 behavior).
+    const val USE_COMBINED_APPROACH = true
+
+    // v4.0.73: Tool budgets per level — caps the number of tools sent.
+    // Level 1: 15 tools (basic), Level 2: 100 tools (standard), Level 3: all (null = no cap)
+    fun getToolBudget(level: Int): Int? = when (level) {
+        1 -> 15
+        2 -> 100
+        else -> null  // Level 3 = all tools, no cap
+    }
+
     @Volatile
     var currentLevel: Int = 2
 
@@ -62,6 +77,45 @@ object LevelManager {
         val level1Keywords = listOf("hi", "hello", "hey", "thanks", "thank you", "what can you do", "help", "battery", "brightness", "what time", "current time", "set alarm", "set timer", "volume", "wifi", "bluetooth", "create rule", "list rule", "delete rule", "modify rule", "remember", "recall", "what do you remember", "list notification", "check notification")
         if (level1Keywords.any { msg.contains(it) }) return 1
         return 2
+    }
+
+    /**
+     * v4.0.73: Combined classification — uses BOTH signals:
+     *   - ContextualPromptBuilder groups (relevance — which tools does this task need?)
+     *   - LevelManager keywords (complexity — how hard is this task?)
+     *
+     * Returns a level (1/2/3) that controls the PROMPT TEMPLATE size.
+     * The TOOL SET is computed separately in ChatViewModel using contextual groups
+     * (capped by getToolBudget(level)).
+     *
+     * Logic:
+     *   1. If ContextualPromptBuilder says no-tools (greeting) → Level 1 (tiny prompt)
+     *   2. If LevelManager keywords match Level 3 (terminal/build) → Level 3 (full prompt)
+     *   3. If contextual groups matched AND task is simple → Level 2 (standard prompt)
+     *   4. If no contextual groups matched → Level 3 (complex/unknown, needs full prompt)
+     *
+     * This replaces the old EITHER/OR approach. Both signals are used together.
+     */
+    fun classifyLevelWithContext(userMessage: String, contextualGroups: List<String>): Int {
+        val msg = userMessage.lowercase().trim()
+
+        // Rule 1: Greeting → Level 1 (ultra-tiny, no tools)
+        if (ContextualPromptBuilder.isTier1NoTools(userMessage)) return 1
+
+        // Rule 2: Level 3 keywords (terminal/build/script) → Level 3 (full prompt)
+        // These tasks need the full system_prompt_smart.txt with thinking instructions
+        val level3Keywords = listOf("terminal", "build", "install ", "python", "node", "gradle",
+            "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal",
+            "connectterminal", "androidide", "termux", "apk", "java ",
+            "remove background", "rembg", "pillow", "opencv", "run script")
+        if (level3Keywords.any { msg.contains(it) }) return 3
+
+        // Rule 3: Contextual groups matched → standard task → Level 2
+        // The groups tell us WHICH tools to send; Level 2 gives the thinking prompt
+        if (contextualGroups.isNotEmpty()) return 2
+
+        // Rule 4: No groups matched → complex/unknown → Level 3 (send all tools + full prompt)
+        return 3
     }
 
     fun getPromptForLevel(level: Int, context: Context): String {

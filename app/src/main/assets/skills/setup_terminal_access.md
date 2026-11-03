@@ -5,6 +5,8 @@ keywords: terminal, setup, server, command, termux, shell, run command, build, i
 ---
 # Setup Terminal Access
 
+> v4.0.73: Updated for native terminal tools (runOnTerminal). The old run_command custom tool is deprecated.
+
 ## ⚠️ CRITICAL — READ THIS FIRST
 - Use aira-server.js (Node.js) ONLY. Do NOT write Python servers, shell servers, or any alternative.
 - aira-server.js requires Node.js, which is available in AndroidIDE-Rv2 and Termux.
@@ -277,22 +279,30 @@ The user MUST start the server manually. Tell them:
 
 If the terminal didn't receive input, tell the user to run it manually.
 
-## Step 3: Create the Custom Tool
+## Step 3: Terminal Tools Are Native (No Custom Tool Needed)
 
-Call createCustomTool with these EXACT parameters:
+In Aira v4.0.63+, terminal tools are **NATIVE** — you do NOT need to call `createCustomTool`.
+The following native tools are available out of the box:
 
-- name: "run_command"
-- description: "Run any shell command on the phone via the local Aira server. Returns stdout + exit code. Use for: file operations, building projects, installing packages, running scripts, git commands, system info. Server must be running. ALWAYS prefix commands with: export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; — so pkg/node/java are found. Use command -v (NOT which) to find binaries. Timeout is OPTIONAL: omit it to let commands run until done; pass timeout=60 only for commands that might hang (like ping or interactive prompts)."
-- handlerType: "http"
-- handler: '{"method":"GET","url":"http://127.0.0.1:8080/exec?token=aira&cmd={command}&timeout={timeout}"}'
-- parameters: "command,timeout"
+- `connectTerminal(name, host, port)` — connect to the aira-server.js HTTP server (e.g. host="127.0.0.1", port=8080)
+- `listTerminals()` — list connected terminals; use this to discover the `name` to pass to `runOnTerminal`
+- `runOnTerminal(name, command)` — run a shell command on a connected terminal (the `name` parameter is REQUIRED)
+- `disconnectTerminal(name)` — disconnect a terminal
 
-NOTE: `timeout` is OPTIONAL — if you omit it, the server uses 120s default.
-The Aira app (v4.0.49+) strips unresolved {timeout} from the URL automatically.
+Workflow:
+1. Call `connectTerminal(name="aira", host="127.0.0.1", port=8080)` to connect to the running server.
+2. Call `listTerminals()` to confirm the connection and get the terminal name.
+3. Call `runOnTerminal(name="<that-name>", command="...")` to run shell commands.
+
+NOTE: `timeout` is OPTIONAL in `runOnTerminal` — omit it to let commands run until done; pass `timeout=60` only for commands that might hang (like `ping` or interactive prompts).
 
 ## Step 4: Test the Tool
 
-Call run_command(command="echo hello from aira")
+Use the terminal name returned by `listTerminals()` and call:
+
+```
+runOnTerminal(name="<terminal-name>", command="echo hello from aira")
+```
 Expected result: {"success": true, "output": "hello from aira", "exitCode": 0, ...}
 
 If it fails:
@@ -303,7 +313,7 @@ If it fails:
 
 After setup, find what tools are available:
 ```
-run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java javac git 2>/dev/null; echo DONE")
+runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java javac git 2>/dev/null; echo DONE")
 ```
 Expected: paths to pkg, node, java, etc., then "DONE"
 
@@ -312,7 +322,7 @@ DO NOT use `which` — it does not exist in the minimal shell and will fail with
 ## Step 6: Check PTY Mode
 
 ```
-run_command(command="echo pty_check")
+runOnTerminal(name="<terminal-name>", command="echo pty_check")
 ```
 Look at the response's `pty` field:
 - `"pty": "script"` → PTY active, interactive commands work
@@ -323,23 +333,23 @@ If PTY is "spawn" and you need interactive commands, tell the user:
 
 ## Step 7: Complete
 
-Call complete(success=true, reason="Terminal access set up. run_command tool created + tested. Server running at http://127.0.0.1:8080 with PTY: <mode>. Remember to prefix commands with: export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin;")
+Call complete(success=true, reason="Terminal access set up. Native runOnTerminal tool connected + tested. Server running at http://127.0.0.1:8080 with PTY: <mode>. Remember to prefix commands with: export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin;")
 
 ## After Setup — What You Can Do
 
 ### Quick Commands (no timeout needed — default is infinite)
-- run_command(command="ls -la /sdcard/Download/")
-- run_command(command="cat /sdcard/Aira/config.json")
-- run_command(command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java")
+- runOnTerminal(name="<terminal-name>", command="ls -la /sdcard/Download/")
+- runOnTerminal(name="<terminal-name>", command="cat /sdcard/Aira/config.json")
+- runOnTerminal(name="<terminal-name>", command="export PATH=$PATH:/data/data/com.tom.rv2ide/files/usr/bin; command -v pkg node java")
 
 ### Long Commands (omit timeout — let them finish)
-- run_command(command="export PATH=...; cd ~/MyProject && ./gradlew assembleDebug 2>&1")
-- run_command(command="export PATH=...; pkg install -y openjdk-17 2>&1")
-- run_command(command="export PATH=...; npm install 2>&1")
+- runOnTerminal(name="<terminal-name>", command="export PATH=...; cd ~/MyProject && ./gradlew assembleDebug 2>&1")
+- runOnTerminal(name="<terminal-name>", command="export PATH=...; pkg install -y openjdk-17 2>&1")
+- runOnTerminal(name="<terminal-name>", command="export PATH=...; npm install 2>&1")
 
 ### Commands that might hang (pass timeout as safety net)
-- run_command(command="ping -c 10 google.com", timeout=15)  ← limit to 15s
-- run_command(command="tail -f /sdcard/Aira/server.log", timeout=5)  ← grab 5s of logs
+- runOnTerminal(name="<terminal-name>", command="ping -c 10 google.com", timeout=15)  ← limit to 15s
+- runOnTerminal(name="<terminal-name>", command="tail -f /sdcard/Aira/server.log", timeout=5)  ← grab 5s of logs
 
 ## Timeout Guide (v4.0.50+)
 
@@ -361,7 +371,7 @@ If the command MIGHT NOT finish (ping, watch, tail -f, interactive REPL), pass a
 - Server runs in the terminal app's process. If terminal is killed, server stops.
 - To restart: open terminal → `node /sdcard/Aira/aira-server.js &`
 - Server listens on 127.0.0.1 ONLY (not accessible from other devices — safe).
-- Token is 'aira' — change it in server code + custom tool handler if you want security.
+- Token is 'aira' — change it in the server code if you want security.
 - v4.0.50: Default timeout = infinite (no kill). AI decides per-command. Pass `timeout=60` only for commands that might hang.
 - PTY mode auto-detected at startup via `script` command.
 - ANSI color codes stripped from output for cleaner AI parsing.
@@ -375,7 +385,7 @@ Server not running. Tell user: open terminal and run `node /sdcard/Aira/aira-ser
 
 ### "timedOut": true in response
 Command was killed by the timeout you passed. Either increase the timeout or omit it (default = infinite).
-Example: run_command(command="...", timeout=60) → timed out → re-run without timeout or with higher value.
+Example: runOnTerminal(name="<terminal-name>", command="...", timeout=60) → timed out → re-run without timeout or with higher value.
 
 ### "pty": "spawn" (no PTY)
 `script` command not available. Interactive commands may hang. For interactive tasks,

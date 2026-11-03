@@ -873,7 +873,13 @@ class ToolExecutor(private val context: Context) {
                 val level = (call.args["level"] as? Number)?.toInt() ?: 2
                 val msg = com.ai.agent.llm.levels.LevelManager.escalateToLevel(level)
                 LogCapture.i(TAG, "escalateLevel: to $level — ${msg.take(100)}")
-                ToolResult(true, msg)
+                // v4.0.73: In combined approach, escalating also signals that the
+                // tool filter should expand. ChatViewModel checks LevelManager.currentLevel
+                // on next iteration and expands contextualToolFilter to include all
+                // Level 3 tools if the level was escalated.
+                // The actual filter expansion happens in ChatViewModel's loop —
+                // here we just update the level state.
+                ToolResult(true, msg + "\n\n⚠️ TOOL EXPANSION: Your tool filter has been expanded to include ALL Level $level tools. On the next iteration you will see all available tools.")
             }
             "delegateTask" -> {
                 val description = call.args["description"] as? String

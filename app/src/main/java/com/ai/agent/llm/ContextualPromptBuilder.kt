@@ -525,11 +525,19 @@ object ContextualPromptBuilder {
     }
 
     /**
+     * v4.0.73: Public accessor for ALWAYS_TOOLS — needed by ChatViewModel's
+     * combined approach to build the tool filter from contextual groups.
+     */
+    fun getAlwaysTools(): List<Pair<String, String>> = ALWAYS_TOOLS
+
+    /**
      * Match user message to relevant tool groups.
      * v3.0.9: Auto-include Screen group for App + Browser + Shortcut tasks
      * (these tasks often need readScreen/tap to verify state or click elements).
      */
-    private fun getRelevantGroups(msg: String): List<ToolGroup> {
+    // v4.0.73: Made public — needed by the combined approach (LevelManager.classifyLevelWithContext
+    // + ChatViewModel's contextual tool filter). Was private before v4.0.73.
+    fun getRelevantGroups(msg: String): List<ToolGroup> {
         var matched = TOOL_GROUPS.filter { group ->
             group.keywords.any { keyword ->
                 msg.contains(keyword)
