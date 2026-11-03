@@ -203,6 +203,11 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             }
         }
 
+        // ===== AI BEHAVIOR (v4.0.75: Prompt architecture + presets) =====
+        item {
+            AiBehaviorSection(context = context, onToast = { toast = it })
+        }
+
         // ===== VISION =====
         item {
             SettingsGroup(title = "VISION") {
@@ -822,4 +827,187 @@ private fun StatusBadge(text: String, active: Boolean, custom: com.ai.agent.ui.c
             )
             .padding(horizontal = 6.dp, vertical = 2.dp),
     )
+}
+
+// ============================================================================
+// v4.0.75: AI BEHAVIOR SECTION — Prompt architecture + presets
+// ============================================================================
+// 3 Presets (Fast / Balanced / Smart) + Advanced toggles for power users.
+// Controls: on-demand tools, thinking mode, intent detection, memory/skills
+// injection, conversation compression, max iterations.
+// ============================================================================
+
+@Composable
+private fun AiBehaviorSection(context: android.content.Context, onToast: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    var currentPreset by remember { mutableStateOf(AIProvider.getPreset(context)) }
+    var showAdvanced by remember { mutableStateOf(currentPreset == AIProvider.PRESET_ADVANCED) }
+
+    // Flag states (read from AIProvider)
+    var capabilityLevels by remember { mutableStateOf(AIProvider.isCapabilityLevelsEnabled(context)) }
+    var combinedApproach by remember { mutableStateOf(AIProvider.isCombinedApproachEnabled(context)) }
+    var onDemand by remember { mutableStateOf(AIProvider.isOnDemandEnabled(context)) }
+    var patternDetection by remember { mutableStateOf(AIProvider.isPatternDetectionEnabled(context)) }
+    var llmIntent by remember { mutableStateOf(AIProvider.isLlmIntentEnabled(context)) }
+    var memoryInject by remember { mutableStateOf(AIProvider.isMemoryInjectEnabled(context)) }
+    var skillsInject by remember { mutableStateOf(AIProvider.isSkillsInjectEnabled(context)) }
+    var autoExpand by remember { mutableStateOf(AIProvider.isAutoExpandEnabled(context)) }
+    var failureRules by remember { mutableStateOf(AIProvider.isFailureRulesEnabled(context)) }
+    var thinkingMode by remember { mutableStateOf(AIProvider.isThinkingEnabled(context)) }
+    var todoPlanning by remember { mutableStateOf(AIProvider.isTodoPlanningEnabled(context)) }
+    var convCompression by remember { mutableStateOf(AIProvider.isConvCompressionEnabled(context)) }
+    var maxIters by remember { mutableStateOf(AIProvider.getMaxIterations(context)) }
+
+    SettingsGroup(title = "AI BEHAVIOR") {
+        // === Presets ===
+        Text(
+            text = "Preset",
+            color = m3.onSurface,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        Spacer(Modifier.size(4.dp))
+        val presets = listOf(
+            Triple(AIProvider.PRESET_FAST, "Fast", "Minimal reasoning, all tools upfront. Cheapest."),
+            Triple(AIProvider.PRESET_BALANCED, "Balanced", "Reasoning + smart classification. Recommended."),
+            Triple(AIProvider.PRESET_SMART, "Smart", "On-demand everything. Max token savings."),
+        )
+        presets.forEach { (id, name, desc) ->
+            val active = currentPreset == id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (active) custom.accent.copy(alpha = 0.15f) else custom.surface2,
+                        RoundedCornerShape(12.dp),
+                    )
+                    .border(
+                        1.dp,
+                        if (active) custom.accent.copy(alpha = 0.5f) else custom.border,
+                        RoundedCornerShape(12.dp),
+                    )
+                    .clickable {
+                        currentPreset = id
+                        AIProvider.applyPreset(context, id)
+                        // Refresh all flag states
+                        capabilityLevels = AIProvider.isCapabilityLevelsEnabled(context)
+                        combinedApproach = AIProvider.isCombinedApproachEnabled(context)
+                        onDemand = AIProvider.isOnDemandEnabled(context)
+                        patternDetection = AIProvider.isPatternDetectionEnabled(context)
+                        llmIntent = AIProvider.isLlmIntentEnabled(context)
+                        memoryInject = AIProvider.isMemoryInjectEnabled(context)
+                        skillsInject = AIProvider.isSkillsInjectEnabled(context)
+                        autoExpand = AIProvider.isAutoExpandEnabled(context)
+                        failureRules = AIProvider.isFailureRulesEnabled(context)
+                        thinkingMode = AIProvider.isThinkingEnabled(context)
+                        todoPlanning = AIProvider.isTodoPlanningEnabled(context)
+                        convCompression = AIProvider.isConvCompressionEnabled(context)
+                        showAdvanced = false
+                        onToast("Preset: $name")
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = name, color = m3.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    Text(text = desc, color = custom.fg2, fontSize = 10.sp, lineHeight = 13.sp)
+                }
+                if (active) {
+                    Text("✓", color = custom.accent, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.size(4.dp))
+        }
+
+        // === Advanced toggle ===
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showAdvanced = !showAdvanced; if (showAdvanced) currentPreset = AIProvider.PRESET_ADVANCED }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (showAdvanced) "▼ Advanced" else "▶ Advanced",
+                color = custom.accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+
+        // === Advanced toggles ===
+        if (showAdvanced) {
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = "Prompt Architecture",
+                color = custom.fg2,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.size(4.dp))
+            AiToggleRow("Capability Levels", "Classify message complexity (Level 1/2/3) for prompt + tool budget.", capabilityLevels) {
+                capabilityLevels = it; AIProvider.setCapabilityLevelsEnabled(context, it); onToast("Capability levels: $it")
+            }
+            AiToggleRow("Combined Approach", "Merge levels (budget) + contextual groups (relevance) for best tool set.", combinedApproach) {
+                combinedApproach = it; AIProvider.setCombinedApproachEnabled(context, it); onToast("Combined approach: $it")
+            }
+            AiToggleRow("On-Demand Tools", "Send only ~35 tools upfront. Model searches for the rest. Saves 60-80% tokens.", onDemand) {
+                onDemand = it; AIProvider.setOnDemandEnabled(context, it); onToast("On-demand tools: $it")
+            }
+
+            Spacer(Modifier.size(8.dp))
+            Text("Intent Detection", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.size(4.dp))
+            AiToggleRow("Pattern Detection", "Detect 'difference between', 'how does', 'don't' → no tools (saves ~2400 tokens).", patternDetection) {
+                patternDetection = it; AIProvider.setPatternDetectionEnabled(context, it); onToast("Pattern detection: $it")
+            }
+            AiToggleRow("LLM Intent Classifier", "~100-token call to classify ambiguous messages as ACTION/QUESTION/COMPARISON/PROHIBITION.", llmIntent) {
+                llmIntent = it; AIProvider.setLlmIntentEnabled(context, it); onToast("LLM intent: $it")
+            }
+
+            Spacer(Modifier.size(8.dp))
+            Text("Context Injection", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.size(4.dp))
+            AiToggleRow("Auto-Inject Memory", "Inject top 10 memories via FTS5 into every prompt.", memoryInject) {
+                memoryInject = it; AIProvider.setMemoryInjectEnabled(context, it); onToast("Memory inject: $it")
+            }
+            AiToggleRow("Auto-Inject Skills", "Inject full skill bodies by keyword match.", skillsInject) {
+                skillsInject = it; AIProvider.setSkillsInjectEnabled(context, it); onToast("Skills inject: $it")
+            }
+            AiToggleRow("Auto-Expand Tools", "Auto-add tool's group when model calls a missing tool.", autoExpand) {
+                autoExpand = it; AIProvider.setAutoExpandEnabled(context, it); onToast("Auto-expand: $it")
+            }
+            AiToggleRow("Failure Rules", "Inject retry/failure guidance contextually (iteration 2/3/4).", failureRules) {
+                failureRules = it; AIProvider.setFailureRulesEnabled(context, it); onToast("Failure rules: $it")
+            }
+
+            Spacer(Modifier.size(8.dp))
+            Text("Reasoning & Planning", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.size(4.dp))
+            AiToggleRow("Thinking Mode", "Enable chain-of-thought reasoning before responding.", thinkingMode) {
+                thinkingMode = it; AIProvider.setThinkingEnabled(context, it); onToast("Thinking mode: $it")
+            }
+            AiToggleRow("Todo Planning", "Enforce todoWrite for complex tasks (3+ steps). Like a real agent.", todoPlanning) {
+                todoPlanning = it; AIProvider.setTodoPlanningEnabled(context, it); onToast("Todo planning: $it")
+            }
+            AiToggleRow("Conversation Compression", "Summarize old iterations to cap token cost on long tasks.", convCompression) {
+                convCompression = it; AIProvider.setConvCompressionEnabled(context, it); onToast("Conv compression: $it")
+            }
+
+            Spacer(Modifier.size(8.dp))
+            Text("Limits", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.size(4.dp))
+            SelectorRow(
+                label = "Max iterations per task",
+                options = listOf("5", "10", "20", "40", "80", "120"),
+                selected = maxIters.toString(),
+                onSelect = {
+                    maxIters = it.toInt()
+                    AIProvider.setMaxIterations(context, it.toInt())
+                    onToast("Max iterations: $it")
+                },
+            )
+        }
+    }
 }

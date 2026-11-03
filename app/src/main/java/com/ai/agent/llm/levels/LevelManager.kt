@@ -12,23 +12,27 @@ object LevelManager {
     private const val TAG = "LevelManager"
     const val USE_CAPABILITY_LEVELS = true
 
+    // v4.0.73: Layer 3 timeout — 3 seconds. If the classifier is slow or fails, skip.
+    private const val INTENT_CLASSIFIER_TIMEOUT_MS = 3000L
+
     // v4.0.73: Combined approach — merges capability levels (budget) with
     // ContextualPromptBuilder (relevance). When true, classifyLevelWithContext()
     // is used instead of classifyLevel(), and ChatViewModel uses contextual
     // groups to pick WHICH tools to send (capped by the level's budget).
     // When false, falls back to pure LevelManager (v4.0.72 behavior).
-    const val USE_COMBINED_APPROACH = true
+    // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
+    val USE_COMBINED_APPROACH: Boolean
+        get() = com.ai.agent.llm.AIProvider.DEFAULT_USE_COMBINED_APPROACH  // fallback; real check in ChatViewModel via context
 
     // v4.0.73: Layer 3 — LLM intent classifier for ambiguous messages.
-    // When true, messages that Layer 2 can't classify (no clear action verb,
-    // no clear comparison verb) get a 100-token Tier 1 LLM call to classify
-    // intent as ACTION / QUESTION / COMPARISON / PROHIBITION.
-    // When false, ambiguous messages default to ACTION (send tools).
-    const val USE_LLM_INTENT_CLASSIFIER = true
+    // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
+    val USE_LLM_INTENT_CLASSIFIER: Boolean
+        get() = com.ai.agent.llm.AIProvider.DEFAULT_USE_LLM_INTENT  // fallback; real check via context
 
-    // v4.0.73: Layer 3 timeout — 3 seconds. If the classifier is slow or
-    // fails, skip it and default to ACTION (don't block the user).
-    private const val INTENT_CLASSIFIER_TIMEOUT_MS = 3000L
+    // v4.0.74: On-Demand Architecture — sends only meta-tools + quick-access upfront.
+    // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
+    val USE_ON_DEMAND_ARCHITECTURE: Boolean
+        get() = com.ai.agent.llm.AIProvider.DEFAULT_USE_ON_DEMAND  // fallback; real check via context
 
     // v4.0.73: Tool budgets per level — caps the number of tools sent.
     // Level 1: 15 tools (basic), Level 2: 100 tools (standard), Level 3: all (null = no cap)
@@ -41,7 +45,8 @@ object LevelManager {
     // v4.0.74: On-Demand Architecture — sends only meta-tools + quick-access upfront.
     // Model searches for the rest via searchTools. Saves 60-80% tokens.
     // When false → sends all tools at the level (v4.0.73 behavior).
-    const val USE_ON_DEMAND_ARCHITECTURE = true
+    // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
+    // (USE_ON_DEMAND_ARCHITECTURE getter defined above near USE_COMBINED_APPROACH)
 
     // v4.0.74: Meta-tools — always available in on-demand mode.
     // These are the "discovery" tools the model uses to find what it needs.
@@ -277,7 +282,9 @@ object LevelManager {
      * Net: saves ~3900 tokens per caught misfire, costs ~100 per ambiguous check.
      */
     suspend fun llmClassifyIntent(userMessage: String, context: Context): String? {
-        if (!USE_LLM_INTENT_CLASSIFIER) return null
+        // v4.0.75: Check AIProvider flag (user-configurable)
+        if (!com.ai.agent.llm.AIProvider.isLlmIntentEnabled(context)) return null
+        // v4.0.73: Layer 3 timeout — 3 seconds. If the classifier is slow or fails, skip.
         return withContext(Dispatchers.IO) {
             try {
                 withTimeoutOrNull(INTENT_CLASSIFIER_TIMEOUT_MS) {
@@ -389,7 +396,8 @@ Reply:"""
 
     fun getPromptForLevel(level: Int, context: Context): String {
         // v4.0.74: On-Demand mode uses the tiny level0.txt prompt
-        if (USE_ON_DEMAND_ARCHITECTURE) {
+        // v4.0.75: Now reads from AIProvider (user-configurable)
+        if (com.ai.agent.llm.AIProvider.isOnDemandEnabled(context)) {
             return try { context.assets.open("level0.txt").bufferedReader().use { it.readText() } }
             catch (e: Exception) { context.assets.open("system_prompt_smart.txt").bufferedReader().use { it.readText() } }
         }

@@ -589,11 +589,11 @@ class ChatViewModel(
             //
             // When USE_COMBINED_APPROACH = false:
             //   Falls back to v4.0.72 behavior (pure LevelManager OR pure ContextualPromptBuilder)
-            val useCombined = LevelManager.USE_COMBINED_APPROACH
+            val useCombined = com.ai.agent.llm.AIProvider.isCombinedApproachEnabled(context)
             val useLevels = LevelManager.USE_CAPABILITY_LEVELS
             // v4.0.74: On-Demand Architecture — send only meta-tools + quick-access upfront.
-            // Model searches for the rest via searchTools. Saves 60-80% tokens.
-            val useOnDemand = LevelManager.USE_ON_DEMAND_ARCHITECTURE
+            // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
+            val useOnDemand = com.ai.agent.llm.AIProvider.isOnDemandEnabled(context)
             var contextualToolFilter: List<String>? = if (useOnDemand) {
                 // v4.0.74: On-Demand mode — send only ~35 tools upfront.
                 // Model uses searchTools/recallMemory/getSkill to pull the rest on-demand.
@@ -713,12 +713,14 @@ class ChatViewModel(
                 }
             }
             // v4.0.74: On-Demand mode skips memory auto-injection.
+            // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
             // Model calls recallMemory(query) when it needs context.
-            // This saves ~500 tokens per request in on-demand mode.
-            var systemPrompt = if (useOnDemand) {
-                basePrompt
-            } else {
+            // This saves ~500 tokens per request when disabled.
+            val injectMemory = com.ai.agent.llm.AIProvider.isMemoryInjectEnabled(context) && !useOnDemand
+            var systemPrompt = if (injectMemory) {
                 "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
+            } else {
+                basePrompt
             }
 
             // v3.4.1: Phase 2 — inject past failure lessons for THIS task type.
@@ -935,9 +937,12 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             // Keyword filtering ensures only 1-3 relevant skills get injected (scales to 500+ skills).
             //
             // v4.0.74: On-Demand mode skips skill auto-injection.
+            // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
             // Model calls getSkill(name) when it needs step-by-step instructions.
-            // This saves ~500-2000 tokens per request in on-demand mode.
-            if (!isTier1 && !useOnDemand) {
+            // This saves ~500-2000 tokens per request when disabled.
+            val injectSkillsFull = com.ai.agent.llm.AIProvider.isSkillsInjectEnabled(context) && !useOnDemand
+            val injectSkillsList = !isTier1 && (useOnDemand || !com.ai.agent.llm.AIProvider.isSkillsInjectEnabled(context))
+            if (!isTier1 && injectSkillsFull) {
                 try {
                     val skillManager = com.ai.agent.skills.SkillManager(context)
                     skillManager.loadSkills()
@@ -949,8 +954,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                 } catch (e: Exception) {
                     LogCapture.w(TAG, "Skill injection failed: ${e.message}")
                 }
-            } else if (useOnDemand && !isTier1) {
-                // v4.0.74: In on-demand mode, inject skill NAMES only (1-line descriptions).
+            } else if (!isTier1 && injectSkillsList) {
+                // v4.0.74: In on-demand mode (or skills inject OFF), inject skill NAMES only.
                 // Model calls getSkill(name) to load the full body when needed.
                 try {
                     val skillManager = com.ai.agent.skills.SkillManager(context)
@@ -1147,7 +1152,9 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
             ApiUsageTracker.startNewTask()
 
-            while (iteration < MAX_ITERATIONS && !_state.value.stopRequested && !com.ai.agent.service.TaskStopReceiver.stopRequested && !com.ai.agent.service.TaskStopOverlay.isStopRequested()) {
+            // v4.0.75: MAX_ITERATIONS is now user-configurable via Settings.
+            val maxIters = com.ai.agent.llm.AIProvider.getMaxIterations(context)
+            while (iteration < maxIters && !_state.value.stopRequested && !com.ai.agent.service.TaskStopReceiver.stopRequested && !com.ai.agent.service.TaskStopOverlay.isStopRequested()) {
                 // ---- Task-level timeout (3 minutes total) ----
                 if (System.currentTimeMillis() - taskStartTime > TASK_TIMEOUT_MS) {
                     finalReply = "⏰ Task timed out after 3 minutes. Here's what I accomplished:\n$workLog"
@@ -1337,7 +1344,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             val c = if (i < llmResponse.toolCalls.size) llmResponse.toolCalls[i] else completeCall!!
                             ToolCallDisplay(c.name, c.args, r.success, r.output, 0)
                         }
-                        addAiStepMessage(finalReply, llmResponse.toolCalls, completeDisplay, iteration, ApiUsageTracker.getTaskCalls())
+                        addAiStepMessage(finalReply, llmResponse.toolCalls, completeDisplay, iteration, ApiUsageTracker.getTaskCalls(), maxIters = maxIters)
                         return@withTimeoutOrNull false // stop the loop
                     }
 
@@ -1486,7 +1493,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         }
                     }
                     if (stuckSignature != null) {
-                        addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
+                        addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR, maxIters = maxIters)
                         return@withTimeoutOrNull false // stuck, break loop
                     }
 
@@ -1639,7 +1646,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                             "What I tried:\n$workLog\n\n" +
                             "Suggestions: check the screen manually, or describe what you see to me so I can help differently."
                         LogCapture.w(TAG, "${failedApproachTools.size}-FAILED-approach cap reached: $failedApproachTools — stopping task")
-                        addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR)
+                        addAiStepMessage(finalReply, emptyList(), emptyList(), iteration, ApiUsageTracker.getTaskCalls(), MessageStatus.ERROR, maxIters = maxIters)
                         return@withTimeoutOrNull false // stop the loop
                     }
 
@@ -1652,7 +1659,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
                     // Show iteration progress as a NEW message per step (mirrors v1 v5.0.8 fix).
                     val callCount = ApiUsageTracker.getTaskCalls()
-                    addAiStepMessage(toolSummary.toString(), llmResponse.toolCalls, results, iteration, callCount)
+                    addAiStepMessage(toolSummary.toString(), llmResponse.toolCalls, results, iteration, callCount, maxIters = maxIters)
 
                     // Append results to conversation for the next LLM call.
                     conversation.append("\n\n[Tool results from step $iteration]:")
@@ -1706,8 +1713,8 @@ ALWAYS state index + text + reason before clicking. No exceptions.
 
             if (finalReply.isEmpty()) {
                 // v4.0.60: HONEST REPORTING — no more "Done." fallback.
-                finalReply = if (iteration >= MAX_ITERATIONS && !_state.value.stopRequested) {
-                    "⚠️ I reached the maximum of $MAX_ITERATIONS steps. Here's what I accomplished:\n" +
+                finalReply = if (iteration >= maxIters && !_state.value.stopRequested) {
+                    "⚠️ I reached the maximum of $maxIters steps. Here's what I accomplished:\n" +
                         "$workLog\n\nThe task might need more steps — try asking me to continue, " +
                         "or break it into smaller parts."
                 } else if (workLog.isNotEmpty()) {
@@ -1865,10 +1872,11 @@ ALWAYS state index + text + reason before clicking. No exceptions.
         iteration: Int,
         apiCalls: Int,
         status: MessageStatus = MessageStatus.EXECUTING,
+        maxIters: Int = 80,  // v4.0.75: configurable via Settings
     ) {
         // v3.9.1: Show the brain's FULL reasoning text, not just a short header.
         // The brain's reply is its "thinking" — the user should see it in the chat.
-        val header = "[$iteration/$MAX_ITERATIONS] [API: $apiCalls calls]"
+        val header = "[$iteration/$maxIters] [API: $apiCalls calls]"
         val msg = ChatMessage(
             text = "$header\n$text",  // Show full reply text below the header
             isUser = false,

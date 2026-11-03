@@ -466,6 +466,184 @@ object AIProvider {
         getPrefs(context).edit().putBoolean(KEY_CONTEXTUAL_PROMPTS, enabled).apply()
     }
 
+    // ========================================================================
+    // v4.0.75: Architecture flags — user-configurable via Settings → AI BEHAVIOR
+    // ========================================================================
+    // These flags control the prompt architecture. Users can toggle them to
+    // adapt Aira to different models (cheaper/costlier/smarter/dumber).
+    //
+    // 3 Presets:
+    //   Fast Mode     → minimal reasoning, all tools upfront (cheapest)
+    //   Balanced Mode → reasoning + smart classification (recommended)
+    //   Smart Mode    → on-demand everything (max token savings, needs smart model)
+    //
+    // Advanced: individual toggles for power users.
+    // ========================================================================
+
+    private const val KEY_USE_CAPABILITY_LEVELS = "v4_flag_capability_levels"
+    private const val KEY_USE_COMBINED_APPROACH = "v4_flag_combined_approach"
+    private const val KEY_USE_ON_DEMAND = "v4_flag_on_demand"
+    private const val KEY_USE_PATTERN_DETECTION = "v4_flag_pattern_detection"
+    private const val KEY_USE_LLM_INTENT = "v4_flag_llm_intent"
+    private const val KEY_USE_MEMORY_INJECT = "v4_flag_memory_inject"
+    private const val KEY_USE_SKILLS_INJECT = "v4_flag_skills_inject"
+    private const val KEY_USE_AUTO_EXPAND = "v4_flag_auto_expand"
+    private const val KEY_USE_FAILURE_RULES = "v4_flag_failure_rules"
+    private const val KEY_USE_THINKING = "v4_flag_thinking"
+    private const val KEY_USE_TODO_PLANNING = "v4_flag_todo_planning"
+    private const val KEY_USE_CONV_COMPRESSION = "v4_flag_conv_compression"
+    private const val KEY_MAX_ITERATIONS = "v4_max_iterations"
+    private const val KEY_PRESET = "v4_preset"
+
+    // Preset names
+    const val PRESET_FAST = "fast"
+    const val PRESET_BALANCED = "balanced"
+    const val PRESET_SMART = "smart"
+    const val PRESET_ADVANCED = "advanced"
+    const val DEFAULT_PRESET = PRESET_BALANCED
+
+    // Default values (match Balanced preset)
+    const val DEFAULT_USE_CAPABILITY_LEVELS = true
+    const val DEFAULT_USE_COMBINED_APPROACH = true
+    const val DEFAULT_USE_ON_DEMAND = false  // Smart mode only (needs smart model)
+    const val DEFAULT_USE_PATTERN_DETECTION = true
+    const val DEFAULT_USE_LLM_INTENT = true
+    const val DEFAULT_USE_MEMORY_INJECT = true
+    const val DEFAULT_USE_SKILLS_INJECT = true
+    const val DEFAULT_USE_AUTO_EXPAND = true
+    const val DEFAULT_USE_FAILURE_RULES = true
+    const val DEFAULT_USE_THINKING = true
+    const val DEFAULT_USE_TODO_PLANNING = true
+    const val DEFAULT_USE_CONV_COMPRESSION = false  // Smart mode only
+    const val DEFAULT_MAX_ITERATIONS = 80
+
+    // === Flag getters ===
+    fun isCapabilityLevelsEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_CAPABILITY_LEVELS, DEFAULT_USE_CAPABILITY_LEVELS)
+    fun isCombinedApproachEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_COMBINED_APPROACH, DEFAULT_USE_COMBINED_APPROACH)
+    fun isOnDemandEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_ON_DEMAND, DEFAULT_USE_ON_DEMAND)
+    fun isPatternDetectionEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_PATTERN_DETECTION, DEFAULT_USE_PATTERN_DETECTION)
+    fun isLlmIntentEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_LLM_INTENT, DEFAULT_USE_LLM_INTENT)
+    fun isMemoryInjectEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_MEMORY_INJECT, DEFAULT_USE_MEMORY_INJECT)
+    fun isSkillsInjectEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_SKILLS_INJECT, DEFAULT_USE_SKILLS_INJECT)
+    fun isAutoExpandEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_AUTO_EXPAND, DEFAULT_USE_AUTO_EXPAND)
+    fun isFailureRulesEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_FAILURE_RULES, DEFAULT_USE_FAILURE_RULES)
+    fun isThinkingEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_THINKING, DEFAULT_USE_THINKING)
+    fun isTodoPlanningEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_TODO_PLANNING, DEFAULT_USE_TODO_PLANNING)
+    fun isConvCompressionEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_CONV_COMPRESSION, DEFAULT_USE_CONV_COMPRESSION)
+    fun getMaxIterations(context: Context): Int =
+        getPrefs(context).getInt(KEY_MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS)
+    fun getPreset(context: Context): String =
+        getPrefs(context).getString(KEY_PRESET, DEFAULT_PRESET) ?: DEFAULT_PRESET
+
+    // === Flag setters ===
+    fun setCapabilityLevelsEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_CAPABILITY_LEVELS, v).apply()
+    }
+    fun setCombinedApproachEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_COMBINED_APPROACH, v).apply()
+    }
+    fun setOnDemandEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_ON_DEMAND, v).apply()
+    }
+    fun setPatternDetectionEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_PATTERN_DETECTION, v).apply()
+    }
+    fun setLlmIntentEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_LLM_INTENT, v).apply()
+    }
+    fun setMemoryInjectEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_MEMORY_INJECT, v).apply()
+    }
+    fun setSkillsInjectEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_SKILLS_INJECT, v).apply()
+    }
+    fun setAutoExpandEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_AUTO_EXPAND, v).apply()
+    }
+    fun setFailureRulesEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_FAILURE_RULES, v).apply()
+    }
+    fun setThinkingEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_THINKING, v).apply()
+    }
+    fun setTodoPlanningEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_TODO_PLANNING, v).apply()
+    }
+    fun setConvCompressionEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_CONV_COMPRESSION, v).apply()
+    }
+    fun setMaxIterations(context: Context, v: Int) {
+        getPrefs(context).edit().putInt(KEY_MAX_ITERATIONS, v).apply()
+    }
+
+    // === Preset application ===
+    // Sets all flags to match a preset. User can then customize individually
+    // (which switches to PRESET_ADVANCED).
+    fun applyPreset(context: Context, preset: String) {
+        val p = getPrefs(context).edit()
+        when (preset) {
+            PRESET_FAST -> {
+                // Minimal reasoning, all tools upfront. Cheapest.
+                p.putBoolean(KEY_USE_CAPABILITY_LEVELS, true)
+                p.putBoolean(KEY_USE_COMBINED_APPROACH, false)
+                p.putBoolean(KEY_USE_ON_DEMAND, false)
+                p.putBoolean(KEY_USE_PATTERN_DETECTION, true)
+                p.putBoolean(KEY_USE_LLM_INTENT, false)
+                p.putBoolean(KEY_USE_MEMORY_INJECT, true)
+                p.putBoolean(KEY_USE_SKILLS_INJECT, true)
+                p.putBoolean(KEY_USE_AUTO_EXPAND, true)
+                p.putBoolean(KEY_USE_FAILURE_RULES, true)
+                p.putBoolean(KEY_USE_THINKING, false)
+                p.putBoolean(KEY_USE_TODO_PLANNING, false)
+                p.putBoolean(KEY_USE_CONV_COMPRESSION, false)
+            }
+            PRESET_SMART -> {
+                // On-demand everything. Max token savings. Needs smart model.
+                p.putBoolean(KEY_USE_CAPABILITY_LEVELS, true)
+                p.putBoolean(KEY_USE_COMBINED_APPROACH, true)
+                p.putBoolean(KEY_USE_ON_DEMAND, true)
+                p.putBoolean(KEY_USE_PATTERN_DETECTION, true)
+                p.putBoolean(KEY_USE_LLM_INTENT, true)
+                p.putBoolean(KEY_USE_MEMORY_INJECT, false)  // on-demand via recallMemory
+                p.putBoolean(KEY_USE_SKILLS_INJECT, false)   // on-demand via getSkill
+                p.putBoolean(KEY_USE_AUTO_EXPAND, true)
+                p.putBoolean(KEY_USE_FAILURE_RULES, true)
+                p.putBoolean(KEY_USE_THINKING, true)
+                p.putBoolean(KEY_USE_TODO_PLANNING, true)
+                p.putBoolean(KEY_USE_CONV_COMPRESSION, true)
+            }
+            else -> {  // PRESET_BALANCED (default)
+                // Reasoning + smart classification. Recommended for most users.
+                p.putBoolean(KEY_USE_CAPABILITY_LEVELS, true)
+                p.putBoolean(KEY_USE_COMBINED_APPROACH, true)
+                p.putBoolean(KEY_USE_ON_DEMAND, false)
+                p.putBoolean(KEY_USE_PATTERN_DETECTION, true)
+                p.putBoolean(KEY_USE_LLM_INTENT, true)
+                p.putBoolean(KEY_USE_MEMORY_INJECT, true)
+                p.putBoolean(KEY_USE_SKILLS_INJECT, true)
+                p.putBoolean(KEY_USE_AUTO_EXPAND, true)
+                p.putBoolean(KEY_USE_FAILURE_RULES, true)
+                p.putBoolean(KEY_USE_THINKING, true)
+                p.putBoolean(KEY_USE_TODO_PLANNING, true)
+                p.putBoolean(KEY_USE_CONV_COMPRESSION, false)
+            }
+        }
+        p.putString(KEY_PRESET, preset)
+        p.apply()
+    }
+
     // v3.0.7: Prompt Caching — kept for backwards compat but deprecated
     fun isPromptCachingEnabled(context: Context): Boolean = false  // always false (replaced by contextual)
     fun setPromptCachingEnabled(context: Context, enabled: Boolean) {}  // no-op
