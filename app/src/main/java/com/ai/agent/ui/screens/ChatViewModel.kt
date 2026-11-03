@@ -12,6 +12,7 @@ import com.ai.agent.llm.AIProvider
 import com.ai.agent.llm.ApiUsageTracker
 import com.ai.agent.llm.ContextualPromptBuilder
 import com.ai.agent.llm.LLMClient
+import com.ai.agent.llm.levels.LevelManager  // v4.0.72: capability levels
 import com.ai.agent.storage.AgentDatabase
 import com.ai.agent.tools.ToolExecutor
 import com.ai.agent.util.LogCapture
@@ -568,13 +569,29 @@ class ChatViewModel(
             // v3.2.9: also compute the contextual tool filter (null = send all tools)
             // so we don't ship 95 tool definitions (~5000 tokens) for a "hi" message.
             // Mutable — auto-expand may add more tool groups during the loop.
-            var contextualToolFilter: List<String>? = if (contextualEnabled) {
+            // v4.0.72: Capability levels — replaces ContextualPromptBuilder
+            // If USE_CAPABILITY_LEVELS = true → use LevelManager (Level 1/2/3)
+            // If false → falls back to ContextualPromptBuilder (v4.0.71 behavior)
+            val useLevels = LevelManager.USE_CAPABILITY_LEVELS
+            var contextualToolFilter: List<String>? = if (useLevels) {
+                LevelManager.resetForNewTask()
+                val level = LevelManager.classifyLevel(userMessage)
+                LevelManager.currentLevel = level
+                LogCapture.i(TAG, "Capability Level: $level")
+                LevelManager.getToolsForLevel(level)
+            } else if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.getRelevantToolNames(userMessage)
             } else null
-            val isTier1 = if (contextualEnabled) {
+            val isTier1 = if (useLevels) {
+                LevelManager.currentLevel == 1 && contextualToolFilter?.isEmpty() == true
+            } else if (contextualEnabled) {
                 com.ai.agent.llm.ContextualPromptBuilder.isTier1NoTools(userMessage)
             } else false
-            val basePrompt = com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
+            val basePrompt = if (useLevels) {
+                LevelManager.getPromptForLevel(LevelManager.currentLevel, context)
+            } else {
+                com.ai.agent.llm.ContextualPromptBuilder.buildPrompt(context, userMessage)
+            }
             val promptTokens = com.ai.agent.llm.ContextualPromptBuilder.estimateTokens(basePrompt)
             val toolCount = contextualToolFilter?.size ?: 158
             val toolTokens = toolCount * 40 / 4  // ~40 tokens per tool schema

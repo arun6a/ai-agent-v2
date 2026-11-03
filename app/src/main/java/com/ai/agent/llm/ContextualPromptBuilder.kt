@@ -37,6 +37,7 @@ object ContextualPromptBuilder {
         // v4.0.62: TodoWrite — ALWAYS available so brain can plan + track multi-step tasks
         "todoWrite(todos)" to "plan + track multi-step tasks. Call BEFORE starting complex tasks. Pass JSON array of steps with status: pending/in_progress/completed.",
         // v4.0.69: delegateTask — ALWAYS available for sub-agent delegation
+        "escalateLevel(level)" to "get more tools (2=screen/app, 3=terminal/all). Call when you need tools not at your current level.",
         "delegateTask(description, agentType?)" to "delegate a task to a sub-agent (saves tokens). Types: research, terminal, screen, general. The sub-agent runs its own mini loop + returns result.",
         // v4.0.26: Custom tool management — ALWAYS available so brain can create tools
         "createCustomTool(name, description, handlerType, handler, parameters?)" to "create a NEW custom tool at runtime (shell command or HTTP endpoint). Use when no existing tool fits.",

@@ -183,23 +183,10 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
             )
         }
 
-        // ===== THINKING (merged PROMPT → Contextual Prompts here) =====
-        item {
-            SettingsGroup(title = "THINKING") {
-                AiToggleRow("Periodic Reflection",
-                    "Every 5 steps, brain asks 'am I making progress?' If stuck, switches approach.",
-                    reflection) { reflection = it; AgentThinkingSettings.setReflectionEnabled(context, it); toast = "Periodic reflection: $it" }
-                AiToggleRow("Task Planning",
-                    "For complex tasks, brain creates a step-by-step plan before starting. Adds 2-3s.",
-                    planning) { planning = it; AgentThinkingSettings.setPlanningEnabled(context, it); toast = "Task planning: $it" }
-                AiToggleRow("Post-Action Verification",
-                    "After send/delete/email, brain reads screen to confirm it worked.",
-                    verification) { verification = it; AgentThinkingSettings.setVerificationEnabled(context, it); toast = "Post-action verification: $it" }
-                AiToggleRow("Contextual Prompts",
-                    "Only shows brain tools relevant to the current task. Saves 85% of API tokens.",
-                    contextualPrompts) { contextualPrompts = it; AIProvider.setContextualPromptsEnabled(context, it); toast = "Contextual prompts: $it" }
-            }
-        }
+        // v4.0.72: Removed THINKING section (Periodic Reflection, Task Planning,
+        // Post-Action Verification, Contextual Prompts) — all always-on now.
+        // Capability levels replace Contextual Prompts.
+        // Reflection/Planning/Verification are core behavior (can't disable).
 
         // ===== LEARNING =====
         item {

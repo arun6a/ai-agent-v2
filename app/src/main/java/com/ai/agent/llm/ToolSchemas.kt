@@ -349,6 +349,10 @@ object ToolSchemas {
                 "todos" to Param("string", "JSON array of todo items. Each item: {\"content\":\"step description\",\"status\":\"pending\"|\"in_progress\"|\"completed\"}. Pass the FULL list every time (not just changes). Max 10 items.", required = true),
             )),
         // v4.0.69: delegateTask — spawn a sub-agent for focused tasks (saves tokens)
+        Schema("escalateLevel", "[BATCHABLE] [NO VERIFY] Escalate to a higher capability level for more tools. Level 1=basic (current), Level 2=screen+app+browser+file+media, Level 3=terminal+all tools. Call when you need tools not available at your current level. Example: escalateLevel(2) unlocks screen tools, escalateLevel(3) unlocks terminal tools.",
+            mapOf(
+                "level" to Param("number", "Target level: 2 (standard) or 3 (advanced/terminal).", required = true),
+            )),
         Schema("delegateTask", "[SINGLE CALL] Delegate a task to a sub-agent. The sub-agent runs its own mini agent loop with LIMITED tools + a FOCUSED prompt (saves ~60% tokens vs doing it in the main loop). Use for: research (web search), terminal (install packages, run scripts), screen (tap/type/click). The sub-agent returns its result to you. Example: delegateTask(description=\"Find and download a car wallpaper\", agentType=\"research\").",
             mapOf(
                 "description" to Param("string", "The task for the sub-agent. Be specific — the sub-agent only sees this description, not the conversation history. E.g., 'Download a car wallpaper image to /sdcard/Pictures/car.jpg'.", required = true),

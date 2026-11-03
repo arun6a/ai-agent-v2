@@ -114,6 +114,7 @@ class ToolExecutor(private val context: Context) {
             "todoWrite",
             // v4.0.69: delegateTask — sub-agent delegation
             "delegateTask",
+            "escalateLevel",  // v4.0.72: capability level escalation
             // v4.0.26: Custom tool management
             "createCustomTool", "listCustomTools", "deleteCustomTool",
             // v4.0.61: Tool search — search ALL tools by keyword
@@ -264,6 +265,7 @@ class ToolExecutor(private val context: Context) {
             "todoWrite",
             // v4.0.69: delegateTask — spawns sub-agent, no accessibility needed
             "delegateTask",
+            "escalateLevel",  // v4.0.72: capability level escalation
             // v4.0.26: Custom tool management + custom tools don't need accessibility
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
             // v4.0.61: searchTools — just searches schemas, no accessibility
@@ -867,6 +869,12 @@ class ToolExecutor(private val context: Context) {
                 ToolResult(true, "Todo list updated. This will be shown to you in subsequent prompts.\n\n$formatted")
             }
             // v4.0.69: delegateTask — spawn a sub-agent
+            "escalateLevel" -> {
+                val level = (call.args["level"] as? Number)?.toInt() ?: 2
+                val msg = com.ai.agent.llm.levels.LevelManager.escalateToLevel(level)
+                LogCapture.i(TAG, "escalateLevel: to $level — ${msg.take(100)}")
+                ToolResult(true, msg)
+            }
             "delegateTask" -> {
                 val description = call.args["description"] as? String
                     ?: return ToolResult(false, "missing description. Example: delegateTask(description=\"Download a car wallpaper\", agentType=\"research\")")
