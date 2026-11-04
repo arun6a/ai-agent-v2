@@ -25,7 +25,8 @@ import com.ai.agent.tools.categories.AsyncTools
 import com.ai.agent.tools.categories.BrowserTools
 import com.ai.agent.tools.categories.ContactTools
 import com.ai.agent.tools.categories.DeviceTools
-import com.ai.agent.tools.categories.RemoteScreenTools  // v4.0.76
+import com.ai.agent.tools.categories.AdvancedHardwareTools  // v4.0.76
+import com.ai.agent.tools.categories.HardwareTools  // v4.0.76
 import com.ai.agent.tools.categories.FileTools
 import com.ai.agent.tools.categories.LocationTools
 import com.ai.agent.tools.categories.MediaTools
@@ -75,6 +76,11 @@ class ToolExecutor(private val context: Context) {
             "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
             "getDeviceInfo", "pingHost", "getVolume", "setVolume", "setBrightness",
             "toggleFlashlight", "toggleWifi",
+            // v4.0.76: Hardware Tools (basic — WiFi/BLE/NFC)
+            "scanWifiNetworks", "scanBleDevices", "getBluetoothState", "getWifiState",
+            "toggleBluetooth",
+            // v4.0.76: Hardware Tools (advanced — USB)
+            "listUsbDevices", "getUsbDeviceInfo",
             // v3.0.0: speak tool for rules
             "speak",
             // Memory
@@ -123,8 +129,6 @@ class ToolExecutor(private val context: Context) {
             "searchTools",
             // v4.0.63: Terminal management tools
             "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
-            // v4.0.76: Remote Screen Control
-            "remoteScreenshot", "remoteClick", "remoteType", "remoteKey",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools
@@ -237,6 +241,11 @@ class ToolExecutor(private val context: Context) {
             "getBatteryLevel", "getCurrentTime", "getBluetoothState", "getNetworkInfo",
             "getDeviceInfo", "pingHost", "getVolume", "setVolume", "setBrightness",
             "toggleFlashlight", "toggleWifi",
+            // v4.0.76: Hardware Tools (basic — WiFi/BLE/NFC)
+            "scanWifiNetworks", "scanBleDevices", "getBluetoothState", "getWifiState",
+            "toggleBluetooth",
+            // v4.0.76: Hardware Tools (advanced — USB)
+            "listUsbDevices", "getUsbDeviceInfo",
             // v3.0.0: speak tool for rules
             "speak",
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
@@ -277,8 +286,6 @@ class ToolExecutor(private val context: Context) {
             "searchTools",
             // v4.0.63: Terminal management — HTTP calls, no accessibility
             "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
-            // v4.0.76: Remote Screen Control
-            "remoteScreenshot", "remoteClick", "remoteType", "remoteKey",
             // v4.0.28: Wallpaper
             "setWallpaper",
             // v4.0.29: On-demand context tools (no accessibility needed)
@@ -584,6 +591,13 @@ class ToolExecutor(private val context: Context) {
             "getVolume" -> DeviceTools.execute(call, context, service, database)
             "setBrightness" -> DeviceTools.execute(call, context, service, database)
             "toggleFlashlight" -> DeviceTools.execute(call, context, service, database)
+            // v4.0.76: Hardware Tools
+            "scanWifiNetworks" -> HardwareTools.execute(call, context)
+            "scanBleDevices" -> HardwareTools.execute(call, context)
+            "getWifiState" -> HardwareTools.execute(call, context)
+            "toggleBluetooth" -> HardwareTools.execute(call, context)
+            "listUsbDevices" -> AdvancedHardwareTools.execute(call, context)
+            "getUsbDeviceInfo" -> AdvancedHardwareTools.execute(call, context)
             "mediaPlayPause" -> MediaTools.execute(call, context, service, database)
             "mediaNext" -> MediaTools.execute(call, context, service, database)
             "mediaPrevious" -> MediaTools.execute(call, context, service, database)
@@ -785,11 +799,6 @@ class ToolExecutor(private val context: Context) {
             "listTerminals" -> com.ai.agent.terminal.TerminalTools.Handler.listTerminals(call.args, context)
             "runOnTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.runOnTerminal(call.args, context)
             "disconnectTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.disconnectTerminal(call.args, context)
-            // v4.0.76: Remote Screen Control
-            "remoteScreenshot" -> RemoteScreenTools.execute(call, context)
-            "remoteClick" -> RemoteScreenTools.execute(call, context)
-            "remoteType" -> RemoteScreenTools.execute(call, context)
-            "remoteKey" -> RemoteScreenTools.execute(call, context)
             // v4.0.28: Wallpaper
             "setWallpaper" -> com.ai.agent.tools.categories.WallpaperTools.execute(call, context, service, database)
             // v4.0.29: On-demand context tools

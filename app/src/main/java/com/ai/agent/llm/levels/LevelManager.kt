@@ -109,13 +109,14 @@ object LevelManager {
         "replyToNotification",
         "getDeviceInfo", "getBluetoothState", "pingHost", "setWallpaper",
         "toggleFlashlight", "getClipboard", "setClipboard",
+        // v4.0.76: Hardware Tools
+        "scanWifiNetworks", "scanBleDevices", "getWifiState", "toggleBluetooth",
+        "listUsbDevices", "getUsbDeviceInfo",
         "saveToKnowledge", "recallKnowledge", "listKnowledge",
         "analyzeScreen", "findElement", "translateText",
         "webSearch", "fetchPageText", "makeHttpRequest",
         "createCustomTool", "listCustomTools", "deleteCustomTool",
         "getConversationHistory", "getFullMemory", "getConversationSummary",
-        // v4.0.76: Remote Screen Control — needs terminal connection
-        "remoteScreenshot", "remoteClick", "remoteType", "remoteKey",
     )
 
     val LEVEL_3_TOOLS: List<String>? = null
