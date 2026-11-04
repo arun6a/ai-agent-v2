@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn  // v4.0.77
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,6 +81,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Button  // v4.0.77
+import androidx.compose.material3.ButtonDefaults  // v4.0.77
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -206,6 +209,11 @@ internal fun SettingsSection(onOpenSystemPromptEditor: () -> Unit = {}) {
         // ===== AI BEHAVIOR (v4.0.75: Prompt architecture + presets) =====
         item {
             AiBehaviorSection(context = context, onToast = { toast = it })
+        }
+
+        // ===== PROACTIVE BEHAVIOR (v4.0.77) =====
+        item {
+            ProactiveBehaviorSection(context = context, onToast = { toast = it })
         }
 
         // ===== VISION =====
@@ -1008,6 +1016,180 @@ private fun AiBehaviorSection(context: android.content.Context, onToast: (String
                     onToast("Max iterations: $it")
                 },
             )
+        }
+    }
+}
+
+// ============================================================================
+// v4.0.77: PROACTIVE BEHAVIOR SECTION — Aira suggests actions based on patterns
+// ============================================================================
+// Master toggle, quiet hours, auto-execute, personality prompt textarea.
+// ============================================================================
+
+@Composable
+private fun ProactiveBehaviorSection(context: android.content.Context, onToast: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    var enabled by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isEnabled(context)) }
+    var autoExecute by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isAutoExecuteEnabled(context)) }
+    var quietStart by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getQuietStart(context)) }
+    var quietEnd by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getQuietEnd(context)) }
+    var tickInterval by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getTickIntervalMin(context)) }
+    var personality by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getPersonality(context)) }
+    var showPersonality by remember { mutableStateOf(false) }
+
+    SettingsGroup(title = "PROACTIVE BEHAVIOR") {
+        AiToggleRow(
+            "Enable Proactive Suggestions",
+            "Aira observes your patterns + suggests actions based on context (time, battery, location).",
+            enabled
+        ) {
+            enabled = it
+            com.ai.agent.proactive.ProactiveSettings.setEnabled(context, it)
+            if (it) {
+                com.ai.agent.proactive.ProactiveScheduler.schedule(context)
+                onToast("Proactive enabled — tick every $tickInterval min")
+            } else {
+                com.ai.agent.proactive.ProactiveScheduler.cancel(context)
+                onToast("Proactive disabled")
+            }
+        }
+
+        if (enabled) {
+            Spacer(Modifier.size(8.dp))
+
+            // Quiet hours
+            Text("Quiet Hours", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.size(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("No suggestions from", color = m3.onSurface, fontSize = 11.sp)
+                SelectorRow(
+                    label = "Start",
+                    options = listOf("20:00", "21:00", "22:00", "23:00", "00:00"),
+                    selected = quietStart,
+                    onSelect = { quietStart = it; com.ai.agent.proactive.ProactiveSettings.setQuietHours(context, it, quietEnd) },
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("until", color = m3.onSurface, fontSize = 11.sp)
+                SelectorRow(
+                    label = "End",
+                    options = listOf("05:00", "06:00", "07:00", "08:00", "09:00"),
+                    selected = quietEnd,
+                    onSelect = { quietEnd = it; com.ai.agent.proactive.ProactiveSettings.setQuietHours(context, quietStart, it) },
+                )
+            }
+
+            Spacer(Modifier.size(8.dp))
+
+            // Tick interval
+            SelectorRow(
+                label = "Check interval (minutes)",
+                options = listOf("1", "5", "10", "15", "30"),
+                selected = tickInterval.toString(),
+                onSelect = {
+                    tickInterval = it.toInt()
+                    com.ai.agent.proactive.ProactiveSettings.setTickIntervalMin(context, it.toInt())
+                    com.ai.agent.proactive.ProactiveScheduler.schedule(context)
+                    onToast("Tick interval: $it min")
+                },
+            )
+
+            Spacer(Modifier.size(8.dp))
+
+            AiToggleRow(
+                "Auto-execute trusted patterns",
+                "Automatically run actions the AI is confident about (e.g. 'play your evening playlist'). OFF = suggest only.",
+                autoExecute
+            ) {
+                autoExecute = it
+                com.ai.agent.proactive.ProactiveSettings.setAutoExecute(context, it)
+                onToast("Auto-execute: $it")
+            }
+
+            Spacer(Modifier.size(8.dp))
+
+            // Personality prompt
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showPersonality = !showPersonality }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (showPersonality) "▼ Proactive Personality" else "▶ Proactive Personality",
+                    color = custom.accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            if (showPersonality) {
+                Text(
+                    "Describe what Aira should proactively do for you in natural language.",
+                    color = custom.fg2,
+                    fontSize = 10.sp,
+                )
+                Spacer(Modifier.size(4.dp))
+                OutlinedTextField(
+                    value = personality,
+                    onValueChange = { personality = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp),
+                    placeholder = { Text("Example: Remind me to call Mom every Sunday 7pm. If battery < 30%, suggest power saving. If I open YouTube after 10pm, suggest I sleep.") },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = m3.onSurface),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = custom.accent,
+                        unfocusedBorderColor = custom.border,
+                    ),
+                )
+                Spacer(Modifier.size(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Button(
+                        onClick = {
+                            com.ai.agent.proactive.ProactiveSettings.setPersonality(context, personality)
+                            onToast("Personality saved (${personality.length} chars)")
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = custom.accent),
+                    ) {
+                        Text("Save", color = Color.White, fontSize = 11.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.size(8.dp))
+
+            // Clear patterns
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        com.ai.agent.proactive.ProactiveObserver.clearAll(context)
+                        onToast("All patterns cleared")
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Clear all learned patterns",
+                    color = androidx.compose.ui.graphics.Color(0xFFEF4444),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }

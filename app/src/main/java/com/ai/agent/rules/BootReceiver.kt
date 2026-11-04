@@ -44,6 +44,14 @@ class BootReceiver : BroadcastReceiver() {
                     val scheduler = RuleScheduler(context)
                     scheduler.scheduleAllTimeRules()
                     Log.i(TAG, "Rescheduled all time rules successfully")
+
+                    // v4.0.77: Restart ProactiveScheduler if proactive is enabled
+                    try {
+                        com.ai.agent.proactive.ProactiveScheduler.schedule(context)
+                        Log.i(TAG, "ProactiveScheduler restarted after boot")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "ProactiveScheduler not started: ${e.message}")
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to restart after boot", e)
                 }

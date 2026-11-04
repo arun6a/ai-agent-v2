@@ -22,11 +22,14 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import com.ai.agent.tools.categories.AppTools
 import com.ai.agent.tools.categories.AsyncTools
+import com.ai.agent.tools.categories.BleAdvancedTools  // v4.0.77
 import com.ai.agent.tools.categories.BrowserTools
 import com.ai.agent.tools.categories.ContactTools
 import com.ai.agent.tools.categories.DeviceTools
 import com.ai.agent.tools.categories.AdvancedHardwareTools  // v4.0.76
 import com.ai.agent.tools.categories.HardwareTools  // v4.0.76
+import com.ai.agent.tools.categories.IrTools  // v4.0.77
+import com.ai.agent.tools.categories.NfcTools  // v4.0.77
 import com.ai.agent.tools.categories.FileTools
 import com.ai.agent.tools.categories.LocationTools
 import com.ai.agent.tools.categories.MediaTools
@@ -81,6 +84,10 @@ class ToolExecutor(private val context: Context) {
             "toggleBluetooth",
             // v4.0.76: Hardware Tools (advanced — USB)
             "listUsbDevices", "getUsbDeviceInfo",
+            // v4.0.77: Hardware Tools (NFC + BLE advanced + IR)
+            "readNfcTag", "writeNfcTag", "listNfcHistory",
+            "findAirTag", "scanBleBeacons", "logBleDevice",
+            "hasIrBlaster", "irSend", "irSendPreset",
             // v3.0.0: speak tool for rules
             "speak",
             // Memory
@@ -246,6 +253,10 @@ class ToolExecutor(private val context: Context) {
             "toggleBluetooth",
             // v4.0.76: Hardware Tools (advanced — USB)
             "listUsbDevices", "getUsbDeviceInfo",
+            // v4.0.77: Hardware Tools (NFC + BLE advanced + IR)
+            "readNfcTag", "writeNfcTag", "listNfcHistory",
+            "findAirTag", "scanBleBeacons", "logBleDevice",
+            "hasIrBlaster", "irSend", "irSendPreset",
             // v3.0.0: speak tool for rules
             "speak",
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
@@ -598,6 +609,18 @@ class ToolExecutor(private val context: Context) {
             "toggleBluetooth" -> HardwareTools.execute(call, context)
             "listUsbDevices" -> AdvancedHardwareTools.execute(call, context)
             "getUsbDeviceInfo" -> AdvancedHardwareTools.execute(call, context)
+            // v4.0.77: NFC Tools
+            "readNfcTag" -> NfcTools.execute(call, context)
+            "writeNfcTag" -> NfcTools.execute(call, context)
+            "listNfcHistory" -> NfcTools.execute(call, context)
+            // v4.0.77: BLE Advanced Tools
+            "findAirTag" -> BleAdvancedTools.execute(call, context)
+            "scanBleBeacons" -> BleAdvancedTools.execute(call, context)
+            "logBleDevice" -> BleAdvancedTools.execute(call, context)
+            // v4.0.77: IR Tools (Xiaomi/Redmi/Poco only)
+            "hasIrBlaster" -> IrTools.execute(call, context)
+            "irSend" -> IrTools.execute(call, context)
+            "irSendPreset" -> IrTools.execute(call, context)
             "mediaPlayPause" -> MediaTools.execute(call, context, service, database)
             "mediaNext" -> MediaTools.execute(call, context, service, database)
             "mediaPrevious" -> MediaTools.execute(call, context, service, database)

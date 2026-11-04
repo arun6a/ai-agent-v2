@@ -112,6 +112,10 @@ object LevelManager {
         // v4.0.76: Hardware Tools
         "scanWifiNetworks", "scanBleDevices", "getWifiState", "toggleBluetooth",
         "listUsbDevices", "getUsbDeviceInfo",
+        // v4.0.77: Hardware Tools (NFC + BLE advanced + IR)
+        "readNfcTag", "writeNfcTag", "listNfcHistory",
+        "findAirTag", "scanBleBeacons", "logBleDevice",
+        "hasIrBlaster", "irSend", "irSendPreset",
         "saveToKnowledge", "recallKnowledge", "listKnowledge",
         "analyzeScreen", "findElement", "translateText",
         "webSearch", "fetchPageText", "makeHttpRequest",

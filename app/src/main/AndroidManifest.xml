@@ -43,6 +43,13 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <!-- v4.0.77: NFC -->
+    <uses-permission android:name="android.permission.NFC" />
+    <!-- v4.0.77: IR Blaster (Xiaomi/Redmi/Poco only) -->
+    <uses-permission android:name="android.permission.CONSUMER_IR_SERVICE" />
+    <!-- v4.0.77: Schedule exact alarms (for ProactiveScheduler) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- Wake lock (keeps CPU alive for background rules + waitAndContinue) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- v4.0.30: Vibrate (haptic feedback for rules + alerts) -->
@@ -351,6 +358,15 @@
             <intent-filter>
                 <action android:name="android.intent.action.SCREEN_ON" />
                 <action android:name="android.intent.action.SCREEN_OFF" />
+            </intent-filter>
+        </receiver>
+
+        <!-- v4.0.77: Proactive Behavior — periodic tick receiver -->
+        <receiver
+            android:name=".proactive.ProactiveAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ai.agent.PROACTIVE_TICK" />
             </intent-filter>
         </receiver>
 
