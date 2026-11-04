@@ -517,6 +517,16 @@ object AIProvider {
     const val DEFAULT_USE_CONV_COMPRESSION = false  // Smart mode only
     const val DEFAULT_MAX_ITERATIONS = 80
 
+    // v4.0.79: MCP (Model Context Protocol) flags
+    private const val KEY_USE_MCP = "v4_flag_use_mcp"
+    private const val KEY_MCP_AUTO_DISCOVER = "v4_flag_mcp_auto_discover"
+    private const val KEY_MCP_AUTO_CONNECT = "v4_flag_mcp_auto_connect"
+    private const val KEY_MCP_CONSENT = "v4_flag_mcp_consent"
+    const val DEFAULT_USE_MCP = false  // OFF by default — opt-in
+    const val DEFAULT_MCP_AUTO_DISCOVER = true
+    const val DEFAULT_MCP_AUTO_CONNECT = false  // OFF — manual approval for safety
+    const val DEFAULT_MCP_CONSENT = true
+
     // === Flag getters ===
     fun isCapabilityLevelsEnabled(context: Context): Boolean =
         getPrefs(context).getBoolean(KEY_USE_CAPABILITY_LEVELS, DEFAULT_USE_CAPABILITY_LEVELS)
@@ -524,6 +534,14 @@ object AIProvider {
         getPrefs(context).getBoolean(KEY_USE_COMBINED_APPROACH, DEFAULT_USE_COMBINED_APPROACH)
     fun isOnDemandEnabled(context: Context): Boolean =
         getPrefs(context).getBoolean(KEY_USE_ON_DEMAND, DEFAULT_USE_ON_DEMAND)
+    fun isMcpEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_USE_MCP, DEFAULT_USE_MCP)
+    fun isMcpAutoDiscoverEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_MCP_AUTO_DISCOVER, DEFAULT_MCP_AUTO_DISCOVER)
+    fun isMcpAutoConnectEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_MCP_AUTO_CONNECT, DEFAULT_MCP_AUTO_CONNECT)
+    fun isMcpConsentEnabled(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_MCP_CONSENT, DEFAULT_MCP_CONSENT)
     fun isPatternDetectionEnabled(context: Context): Boolean =
         getPrefs(context).getBoolean(KEY_USE_PATTERN_DETECTION, DEFAULT_USE_PATTERN_DETECTION)
     fun isLlmIntentEnabled(context: Context): Boolean =
@@ -586,6 +604,18 @@ object AIProvider {
     }
     fun setMaxIterations(context: Context, v: Int) {
         getPrefs(context).edit().putInt(KEY_MAX_ITERATIONS, v).apply()
+    }
+    fun setMcpEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_USE_MCP, v).apply()
+    }
+    fun setMcpAutoDiscoverEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_MCP_AUTO_DISCOVER, v).apply()
+    }
+    fun setMcpAutoConnectEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_MCP_AUTO_CONNECT, v).apply()
+    }
+    fun setMcpConsentEnabled(context: Context, v: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_MCP_CONSENT, v).apply()
     }
 
     // === Preset application ===

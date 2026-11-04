@@ -30,6 +30,7 @@ import com.ai.agent.tools.categories.AdvancedHardwareTools  // v4.0.76
 import com.ai.agent.tools.categories.HardwareTools  // v4.0.76
 import com.ai.agent.tools.categories.IrTools  // v4.0.77
 import com.ai.agent.tools.categories.NfcTools  // v4.0.77
+import com.ai.agent.mcp.McpTools  // v4.0.79
 import com.ai.agent.tools.categories.FileTools
 import com.ai.agent.tools.categories.LocationTools
 import com.ai.agent.tools.categories.MediaTools
@@ -93,6 +94,9 @@ class ToolExecutor(private val context: Context) {
             // Memory
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
             "recallConversationStep", "summarizeProgress",
+            // v4.0.79: MCP (Model Context Protocol) tools
+            "searchMcpServers", "getMcpServerInfo", "connectMcpServer",
+            "disconnectMcpServer", "listMcpServers", "listMcpTools", "callMcpTool",
             "saveToKnowledge", "recallKnowledge", "listKnowledge",
             "getClipboard", "setClipboard",
             // Location
@@ -261,6 +265,9 @@ class ToolExecutor(private val context: Context) {
             "speak",
             "remember", "recall", "recallAll", "recallSimilar", "searchMemory", "recallMemory",
             "recallConversationStep", "summarizeProgress",
+            // v4.0.79: MCP (Model Context Protocol) tools
+            "searchMcpServers", "getMcpServerInfo", "connectMcpServer",
+            "disconnectMcpServer", "listMcpServers", "listMcpTools", "callMcpTool",
             "getClipboard", "setClipboard",
             "getCurrentLocation", "openMaps", "getWeather",
             "createRule", "listRules", "deleteRule", "modifyRule",
@@ -796,6 +803,14 @@ class ToolExecutor(private val context: Context) {
             "recallMemory" -> MemoryTools.execute(call, context, service, database)  // v4.0.74
             "recallConversationStep" -> MemoryTools.execute(call, context, service, database)  // v4.0.76
             "summarizeProgress" -> MemoryTools.execute(call, context, service, database)  // v4.0.76
+            // ==================== MCP (v4.0.79) ====================
+            "searchMcpServers" -> McpTools.execute(call, context)
+            "getMcpServerInfo" -> McpTools.execute(call, context)
+            "connectMcpServer" -> McpTools.execute(call, context)
+            "disconnectMcpServer" -> McpTools.execute(call, context)
+            "listMcpServers" -> McpTools.execute(call, context)
+            "listMcpTools" -> McpTools.execute(call, context)
+            "callMcpTool" -> McpTools.execute(call, context)
             // ==================== KNOWLEDGE (v6.0.0) ====================
             "saveToKnowledge" -> MemoryTools.execute(call, context, service, database)
             "recallKnowledge" -> MemoryTools.execute(call, context, service, database)

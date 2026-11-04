@@ -56,6 +56,9 @@ object LevelManager {
         "todoWrite", "delegateTask", "speak", "complete",
         "listTerminals", "listSkills", "searchMemory",
         "recallConversationStep", "summarizeProgress",  // v4.0.76: conversation memory
+        // v4.0.79: MCP (Model Context Protocol) tools
+        "searchMcpServers", "getMcpServerInfo", "connectMcpServer",
+        "disconnectMcpServer", "listMcpServers", "listMcpTools", "callMcpTool",
     )
 
     // v4.0.74: Quick-access tools — always available (most common actions).
@@ -81,6 +84,9 @@ object LevelManager {
         "createRule", "listRules", "deleteRule", "modifyRule",
         "remember", "recall", "recallSimilar", "recallAll", "searchMemory", "recallMemory",
         "recallConversationStep", "summarizeProgress",
+        // v4.0.79: MCP tools — always available (when MCP is enabled)
+        "searchMcpServers", "getMcpServerInfo", "connectMcpServer",
+        "disconnectMcpServer", "listMcpServers", "listMcpTools", "callMcpTool",
         "writeFile", "readFile", "listFiles",
         "searchTools", "escalateLevel", "getSkill", "listSkills",
         "listNotifications", "listTerminals",
