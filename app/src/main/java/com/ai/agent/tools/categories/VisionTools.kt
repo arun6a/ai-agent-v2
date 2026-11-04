@@ -123,7 +123,7 @@ object VisionTools {
                 val authScheme = endpointInfo?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
                 when (authScheme) {
                     ProviderEndpoints.AuthScheme.BEARER -> {
-                        if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                        if (key.apiKey.isNotEmpty() ) {
                             requestBuilder.header("Authorization", "Bearer ${key.apiKey}")
                         }
                     }

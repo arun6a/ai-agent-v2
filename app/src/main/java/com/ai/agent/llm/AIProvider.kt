@@ -9,7 +9,6 @@ import android.content.SharedPreferences
  * Supported providers:
  * - OpenRouter: Free models (Nemotron 120B, Cohere, etc.). OpenAI-compatible. https://openrouter.ai
  * - Gemini: Google's AI. Free tier available. https://aistudio.google.com
- * - Z.ai Proxy: Uses the sandbox proxy (no API key needed, but sandbox must be running)
  * - Custom: User enters any OpenAI-compatible endpoint + key + model
  *
  * The config is stored in SharedPreferences so it persists across app restarts.
@@ -17,7 +16,7 @@ import android.content.SharedPreferences
 object AIProvider {
 
     private const val PREFS = "ai_agent_provider"
-    private const val KEY_PROVIDER = "provider"          // "openrouter" | "gemini" | "zai" | "custom"
+    private const val KEY_PROVIDER = "provider"          // "openrouter" | "gemini" | "zai_direct" | "custom"
     private const val KEY_API_KEY = "api_key"
     private const val KEY_ENDPOINT = "endpoint"
     private const val KEY_MODEL = "model"

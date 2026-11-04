@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
  * v3.3.0: ProviderModelsStore — caches the models each saved API key can actually access.
  *
  * When a user adds/edits an API key in ApiKeyStore, we fetch {baseUrl}/v1/models
- * (or the sandbox proxy's /v1/models endpoint) with their key and cache the list
+ * (or the provider's /v1/models endpoint) with their key and cache the list
  * of model IDs. This lets the Model Catalog show "✅ Available with: {alias}"
  * badges on models the user's key actually has access to, and lets the user
  * filter the catalog down to "My Available Models".
@@ -45,7 +45,7 @@ object ProviderModelsStore {
 
     /**
      * Fetch the list of models accessible by a specific API key.
-     * Hits {baseUrl}/v1/models with the key's auth header (or the sandbox
+     * Hits {baseUrl}/v1/models with the key's auth header (or the provider's
      * proxy URL which returns a curated list).
      *
      * Returns the list of model IDs on success, empty list on failure.
@@ -217,15 +217,10 @@ object ProviderModelsStore {
         // models.dev didn't include an `api` field for them.
         //
         // Resolution order:
-        //   1. Sandbox proxy URL (contains "/api/llm/proxy") → POST-only, no
-        //      /v1/models endpoint. Return curated list.
-        //   2. ProviderEndpoint for this providerId → use its modelsEndpoint URL
+        //   1. ProviderEndpoint for this providerId → use its modelsEndpoint URL
         //      with the correct auth scheme.
-        //   3. Fallback: append "/models" or "/v1/models" to the user-provided
+        //   2. Fallback: append "/models" or "/v1/models" to the user-provided
         //      baseUrl (best effort for custom providers).
-        if (key.baseUrl.contains("/api/llm/proxy")) {
-            return listOf("glm-4.6", "glm-4-flash", "glm-4.5v", "glm-4.1v")
-        }
 
         val endpoint = ProviderEndpoints.byId(key.providerId)
         val url = endpoint?.modelsEndpoint ?: buildModelsUrlFromBase(key.baseUrl)
@@ -238,7 +233,7 @@ object ProviderModelsStore {
         val request = okhttp3.Request.Builder().url(url).apply {
             when (authScheme) {
                 ProviderEndpoints.AuthScheme.BEARER -> {
-                    if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                    if (key.apiKey.isNotEmpty() ) {
                         header("Authorization", "Bearer ${key.apiKey}")
                     }
                 }

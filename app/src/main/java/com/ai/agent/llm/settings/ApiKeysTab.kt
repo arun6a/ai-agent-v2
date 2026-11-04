@@ -538,7 +538,7 @@ private suspend fun testApiKey(baseUrl: String, apiKey: String, modelsEndpoint: 
 /**
  * v3.2.7: Test a SAVED API key (from ApiKeyStore) — actually sends a real
  * chat completion request to the key's baseUrl + apiKey and reports
- * success/failure with the response. Works for the sandbox prefill key too.
+ * success/failure with the response.
  */
 private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
     return withContext(Dispatchers.IO) {
@@ -548,9 +548,8 @@ private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
                 .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
 
-            // v3.2.8: Sandbox proxy (/api/llm/proxy) is POST-only (chat completions).
+            // v4.0.83: Sandbox proxy removed. All keys use standard /v1/models endpoint.
             // v3.3.1: Look up the provider's authScheme via ProviderEndpoints.
-            val isSandboxProxy = key.baseUrl.contains("/api/llm/proxy")
             val endpoint = ProviderEndpoints.byId(key.providerId)
             val authScheme = endpoint?.authScheme ?: ProviderEndpoints.AuthScheme.BEARER
 
@@ -558,7 +557,7 @@ private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
             fun okhttp3.Request.Builder.applyAuth(): okhttp3.Request.Builder = this.apply {
                 when (authScheme) {
                     ProviderEndpoints.AuthScheme.BEARER -> {
-                        if (key.apiKey.isNotEmpty() && key.apiKey != "sandbox") {
+                        if (key.apiKey.isNotEmpty()) {
                             header("Authorization", "Bearer ${key.apiKey}")
                         }
                     }
@@ -576,59 +575,30 @@ private suspend fun testApiKeyConnection(key: ApiKeyStore.ApiKey): String {
                 }
             }
 
-            val request = if (isSandboxProxy) {
-                val body = org.json.JSONObject().apply {
-                    put("model", "glm-4.6")
-                    put("stream", false)
-                    put("messages", org.json.JSONArray().apply {
-                        put(org.json.JSONObject().apply {
-                            put("role", "user")
-                            put("content", "ping")
-                        })
-                    })
-                }
-                okhttp3.Request.Builder()
-                    .url(key.baseUrl)
-                    .header("Content-Type", "application/json")
-                    .applyAuth()
-                    .post(body.toString().toRequestBody("application/json".toMediaType()))
-                    .build()
-            } else {
-                // v3.3.1: Use the registry's modelsEndpoint if available, else fall back.
-                val url = endpoint?.modelsEndpoint ?: run {
-                    var base = key.baseUrl.trimEnd('/')
-                    base = base.replace(Regex("/chat/completions$"), "")
-                    base = base.replace(Regex("/messages$"), "")
-                    if (base.endsWith("/v1")) "${base}/models" else "${base}/v1/models"
-                }
-                // Append ?key=<key> for Gemini-style query-param auth.
-                val finalUrl = if (authScheme == ProviderEndpoints.AuthScheme.QUERY_PARAM
-                    && key.apiKey.isNotEmpty() && !url.contains("key=")) {
-                    "$url${if (url.contains("?")) "&" else "?"}key=${key.apiKey}"
-                } else url
-                okhttp3.Request.Builder()
-                    .url(finalUrl)
-                    .applyAuth()
-                    .build()
+            // Use the registry's modelsEndpoint if available, else fall back.
+            val url = endpoint?.modelsEndpoint ?: run {
+                var base = key.baseUrl.trimEnd('/')
+                base = base.replace(Regex("/chat/completions$"), "")
+                base = base.replace(Regex("/messages$"), "")
+                if (base.endsWith("/v1")) "${base}/models" else "${base}/v1/models"
             }
+            // Append ?key=<key> for Gemini-style query-param auth.
+            val finalUrl = if (authScheme == ProviderEndpoints.AuthScheme.QUERY_PARAM
+                && key.apiKey.isNotEmpty() && !url.contains("key=")) {
+                "$url${if (url.contains("?")) "&" else "?"}key=${key.apiKey}"
+            } else url
+            val request = okhttp3.Request.Builder()
+                .url(finalUrl)
+                .applyAuth()
+                .build()
+
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
                 val respBody = response.body?.string() ?: ""
-                if (isSandboxProxy) {
-                    val reply = try {
-                        org.json.JSONObject(respBody).optJSONArray("choices")
-                            ?.optJSONObject(0)?.optJSONObject("message")
-                            ?.optString("content", "") ?: ""
-                    } catch (_: Exception) { "" }
-                    val preview = if (reply.length > 40) reply.take(40) + "..." else reply
-                    if (reply.isNotEmpty()) "✅ Connected! Reply: $preview"
-                    else "✅ Connected (HTTP ${response.code})"
-                } else {
-                    val json = org.json.JSONObject(respBody)
-                    val count = (json.optJSONArray("data") ?: json.optJSONArray("models"))?.length() ?: -1
-                    if (count >= 0) "✅ Connected! $count models available"
-                    else "✅ Connected (HTTP ${response.code})"
-                }
+                val json = org.json.JSONObject(respBody)
+                val count = (json.optJSONArray("data") ?: json.optJSONArray("models"))?.length() ?: -1
+                if (count >= 0) "✅ Connected! $count models available"
+                else "✅ Connected (HTTP ${response.code})"
             } else {
                 "❌ HTTP ${response.code}: ${response.message}"
             }

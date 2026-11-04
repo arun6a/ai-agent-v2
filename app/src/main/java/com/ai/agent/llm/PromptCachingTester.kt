@@ -170,7 +170,7 @@ object PromptCachingTester {
             .apply {
                 when (authScheme) {
                     ProviderEndpoints.AuthScheme.BEARER -> {
-                        if (apiKey.apiKey.isNotEmpty() && apiKey.apiKey != "sandbox") {
+                        if (apiKey.apiKey.isNotEmpty() ) {
                             header("Authorization", "Bearer ${apiKey.apiKey}")
                         }
                     }

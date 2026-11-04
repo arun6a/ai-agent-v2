@@ -18,7 +18,7 @@ import com.ai.agent.llm.ApiUsageTracker
  * LLM client that supports multiple AI providers:
  * - OpenRouter (free models, OpenAI-compatible)
  * - Google Gemini (free tier, different format)
- * - Z.ai proxy (sandbox, no API key)
+ * - Z.ai Direct (official Z.ai API, OpenAI-compatible)
  * - Custom (any OpenAI-compatible endpoint)
  *
  * The provider config is read from SharedPreferences (AIProvider).
@@ -171,11 +171,8 @@ class LLMClient(private val context: Context) {
                             requestBuilder.header("Authorization", "Bearer $apiKey")
                         }
                     }
-                    // v3.2.4: "zai" sandbox provider removed. Only "zai_direct" + "custom" remain.
-                    // If user has a custom API key with sandbox URL, it uses "custom" provider path.
-                    "zai" -> {
-                        // Legacy fallback — treat as custom (no auth header)
-                    }
+                    // v4.0.83: "zai" sandbox provider fully removed.
+                    // Only "zai_direct" (official Z.ai API) + "custom" remain.
                 }
 
                 val request = requestBuilder.post(requestBody.toRequestBody(jsonMediaType)).build()
@@ -548,7 +545,7 @@ class LLMClient(private val context: Context) {
             // WITHOUT explicit reasoning — the model just reacted.
             //
             // Now ALL OpenAI-compatible providers get reasoning params:
-            //   - Z.ai (zai, zai_direct, custom proxy): uses "thinking" field
+            //   - Z.ai (zai_direct, custom): uses "thinking" field
             //   - OpenAI o-series (o1, o3, o4): uses "reasoning_effort" field
             //   - OpenRouter/Cline reasoning models (deepseek-r1, o1, o3): "reasoning"
             //   - Others (Groq, Together, etc.): field is ignored harmlessly
