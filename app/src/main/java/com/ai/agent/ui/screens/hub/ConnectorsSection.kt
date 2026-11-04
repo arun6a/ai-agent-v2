@@ -27,6 +27,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +69,11 @@ fun ConnectorsSection() {
     val m3 = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
 
+    var mcpEnabled by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpEnabled(context)) }
+    var autoDiscover by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpAutoDiscoverEnabled(context)) }
+    var autoConnect by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpAutoConnectEnabled(context)) }
+    var consent by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpConsentEnabled(context)) }
+
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<McpSearchResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
@@ -95,23 +102,99 @@ fun ConnectorsSection() {
             )
         }
 
-        // === MCP Toggle status ===
+        // === MCP Settings Toggles ===
         item {
-            val mcpEnabled = com.ai.agent.llm.AIProvider.isMcpEnabled(context)
-            if (!mcpEnabled) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(custom.surface2, RoundedCornerShape(12.dp))
+                    .border(1.dp, custom.border, RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Master toggle
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(custom.surface2, RoundedCornerShape(12.dp))
-                        .border(1.dp, custom.border, RoundedCornerShape(12.dp))
-                        .padding(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = custom.fg2, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.size(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("MCP is disabled", color = m3.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("Enable in Settings → AI Behavior → MCP", color = custom.fg2, fontSize = 10.sp)
+                        Text("Enable MCP", color = m3.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("Connect to 47,000+ external MCP servers for unlimited tools.", color = custom.fg2, fontSize = 10.sp, lineHeight = 13.sp)
+                    }
+                    Switch(
+                        checked = mcpEnabled,
+                        onCheckedChange = {
+                            mcpEnabled = it
+                            com.ai.agent.llm.AIProvider.setMcpEnabled(context, it)
+                        },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = custom.accent,
+                            uncheckedThumbColor = custom.fg3,
+                            uncheckedTrackColor = custom.surface3,
+                        ),
+                    )
+                }
+
+                if (mcpEnabled) {
+                    Spacer(Modifier.size(4.dp))
+                    Text("Options", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+
+                    // Auto-discover
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-discover servers", color = m3.onSurface, fontSize = 11.sp)
+                            Text("Brain searches for MCP servers when it needs a tool.", color = custom.fg2, fontSize = 9.sp)
+                        }
+                        Switch(
+                            checked = autoDiscover,
+                            onCheckedChange = { autoDiscover = it; com.ai.agent.llm.AIProvider.setMcpAutoDiscoverEnabled(context, it) },
+                            colors = androidx.compose.material3.SwitchDefaults.colors(
+                                checkedThumbColor = Color.White, checkedTrackColor = custom.accent,
+                                uncheckedThumbColor = custom.fg3, uncheckedTrackColor = custom.surface3,
+                            ),
+                        )
+                    }
+
+                    // Auto-connect
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-connect official servers", color = m3.onSurface, fontSize = 11.sp)
+                            Text("Auto-connect to Google, Notion, Stripe. Community needs approval.", color = custom.fg2, fontSize = 9.sp)
+                        }
+                        Switch(
+                            checked = autoConnect,
+                            onCheckedChange = { autoConnect = it; com.ai.agent.llm.AIProvider.setMcpAutoConnectEnabled(context, it) },
+                            colors = androidx.compose.material3.SwitchDefaults.colors(
+                                checkedThumbColor = Color.White, checkedTrackColor = custom.accent,
+                                uncheckedThumbColor = custom.fg3, uncheckedTrackColor = custom.surface3,
+                            ),
+                        )
+                    }
+
+                    // Consent
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Consent for sensitive tools", color = m3.onSurface, fontSize = 11.sp)
+                            Text("Ask before calling MCP tools that send/delete/modify data.", color = custom.fg2, fontSize = 9.sp)
+                        }
+                        Switch(
+                            checked = consent,
+                            onCheckedChange = { consent = it; com.ai.agent.llm.AIProvider.setMcpConsentEnabled(context, it) },
+                            colors = androidx.compose.material3.SwitchDefaults.colors(
+                                checkedThumbColor = Color.White, checkedTrackColor = custom.accent,
+                                uncheckedThumbColor = custom.fg3, uncheckedTrackColor = custom.surface3,
+                            ),
+                        )
                     }
                 }
             }

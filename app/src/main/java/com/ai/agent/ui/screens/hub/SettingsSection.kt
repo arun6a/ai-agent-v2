@@ -1033,11 +1033,15 @@ private fun ProactiveBehaviorSection(context: android.content.Context, onToast: 
 
     var enabled by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isEnabled(context)) }
     var autoExecute by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isAutoExecuteEnabled(context)) }
+    var timePatterns by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isTimePatternsEnabled(context)) }
+    var notifPatterns by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isNotifPatternsEnabled(context)) }
+    var locationPatterns by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.isLocationPatternsEnabled(context)) }
     var quietStart by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getQuietStart(context)) }
     var quietEnd by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getQuietEnd(context)) }
     var tickInterval by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getTickIntervalMin(context)) }
     var personality by remember { mutableStateOf(com.ai.agent.proactive.ProactiveSettings.getPersonality(context)) }
     var showPersonality by remember { mutableStateOf(false) }
+    var showPatterns by remember { mutableStateOf(false) }
 
     SettingsGroup(title = "PROACTIVE BEHAVIOR") {
         AiToggleRow(
@@ -1057,6 +1061,21 @@ private fun ProactiveBehaviorSection(context: android.content.Context, onToast: 
         }
 
         if (enabled) {
+            Spacer(Modifier.size(8.dp))
+
+            // v4.0.81: Suggestion type sub-toggles
+            Text("Suggestion Types", color = custom.fg2, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.size(4.dp))
+            AiToggleRow("Time-based patterns",
+                "Track when you wake up, open apps, use phone at certain hours.",
+                timePatterns) { timePatterns = it; com.ai.agent.proactive.ProactiveSettings.setTimePatternsEnabled(context, it); onToast("Time patterns: $it") }
+            AiToggleRow("Notification patterns",
+                "Track which apps send notifications + when. Helps suggest 'check WhatsApp'.",
+                notifPatterns) { notifPatterns = it; com.ai.agent.proactive.ProactiveSettings.setNotifPatternsEnabled(context, it); onToast("Notif patterns: $it") }
+            AiToggleRow("Location patterns",
+                "Track where you are at certain times (gym, home, work). Uses GPS — battery cost.",
+                locationPatterns) { locationPatterns = it; com.ai.agent.proactive.ProactiveSettings.setLocationPatternsEnabled(context, it); onToast("Location patterns: $it") }
+
             Spacer(Modifier.size(8.dp))
 
             // Quiet hours
@@ -1173,6 +1192,49 @@ private fun ProactiveBehaviorSection(context: android.content.Context, onToast: 
             Spacer(Modifier.size(8.dp))
 
             // Clear patterns
+            // v4.0.81: Review learned patterns
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showPatterns = !showPatterns }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (showPatterns) "▼ Review learned patterns" else "▶ Review learned patterns",
+                    color = custom.accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+            if (showPatterns) {
+                val patterns = remember { com.ai.agent.proactive.ProactiveObserver.getEstablishedPatterns(context) }
+                if (patterns.isEmpty()) {
+                    Text(
+                        "No established patterns yet. Patterns appear after 5+ occurrences across 3+ days.",
+                        color = custom.fg2,
+                        fontSize = 10.sp,
+                        lineHeight = 13.sp,
+                    )
+                } else {
+                    for (p in patterns) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("• ", color = custom.fg3, fontSize = 10.sp)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("${p.trigger} → ${p.suggestedAction}",
+                                    color = m3.onSurface, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                Text("${p.occurrences}x | days: ${p.daysActive.size} | dismissals: ${p.dismissals}",
+                                    color = custom.fg2, fontSize = 9.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Clear all patterns
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -33,6 +33,10 @@ object ProactiveSettings {
     private const val KEY_MAX_DISMISSALS = "max_dismissals"
     private const val KEY_TICK_INTERVAL_MIN = "tick_interval_min"
     private const val KEY_PERSONALITY = "personality"
+    // v4.0.81: Suggestion type sub-toggles
+    private const val KEY_TIME_PATTERNS = "time_patterns"
+    private const val KEY_NOTIF_PATTERNS = "notif_patterns"
+    private const val KEY_LOCATION_PATTERNS = "location_patterns"
 
     const val DEFAULT_ENABLED = false
     const val DEFAULT_QUIET_START = "22:00"
@@ -42,6 +46,9 @@ object ProactiveSettings {
     const val DEFAULT_MAX_DISMISSALS = 3
     const val DEFAULT_TICK_INTERVAL_MIN = 5
     const val DEFAULT_PERSONALITY = "You are Aira, a helpful phone assistant. Suggest actions that would be useful to the user based on context (time, battery, location, recent activity). Be brief and relevant. Don't suggest trivial things."
+    const val DEFAULT_TIME_PATTERNS = true
+    const val DEFAULT_NOTIF_PATTERNS = true
+    const val DEFAULT_LOCATION_PATTERNS = false  // OFF — GPS cost + privacy
 
     fun isEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -104,6 +111,29 @@ object ProactiveSettings {
     fun setPersonality(context: Context, personality: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_PERSONALITY, personality).apply()
+    }
+
+    // v4.0.81: Suggestion type sub-toggles
+    fun isTimePatternsEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_TIME_PATTERNS, DEFAULT_TIME_PATTERNS)
+    fun setTimePatternsEnabled(context: Context, v: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_TIME_PATTERNS, v).apply()
+    }
+    fun isNotifPatternsEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NOTIF_PATTERNS, DEFAULT_NOTIF_PATTERNS)
+    fun setNotifPatternsEnabled(context: Context, v: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_NOTIF_PATTERNS, v).apply()
+    }
+    fun isLocationPatternsEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOCATION_PATTERNS, DEFAULT_LOCATION_PATTERNS)
+    fun setLocationPatternsEnabled(context: Context, v: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_LOCATION_PATTERNS, v).apply()
     }
 
     /**
