@@ -25,10 +25,10 @@ data class McpServerConfig(
     val authType: String = "none",  // "none", "bearer", "oauth"
     val bearerToken: String = "",   // for bearer auth
     // OAuth tokens (for oauth auth):
-    val accessToken: String = "",
-    val refreshToken: String = "",
-    val tokenExpiresAt: Long = 0L,  // epoch millis
-    val clientId: String = "",     // from Dynamic Client Registration
+    var accessToken: String = "",
+    var refreshToken: String = "",
+    var tokenExpiresAt: Long = 0L,  // epoch millis
+    var clientId: String = "",     // from Dynamic Client Registration
     // State:
     var connected: Boolean = false,
     var tools: List<McpToolInfo> = emptyList(),

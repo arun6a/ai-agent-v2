@@ -34,6 +34,17 @@ class AppOpenReceiver : BroadcastReceiver() {
             else -> return
         }
         Log.i(TAG, "App $triggerType: $packageName")
+
+        // v4.0.80: GAP 4 FIX — Record app open pattern with hour for proactive observer
+        if (triggerType == "app_opened") {
+            try {
+                val hour = java.text.SimpleDateFormat("HH", java.util.Locale.US).format(java.util.Date())
+                com.ai.agent.proactive.ProactiveObserver.recordTrigger(
+                    context, "app:$packageName:$hour", null
+                )
+            } catch (_: Exception) {}
+        }
+
         triggerRules(context, triggerType, packageName)
     }
 

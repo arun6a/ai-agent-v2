@@ -196,6 +196,25 @@ object CustomTools {
                 command
             }
 
+            // v4.0.80: BUG FIX — Sandbox custom shell tools.
+            // Block dangerous commands that could harm the system.
+            val blockedPatterns = listOf(
+                "rm -rf /", "rm -rf /sdcard", "rm -rf /storage",
+                "mkfs", "dd if=", "> /dev/sd", "format",
+                ":(){ :|:& };:", "fork bomb",
+                "shutdown", "reboot", "halt",
+                "chmod 777 /", "chown -R root",
+            )
+            val cmdLower = finalCommand.lowercase()
+            for (blocked in blockedPatterns) {
+                if (cmdLower.contains(blocked.lowercase())) {
+                    Log.w(TAG, "Blocked dangerous command in custom tool '${tool.name}': $blocked")
+                    return ToolExecutor.ToolResult(false,
+                        "⚠️ Blocked: Command contains '$blocked'. " +
+                        "Custom tools cannot execute dangerous system commands.")
+                }
+            }
+
             Log.i(TAG, "Executing custom shell tool '${tool.name}': $finalCommand")
             val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", finalCommand))
             val output = process.inputStream.bufferedReader().readText()

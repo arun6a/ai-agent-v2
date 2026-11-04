@@ -43,7 +43,8 @@ class LLMClient(private val context: Context) {
 
     data class LLMResponse(
         val reply: String,
-        val toolCalls: List<ToolCall>
+        val toolCalls: List<ToolCall>,
+        val latencyMs: Int = 0  // v4.0.80: actual API call latency
     )
 
     data class ToolCall(
@@ -426,10 +427,12 @@ class LLMClient(private val context: Context) {
             // Apply this binding to AIProvider (so chat() uses it).
             SavedModelsStore.applyBindingForFailover(context, pickedModel.id, binding.id)
             LogCapture.i("LLMClient", "Failover: trying binding ${binding.providerName} (#${binding.priority}) for ${pickedModel.modelName}")
+            val _callStart = System.currentTimeMillis()
             val resp = chat(userMessage, systemPrompt, toolFilter)
+            val _latency = (System.currentTimeMillis() - _callStart).toInt()
             if (resp.reply.isNotEmpty() && !isPermanentFailure(resp)) {
-                // Success — record + return.
-                BindingHealthStore.recordSuccess(binding.id, 0, context)
+                // v4.0.80: FIX — pass actual latency (was hardcoded 0).
+                BindingHealthStore.recordSuccess(binding.id, _latency.toLong(), context)
                 return@withContext resp
             }
             // Permanent failure — record + try next.
@@ -447,9 +450,11 @@ class LLMClient(private val context: Context) {
                 val fallbackBindings = fallbackModel.activeBindings()
                 for (binding in fallbackBindings) {
                     SavedModelsStore.applyBindingForFailover(context, fallbackModel.id, binding.id)
+                    val _fbStart = System.currentTimeMillis()
                     val resp = chat(userMessage, systemPrompt, toolFilter)
+                    val _fbLatency = (System.currentTimeMillis() - _fbStart).toInt()
                     if (resp.reply.isNotEmpty() && !isPermanentFailure(resp)) {
-                        BindingHealthStore.recordSuccess(binding.id, 0, context)
+                        BindingHealthStore.recordSuccess(binding.id, _fbLatency.toLong(), context)
                         Log.i("LLMClient", "Cross-model failover succeeded with ${fallbackModel.modelName}")
                         return@withContext resp
                     }
@@ -485,7 +490,7 @@ class LLMClient(private val context: Context) {
         if (isPermanentFailure(resp)) {
             BindingHealthStore.recordFailure(active.id, resp.reply.take(100), context)
         } else if (resp.reply.isNotEmpty()) {
-            BindingHealthStore.recordSuccess(active.id, 0, context)
+            BindingHealthStore.recordSuccess(active.id, resp.latencyMs.toLong(), context)
         }
     }
 

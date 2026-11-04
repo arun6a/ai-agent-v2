@@ -56,6 +56,13 @@ class BatteryRuleReceiver : BroadcastReceiver() {
                 val percent = if (level >= 0 && scale > 0) (level * 100 / scale) else -1
                 if (percent < 0) return
 
+                // v4.0.80: GAP 4 FIX — Record battery pattern for proactive observer
+                try {
+                    com.ai.agent.proactive.ProactiveObserver.recordTrigger(
+                        context, "battery:$percent", null
+                    )
+                } catch (_: Exception) {}
+
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 rules.filter { it.triggerType == "battery_low" }.forEach { rule ->
                     val threshold = rule.triggerValue.toIntOrNull() ?: return@forEach  // skip invalid

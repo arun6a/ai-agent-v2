@@ -790,6 +790,40 @@ object ToolSchemas {
             } catch (e: Exception) {
                 // Ignore — custom tools are optional
             }
+
+            // v4.0.80: GAP 1 FIX — Auto-inject MCP tools from connected servers.
+            // This lets the brain call mcp__server__tool directly via native
+            // function calling, without needing callMcpTool() explicitly.
+            try {
+                if (com.ai.agent.llm.AIProvider.isMcpEnabled(context)) {
+                    val mcpTools = com.ai.agent.mcp.McpManager.getAllTools()
+                    for ((serverName, tool) in mcpTools) {
+                        val namespacedName = "mcp__${serverName}__${tool.name}"
+                        // If a filter is applied, check if the namespaced name is in it
+                        if (filter != null && namespacedName !in filter) continue
+                        val function = JSONObject()
+                            .put("name", namespacedName)
+                            .put("description", "[MCP/$serverName] ${tool.description}")
+                        // Parse the input schema from the MCP tool
+                        try {
+                            val schema = JSONObject(tool.inputSchema)
+                            function.put("parameters", schema)
+                        } catch (_: Exception) {
+                            // If schema parsing fails, use empty object
+                            function.put("parameters", JSONObject()
+                                .put("type", "object")
+                                .put("properties", JSONObject())
+                                .put("additionalProperties", true))
+                        }
+                        val toolObj = JSONObject()
+                            .put("type", "function")
+                            .put("function", function)
+                        tools.put(toolObj)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore — MCP tools are optional
+            }
         }
         return tools
     }

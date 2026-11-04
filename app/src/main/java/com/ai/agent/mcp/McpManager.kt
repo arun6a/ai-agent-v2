@@ -161,6 +161,24 @@ object McpManager {
             servers.add(config)
         }
 
+        // v4.0.80: GAP 3 FIX — If OAuth auth and no access token, run OAuth flow first.
+        if (config.authType == "oauth" && config.accessToken.isEmpty()) {
+            Log.i(TAG, "OAuth required for ${config.name}, starting pairing flow...")
+            val oauthSuccess = McpOAuth.startPairingFlow(context, config)
+            if (!oauthSuccess) {
+                config.lastError = "OAuth flow failed: ${config.lastError}"
+                Log.w(TAG, "OAuth failed for ${config.name}")
+                save(context)
+                return false
+            }
+        }
+
+        // v4.0.80: If token is expired, try to refresh it
+        if (config.authType == "oauth" && config.isTokenExpired() && config.refreshToken.isNotEmpty()) {
+            Log.i(TAG, "Token expired for ${config.name}, refreshing...")
+            McpOAuth.refreshToken(context, config)
+        }
+
         // Initialize (sends JSON-RPC initialize + tools/list)
         val tools = McpClient.initialize(config)
         if (tools.isEmpty() && !config.connected) {

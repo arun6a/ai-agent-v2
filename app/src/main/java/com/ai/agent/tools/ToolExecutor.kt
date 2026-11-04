@@ -959,6 +959,27 @@ class ToolExecutor(private val context: Context) {
             }
 
             else -> {
+                // v4.0.80: GAP 2 FIX — Route mcp__ prefixed tools to McpManager.
+                // This lets the brain call mcp__server__tool directly via native
+                // function calling (after auto-injection in ToolSchemas).
+                if (call.name.startsWith("mcp__")) {
+                    try {
+                        val resolved = com.ai.agent.mcp.McpManager.resolveTool(call.name)
+                        if (resolved != null) {
+                            val (serverName, toolName) = resolved
+                            val mcpResult = kotlinx.coroutines.runBlocking {
+                                com.ai.agent.mcp.McpManager.callTool(serverName, toolName, call.args)
+                            }
+                            return ToolResult(mcpResult.success, mcpResult.output)
+                        } else {
+                            return ToolResult(false,
+                                "MCP tool '${call.name}' not found. " +
+                                "The server may be disconnected. Call listMcpServers() to check.")
+                        }
+                    } catch (e: Exception) {
+                        return ToolResult(false, "MCP tool call failed: ${e.message}")
+                    }
+                }
                 // v4.0.26: Check if this is a custom tool (created via createCustomTool)
                 val customTool = com.ai.agent.tools.custom.CustomToolStore.get(context, call.name)
                 if (customTool != null) {

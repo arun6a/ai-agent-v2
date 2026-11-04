@@ -31,6 +31,14 @@ class ScreenReceiver : BroadcastReceiver() {
 
         when (action) {
             Intent.ACTION_SCREEN_ON -> {
+                // v4.0.80: GAP 4 FIX — Record screen-on pattern with hour
+                try {
+                    val hour = java.text.SimpleDateFormat("HH", java.util.Locale.US).format(java.util.Date())
+                    com.ai.agent.proactive.ProactiveObserver.recordTrigger(
+                        context, "screen_on:$hour", null
+                    )
+                } catch (_: Exception) {}
+
                 rules.filter { it.triggerType == "screen_on" }.forEach { rule ->
                     fireRule(context, rule, "Screen turned on (phone unlocked)")
                 }

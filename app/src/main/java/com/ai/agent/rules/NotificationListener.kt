@@ -147,6 +147,13 @@ class NotificationListener : NotificationListenerService() {
 
         Log.d(TAG, "Notification from $packageName: $title - $text")
 
+        // v4.0.80: GAP 4 FIX — Record notification pattern for proactive observer
+        try {
+            com.ai.agent.proactive.ProactiveObserver.recordTrigger(
+                this, "notif:$packageName", title.take(50)
+            )
+        } catch (_: Exception) {}
+
         // Find matching notification rules
         val rules = db.getRules(enabledOnly = true).filter { it.triggerType == "notification" }
         for (rule in rules) {
