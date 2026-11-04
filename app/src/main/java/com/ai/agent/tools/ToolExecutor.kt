@@ -405,7 +405,10 @@ class ToolExecutor(private val context: Context) {
             call.name in CONSENT_TOOLS
         ) {
             val (description, details) = buildConsentMessage(call)
-            val approved = com.ai.agent.consent.ConsentManager.requestConsent(
+            // v4.0.82: Use requestConsentWithContext — shows overlay over any app
+            // if SYSTEM_ALERT_WINDOW is granted, falls back to in-app dialog otherwise.
+            val approved = com.ai.agent.consent.ConsentManager.requestConsentWithContext(
+                context = context,
                 toolName = call.name,
                 description = description,
                 details = details,

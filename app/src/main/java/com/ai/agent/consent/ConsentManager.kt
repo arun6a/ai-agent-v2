@@ -38,19 +38,48 @@ object ConsentManager {
     /**
      * Called from ToolExecutor (IO thread). Suspends until user responds.
      * Returns true if approved, false if declined or timed out (30s).
+     *
+     * v4.0.82: If overlay permission is granted, shows consent OVER any app.
+     * If not, falls back to in-app Compose dialog (existing behavior).
      */
     suspend fun requestConsent(toolName: String, description: String, details: String): Boolean {
+        return requestConsentWithContext(null, toolName, description, details)
+    }
+
+    /**
+     * v4.0.82: requestConsent with context — can check overlay permission.
+     * If context is available + overlay permission granted → show system overlay.
+     * Otherwise → fall back to in-app StateFlow dialog.
+     */
+    suspend fun requestConsentWithContext(
+        context: android.content.Context?,
+        toolName: String,
+        description: String,
+        details: String
+    ): Boolean {
         // Cancel any existing request (shouldn't happen, but safety)
         deferred?.complete(false)
+        ConsentOverlay.hide()  // hide any existing overlay
         val newDeferred = CompletableDeferred<Boolean>()
         deferred = newDeferred
         _pendingRequest.value = ConsentRequest(toolName, description, details)
+
+        // v4.0.82: Try overlay first (shows over any app)
+        var overlayShown = false
+        if (context != null && android.provider.Settings.canDrawOverlays(context)) {
+            overlayShown = ConsentOverlay.show(context, ConsentRequest(toolName, description, details))
+        }
+
+        // If overlay not shown, the in-app Compose dialog will pick up _pendingRequest
+        // (ChatScreen observes pendingRequestFlow)
+
         // Wait for user response (with 30s timeout)
         return try {
             kotlinx.coroutines.withTimeoutOrNull(30_000L) { newDeferred.await() } ?: false
         } finally {
             _pendingRequest.value = null
             deferred = null
+            ConsentOverlay.hide()  // clean up overlay if still showing
         }
     }
 
