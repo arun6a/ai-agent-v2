@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Code  // v4.0.63: Terminal icon
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Hub  // v4.0.80: Connectors icon
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Rule
@@ -90,6 +91,7 @@ enum class HubSection(val label: String, val icon: ImageVector) {
     HISTORY("History", Icons.Outlined.History),
     RULES("Automation", Icons.Outlined.Rule),
     SKILLS("Skills", Icons.Outlined.Psychology),
+    CONNECTORS("Connectors", Icons.Outlined.Hub),  // v4.0.80: MCP servers
     TOOLS("Tools", Icons.Outlined.Build),
     MEMORY("Memory", Icons.Outlined.Memory),
     KNOWLEDGE("Knowledge", Icons.Outlined.BookmarkBorder),
@@ -104,7 +106,7 @@ enum class HubSection(val label: String, val icon: ImageVector) {
 
 /** Category group for the hub home grid. */
 enum class HubCategory(val title: String, val sections: List<HubSection>) {
-    AUTOMATION("AUTOMATION", listOf(HubSection.RULES, HubSection.SKILLS)),
+    AUTOMATION("AUTOMATION", listOf(HubSection.RULES, HubSection.SKILLS, HubSection.CONNECTORS)),
     AI("AI CONFIGURATION", listOf(HubSection.AI_SETTINGS, HubSection.USAGE, HubSection.PERMISSIONS)),
     DATA("DATA & MEMORY", listOf(HubSection.MEMORY, HubSection.KNOWLEDGE, HubSection.FILES)),
     SYSTEM("SYSTEM", listOf(HubSection.TOOLS, HubSection.LOGS, HubSection.SETTINGS, HubSection.TERMINAL)),
@@ -280,6 +282,7 @@ private fun SectionDetailPage(
                 HubSection.HISTORY -> HistorySection(onContinueSession = onContinueSession)
                 HubSection.RULES -> RulesSection()
                 HubSection.SKILLS -> SkillsSection(onEditSkill = onEditSkill)
+                HubSection.CONNECTORS -> com.ai.agent.ui.screens.hub.ConnectorsSection()  // v4.0.80
                 HubSection.TOOLS -> ToolsSection()
                 HubSection.MEMORY -> MemorySection()
                 HubSection.KNOWLEDGE -> KnowledgeSection()

@@ -1193,3 +1193,134 @@ private fun ProactiveBehaviorSection(context: android.content.Context, onToast: 
         }
     }
 }
+
+// ============================================================================
+// v4.0.80: MCP (Model Context Protocol) Settings Section
+// ============================================================================
+// Master toggle + sub-toggles for MCP client functionality.
+// When ON: brain can search 47,000+ MCP servers, connect, and call tools.
+// When OFF: only built-in + custom tools available (private, faster).
+// ============================================================================
+
+@Composable
+private fun McpSettingsSection(context: android.content.Context, onToast: (String) -> Unit) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    var mcpEnabled by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpEnabled(context)) }
+    var autoDiscover by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpAutoDiscoverEnabled(context)) }
+    var autoConnect by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpAutoConnectEnabled(context)) }
+    var consent by remember { mutableStateOf(com.ai.agent.llm.AIProvider.isMcpConsentEnabled(context)) }
+    var showConnected by remember { mutableStateOf(false) }
+
+    SettingsGroup(title = "MCP (Model Context Protocol)") {
+        AiToggleRow(
+            "Enable MCP",
+            "Connect to external MCP servers for unlimited tools (47,000+ servers). OFF = only built-in + custom tools (private, faster).",
+            mcpEnabled
+        ) {
+            mcpEnabled = it
+            com.ai.agent.llm.AIProvider.setMcpEnabled(context, it)
+            onToast("MCP: $it")
+        }
+
+        if (mcpEnabled) {
+            Spacer(Modifier.size(8.dp))
+
+            AiToggleRow(
+                "Auto-discover servers",
+                "Brain automatically searches for MCP servers when it needs a tool you don't have.",
+                autoDiscover
+            ) {
+                autoDiscover = it
+                com.ai.agent.llm.AIProvider.setMcpAutoDiscoverEnabled(context, it)
+                onToast("Auto-discover: $it")
+            }
+
+            AiToggleRow(
+                "Auto-connect to official servers",
+                "Automatically connect to trusted official servers (Google, Notion, Stripe). Community servers need manual approval.",
+                autoConnect
+            ) {
+                autoConnect = it
+                com.ai.agent.llm.AIProvider.setMcpAutoConnectEnabled(context, it)
+                onToast("Auto-connect: $it")
+            }
+
+            AiToggleRow(
+                "Consent for sensitive MCP tools",
+                "Ask before calling MCP tools that send/delete/modify data. Recommended ON for safety.",
+                consent
+            ) {
+                consent = it
+                com.ai.agent.llm.AIProvider.setMcpConsentEnabled(context, it)
+                onToast("MCP consent: $it")
+            }
+
+            Spacer(Modifier.size(8.dp))
+
+            // Show connected servers
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showConnected = !showConnected }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (showConnected) "▼ Connected Servers" else "▶ Connected Servers",
+                    color = custom.accent,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+
+            if (showConnected) {
+                val servers = remember { com.ai.agent.mcp.McpManager.getAllServers() }
+                if (servers.isEmpty()) {
+                    Text(
+                        "No servers connected yet.\n" +
+                        "To add: ask Aira to search for a server,\n" +
+                        "or call searchMcpServers(query=\"gmail\") in chat.",
+                        color = custom.fg2,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                    )
+                } else {
+                    for (config in servers) {
+                        val status = if (config.connected) "🟢" else "🔴"
+                        val toolCount = if (config.connected) config.tools.size else 0
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("$status ", fontSize = 12.sp)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${config.name} (${toolCount} tools)",
+                                    color = m3.onSurface,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                Text(
+                                    "${config.transport} | ${config.authType} | ${config.url.take(40)}",
+                                    color = custom.fg2,
+                                    fontSize = 9.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.size(4.dp))
+            Text(
+                "💡 To find servers: ask Aira 'search for Gmail MCP server'\n" +
+                "   Or in chat: searchMcpServers(query=\"notion\")",
+                color = custom.fg2,
+                fontSize = 9.sp,
+                lineHeight = 12.sp,
+            )
+        }
+    }
+}
