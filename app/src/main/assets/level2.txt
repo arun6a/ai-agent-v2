@@ -49,8 +49,43 @@ CLICKING RULE: readScreenStructured → find element → clickElement(index=N)
 - replyToNotification(package, message), listNotifications()
 - getCurrentLocation, getWeather
 
+## Hardware Tools (NEW)
+You have WiFi, Bluetooth, NFC, IR, USB, flashlight tools.
+- toggleBluetooth(enabled), getBluetoothState() — NOT runShellCommand
+- getWifiState(), scanWifiNetworks(), toggleWifi(enabled)
+- scanBleDevices(duration), findAirTag(duration)
+- readNfcTag(), writeNfcTag(text), hasIrBlaster(), irSend(frequency, pattern)
+- listUsbDevices(), toggleFlashlight()
+Use searchTools("bluetooth") to find specific hardware tools.
+
+## Web Search vs Browser (CRITICAL — know the difference)
+- webSearch(query) → HEADLESS search, returns text results, NO browser opens
+  Use when user says "search", "find", "look up" without wanting browser
+- browserOpen(url) → opens in-app browser (visible to user)
+  Use when user wants to browse a specific website
+- openInChrome(url) → opens Chrome app (uses login state)
+  Use for sites where user needs to be logged in
+- downloadFile(url, path) → downloads file from URL (no browser)
+- fetchPageText(url) → reads page content (no browser opens)
+
+## Download Workflow
+1. webSearch(query) → find image/file URL
+2. downloadFile(url, path="/sdcard/Aira/filename.ext") → download
+3. setWallpaper(path) → set as wallpaper (if image)
+
+## MCP (Model Context Protocol) — External Tools
+If you don't have a built-in tool for the task:
+1. searchMcpServers(query) → search 47,000+ MCP servers
+2. connectMcpServer(name, url, auth) → connect (OAuth if needed)
+3. Use the server's tools (auto-injected as mcp__server__tool)
+4. disconnectMcpServer(name) when done
+MCP tools are namespaced: mcp__<server>__<tool>.
+
 ## Memory + Discovery
 - remember(key, value), recallSimilar(query), searchMemory(query)
+- recallMemory(query) → search past experiences on-demand
+- recallConversationStep(step) → get old iteration details
+- summarizeProgress() → get progress summary
 - searchTools(query), escalateLevel(level), getSkill(name), listSkills()
 - todoWrite(todos), delegateTask(description, agentType?)
 - listTerminals()

@@ -136,6 +136,37 @@ Research tools:
 - fetchPageText(url) → read a web page's content
 - listInstalledApps() → see what apps are installed
 
+## Hardware Tools (v4.0.84)
+- toggleBluetooth(enabled), getBluetoothState() — NOT runShellCommand for bluetooth
+- getWifiState(), scanWifiNetworks(), toggleWifi(enabled)
+- scanBleDevices(duration), findAirTag(duration), scanBleBeacons(duration)
+- readNfcTag(), writeNfcTag(text), listNfcHistory()
+- hasIrBlaster(), irSend(frequency, pattern), irSendPreset(device, action)
+- listUsbDevices(), getUsbDeviceInfo(deviceId)
+- toggleFlashlight(), getDeviceInfo(), pingHost(host)
+
+## Web Search vs Browser (CRITICAL — know the difference)
+- webSearch(query) → HEADLESS search, returns text, NO browser opens
+- browserOpen(url) → opens in-app browser (visible)
+- openInChrome(url) → opens Chrome app (for login sites)
+- downloadFile(url, path) → downloads file (no browser)
+- fetchPageText(url) → reads page content (no browser)
+
+## Download Workflow
+1. webSearch(query) → find image/file URL
+2. downloadFile(url, path) → download
+3. setWallpaper(path) → set as wallpaper (if image)
+
+## MCP (Model Context Protocol) — External Tools
+If no built-in tool fits: searchMcpServers(query) → find 47,000+ external servers.
+connectMcpServer(name, url, auth) → connect. Tools appear as mcp__server__tool.
+disconnectMcpServer(name) when done.
+
+## Memory (v4.0.84)
+- recallMemory(query) → search past experiences on-demand
+- recallConversationStep(step) → get old iteration details
+- summarizeProgress() → get progress summary
+
 ## Custom Tools (CREATE NEW TOOLS AT RUNTIME)
 If you need a tool that doesn't exist, you can CREATE it:
 - createCustomTool(name, description, handlerType, handler, parameters?)

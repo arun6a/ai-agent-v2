@@ -316,7 +316,43 @@ object WebTools {
                     }
 
                     if (results.isEmpty()) {
-                        ToolExecutor.ToolResult(true, "No results found for: $query (via $searchMethod). Try a different search method in Settings, or use fetchPageText on a specific URL.")
+                        // v4.0.84: Fallback — if primary search returns empty, try DuckDuckGo
+                        if (searchMethod != "duckduckgo") {
+                            val ddgUrl = "https://html.duckduckgo.com/html/?q=$encodedQuery"
+                            val (ddgBody, _) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val c = okhttp3.OkHttpClient.Builder()
+                                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                    .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                    .build()
+                                val req = okhttp3.Request.Builder()
+                                    .url(ddgUrl)
+                                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+                                    .build()
+                                val resp = c.newCall(req).execute()
+                                (resp.body?.string() ?: "") to resp.code
+                            }
+                            val ddgPattern = Regex(
+                                """<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?<a[^>]*class="result__snippet"[^>]*>(.*?)</a>""",
+                                RegexOption.DOT_MATCHES_ALL
+                            )
+                            var ddgCount = 0
+                            for (match in ddgPattern.findAll(ddgBody).take(8)) {
+                                ddgCount++
+                                val ddgTitle = match.groupValues[2].replace(Regex("<[^>]+>"), "")
+                                    .let { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }.trim()
+                                val ddgSnippet = match.groupValues[3].replace(Regex("<[^>]+>"), "")
+                                    .let { android.text.Html.fromHtml(it, android.text.Html.FROM_HTML_MODE_LEGACY).toString() }.trim()
+                                val ddgUrl2 = match.groupValues[1]
+                                results.append("$ddgCount. $ddgTitle\n   $ddgSnippet\n   $ddgUrl2\n\n")
+                            }
+                            if (results.isNotEmpty()) {
+                                ToolExecutor.ToolResult(true, "Search results for '$query' (via DuckDuckGo fallback):\n$results")
+                            } else {
+                                ToolExecutor.ToolResult(true, "No results found for: $query (via $searchMethod + DuckDuckGo fallback). Try fetchPageText on a specific URL.")
+                            }
+                        } else {
+                            ToolExecutor.ToolResult(true, "No results found for: $query (via $searchMethod). Try fetchPageText on a specific URL.")
+                        }
                     } else {
                         // v2.3.3: If fetchTop > 0, fetch full text of top N URLs inline
                         val finalResult = if (fetchTop > 0 && urlsToFetch.isNotEmpty()) {

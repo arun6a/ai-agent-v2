@@ -295,6 +295,72 @@ object ContextualPromptBuilder {
             ),
             keywords = listOf("email", "send email", "share", "send file", "send to"),
         ),
+        // v4.0.84: Hardware group — WiFi, Bluetooth, NFC, IR, USB, flashlight
+        ToolGroup(
+            name = "Hardware",
+            tools = listOf(
+                "toggleBluetooth", "getBluetoothState", "getWifiState", "toggleWifi",
+                "scanWifiNetworks", "scanBleDevices", "findAirTag", "scanBleBeacons",
+                "readNfcTag", "writeNfcTag", "listNfcHistory",
+                "hasIrBlaster", "irSend", "irSendPreset",
+                "listUsbDevices", "getUsbDeviceInfo",
+                "toggleFlashlight", "getDeviceInfo", "pingHost",
+                "getVolume", "setVolume", "setBrightness", "vibrate",
+            ),
+            toolDescs = listOf(
+                "toggleBluetooth(enabled) — turn Bluetooth on/off",
+                "getBluetoothState() — check if Bluetooth is on/off",
+                "getWifiState() — check if WiFi is on/off + connected SSID",
+                "toggleWifi(enabled) — turn WiFi on/off",
+                "scanWifiNetworks() — list nearby WiFi networks (SSID, signal, security)",
+                "scanBleDevices(duration) — scan for BLE devices",
+                "findAirTag(duration) — detect nearby AirTags",
+                "readNfcTag() — read NFC tag (UID, NDEF data)",
+                "hasIrBlaster() — check if phone has IR blaster (Xiaomi only)",
+                "irSend(frequency, pattern) — transmit IR signal",
+                "listUsbDevices() — list connected USB devices",
+                "toggleFlashlight() — toggle phone flashlight",
+            ),
+            keywords = listOf("bluetooth", "wifi", "nfc", "ir", "usb", "ble", "scan",
+                "hardware", "tag", "beacon", "flashlight", "torch", "signal",
+                "device info", "airtag", "hotspot", "pair", "connect device"),
+        ),
+        // v4.0.84: MCP group — external tool servers
+        ToolGroup(
+            name = "MCP",
+            tools = listOf(
+                "searchMcpServers", "getMcpServerInfo", "connectMcpServer",
+                "disconnectMcpServer", "listMcpServers", "listMcpTools", "callMcpTool",
+            ),
+            toolDescs = listOf(
+                "searchMcpServers(query) — search 47,000+ MCP servers",
+                "connectMcpServer(name, url, auth) — connect to an MCP server",
+                "listMcpServers() — list connected servers",
+                "listMcpTools(serverName) — list tools on a server",
+                "callMcpTool(serverName, toolName, args) — call a remote MCP tool",
+            ),
+            keywords = listOf("mcp", "model context", "external server", "connector",
+                "notion", "github", "stripe", "google workspace", "gmail", "calendar",
+                "database", "api", "connect server", "remote tool"),
+        ),
+        // v4.0.84: Device group — system settings, wallpaper, clipboard
+        ToolGroup(
+            name = "Device",
+            tools = listOf(
+                "setWallpaper", "takeScreenshotToGallery", "getClipboard", "setClipboard",
+                "getCurrentTime", "getBatteryLevel", "getNetworkInfo", "wakeLock",
+                "waitAndContinue",
+            ),
+            toolDescs = listOf(
+                "setWallpaper(path) — set image as wallpaper",
+                "takeScreenshotToGallery() — take screenshot",
+                "getClipboard() / setClipboard(text) — clipboard operations",
+                "getBatteryLevel() — battery percentage",
+                "getNetworkInfo() — network status",
+            ),
+            keywords = listOf("wallpaper", "background", "screenshot", "clipboard",
+                "battery", "power", "network", "copy", "paste", "lock"),
+        ),
     )
 
     // Messages that need NO tools
