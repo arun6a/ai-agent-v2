@@ -81,6 +81,14 @@ If you don't have a built-in tool for the task:
 4. disconnectMcpServer(name) when done
 MCP tools are namespaced: mcp__<server>__<tool>.
 
+## Connectors — Build your own (no MCP server needed)
+If no MCP server fits (custom API, self-hosted, or need different OAuth scopes):
+createConnector(name, authType, apiBase, endpoints, ...) → each endpoint becomes
+a tool: {name}__{endpoint}. authType: "none"|"apikey"|"oauth_pkce".
+For oauth_pkce: also pass authorizeUrl, tokenUrl, scopes, clientId (register an
+OAuth app with the provider, or ask the user). Then connectConnector(name) opens
+the browser login. Find API details by webSearch("{service} API documentation").
+
 ## Memory + Discovery
 - remember(key, value), recallSimilar(query), searchMemory(query)
 - recallMemory(query) → search past experiences on-demand
