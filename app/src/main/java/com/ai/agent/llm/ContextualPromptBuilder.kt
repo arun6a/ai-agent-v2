@@ -343,9 +343,9 @@ object ContextualPromptBuilder {
                 "notion", "github", "stripe", "google workspace", "gmail", "calendar",
                 "database", "api", "connect server", "remote tool"),
         ),
-        // v4.0.84: Device group — system settings, wallpaper, clipboard
+        // v4.0.85: Renamed from "Device" to "System" (was duplicate of line 178).
         ToolGroup(
-            name = "Device",
+            name = "System",
             tools = listOf(
                 "setWallpaper", "takeScreenshotToGallery", "getClipboard", "setClipboard",
                 "getCurrentTime", "getBatteryLevel", "getNetworkInfo", "wakeLock",

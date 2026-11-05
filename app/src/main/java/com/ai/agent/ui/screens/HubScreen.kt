@@ -343,12 +343,13 @@ private fun HubTopBar(
 // open the Hub directly on the Settings section).
 // ---------------------------------------------------------------------------
 
-enum class HubSectionArg { HISTORY, RULES, SKILLS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, LOGS, SETTINGS, TERMINAL
+enum class HubSectionArg { HISTORY, RULES, SKILLS, CONNECTORS, TOOLS, MEMORY, KNOWLEDGE, FILES, AI_SETTINGS, USAGE, PERMISSIONS, LOGS, SETTINGS, TERMINAL
     ;
     fun toHubSection(): HubSection = when (this) {
         HubSectionArg.HISTORY -> HubSection.HISTORY
         HubSectionArg.RULES -> HubSection.RULES
         HubSectionArg.SKILLS -> HubSection.SKILLS
+        HubSectionArg.CONNECTORS -> HubSection.CONNECTORS
         HubSectionArg.TOOLS -> HubSection.TOOLS
         HubSectionArg.MEMORY -> HubSection.MEMORY
         HubSectionArg.KNOWLEDGE -> HubSection.KNOWLEDGE

@@ -487,6 +487,69 @@ object ToolSchemas {
             )),
         Schema("listAppScreens", "[BATCHABLE] [NO VERIFY] List all available app screens you can navigate to. Call this first to see the options.",
             mapOf()),
+        // === v4.0.85: MCP tools (7) ===
+        Schema("searchMcpServers", "[BATCHABLE] [NO VERIFY] Search 47,000+ MCP servers across registries. Returns names, descriptions, URLs, transport types.",
+            mapOf("query" to Param("string", "Search query (e.g. 'gmail', 'notion', 'filesystem')", required = true))),
+        Schema("getMcpServerInfo", "[BATCHABLE] [NO VERIFY] Get detailed info about a specific MCP server from the registry.",
+            mapOf("name" to Param("string", "Server registry name (e.g. 'com.notion/mcp')", required = true))),
+        Schema("connectMcpServer", "Connect to an MCP server. Triggers initialize + tools/list. If OAuth needed, opens browser for authorization.",
+            mapOf("name" to Param("string", "Short name for this server", required = true),
+                "transport" to Param("string", "http or stdio (default: http)", required = false),
+                "url" to Param("string", "Server URL (for HTTP transport)", required = false),
+                "auth" to Param("string", "none, bearer, or oauth", required = false),
+                "token" to Param("string", "Bearer token (if auth=bearer)", required = false))),
+        Schema("disconnectMcpServer", "Disconnect from an MCP server.",
+            mapOf("name" to Param("string", "Server name to disconnect", required = true))),
+        Schema("listMcpServers", "[BATCHABLE] [NO VERIFY] List all connected MCP servers + their tool counts.",
+            mapOf()),
+        Schema("listMcpTools", "[BATCHABLE] [NO VERIFY] List tools on connected MCP server(s).",
+            mapOf("serverName" to Param("string", "Server name (optional — lists all if omitted)", required = false))),
+        Schema("callMcpTool", "Call a specific MCP tool explicitly. Usually you can call mcp__server__tool directly instead.",
+            mapOf("serverName" to Param("string", "Server name", required = true),
+                "toolName" to Param("string", "Tool name to call", required = true),
+                "args" to Param("string", "JSON object of arguments", required = false))),
+        // === v4.0.85: Hardware tools (14) ===
+        Schema("scanWifiNetworks", "[BATCHABLE] [NO VERIFY] List nearby WiFi networks (SSID, BSSID, signal, security). Requires location permission.",
+            mapOf()),
+        Schema("scanBleDevices", "[BATCHABLE] [NO VERIFY] Scan for Bluetooth/BLE devices. Returns paired devices + info.",
+            mapOf("duration" to Param("integer", "Scan duration in seconds (default: 5)", required = false))),
+        Schema("getWifiState", "[BATCHABLE] [NO VERIFY] Check WiFi state (on/off) + connected SSID.",
+            mapOf()),
+        Schema("toggleBluetooth", "Toggle Bluetooth on/off. NOT runShellCommand — use this tool for Bluetooth control.",
+            mapOf("enabled" to Param("boolean", "true to enable, false to disable", required = true))),
+        Schema("listUsbDevices", "[BATCHABLE] [NO VERIFY] List connected USB devices (vendor, product, class).",
+            mapOf()),
+        Schema("getUsbDeviceInfo", "[BATCHABLE] [NO VERIFY] Get detailed info about a USB device (interfaces, endpoints, permissions).",
+            mapOf("deviceId" to Param("string", "USB device ID (from listUsbDevices)", required = true))),
+        Schema("readNfcTag", "[BATCHABLE] [NO VERIFY] Read NFC tag (UID, type, NDEF data). User must tap a tag.",
+            mapOf()),
+        Schema("writeNfcTag", "Write text to an NFC tag. Requires consent — user must tap a writable tag.",
+            mapOf("text" to Param("string", "Text to write to the NFC tag", required = true))),
+        Schema("listNfcHistory", "[BATCHABLE] [NO VERIFY] List all NFC tags previously read by Aira.",
+            mapOf()),
+        Schema("findAirTag", "[BATCHABLE] [NO VERIFY] Scan for nearby AirTags (Apple manufacturer data). Duration in seconds.",
+            mapOf("duration" to Param("integer", "Scan duration in seconds (default: 10)", required = false))),
+        Schema("scanBleBeacons", "[BATCHABLE] [NO VERIFY] Scan for BLE beacons (iBeacon, Eddystone). Returns devices with RSSI.",
+            mapOf("duration" to Param("integer", "Scan duration in seconds (default: 5)", required = false))),
+        Schema("logBleDevice", "Log a BLE device to knowledge for future reference.",
+            mapOf("mac" to Param("string", "MAC address", required = true),
+                "name" to Param("string", "Device name", required = false))),
+        Schema("hasIrBlaster", "[BATCHABLE] [NO VERIFY] Check if this phone has an IR blaster (Xiaomi/Redmi/Poco only).",
+            mapOf()),
+        Schema("irSend", "Transmit an IR signal. Requires IR blaster (Xiaomi only). Requires consent.",
+            mapOf("frequency" to Param("integer", "Carrier frequency in Hz (e.g. 38000)", required = true),
+                "pattern" to Param("string", "Comma-separated microsecond timings", required = true))),
+        Schema("irSendPreset", "Send a common IR preset code (TV power, AC, etc.). Requires IR blaster. Requires consent.",
+            mapOf("device" to Param("string", "Device type (tv, ac)", required = true),
+                "action" to Param("string", "Action (power, mute, volume_up, volume_down)", required = true))),
+        // === v4.0.85: Memory tools (3) ===
+        Schema("recallMemory", "[BATCHABLE] [NO VERIFY] Search past experiences/memories via FTS5. Use when you need context from previous tasks.",
+            mapOf("query" to Param("string", "Search query", required = true),
+                "limit" to Param("integer", "Max results (default: 5)", required = false))),
+        Schema("recallConversationStep", "[BATCHABLE] [NO VERIFY] Get details of a specific past iteration step.",
+            mapOf("step" to Param("integer", "Iteration step number to recall", required = true))),
+        Schema("summarizeProgress", "[BATCHABLE] [NO VERIFY] Get a summary of progress so far in the current task.",
+            mapOf()),
     )
 
     // -----------------------------------------------------------------------
@@ -799,8 +862,12 @@ object ToolSchemas {
                     val mcpTools = com.ai.agent.mcp.McpManager.getAllTools()
                     for ((serverName, tool) in mcpTools) {
                         val namespacedName = "mcp__${serverName}__${tool.name}"
-                        // If a filter is applied, check if the namespaced name is in it
-                        if (filter != null && namespacedName !in filter) continue
+                        // v4.0.85: FIX — Always include MCP tools regardless of filter.
+                        // The contextual filter only covers built-in tool names, not mcp__* names.
+                        // Bypassing the filter here ensures MCP server tools are always visible
+                        // to the brain when MCP is enabled + a server is connected.
+                        // (Previous code: if (filter != null && namespacedName !in filter) continue —
+                        //  this skipped ALL MCP tools because mcp__* names are never in the filter.)
                         val function = JSONObject()
                             .put("name", namespacedName)
                             .put("description", "[MCP/$serverName] ${tool.description}")

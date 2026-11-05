@@ -324,7 +324,7 @@ class ToolExecutor(private val context: Context) {
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
         // Check if this is a custom tool — if so, skip accessibility.
         val isCustomTool = com.ai.agent.tools.custom.CustomToolStore.get(context, call.name) != null
-        val noAccessibility = noAccessibilityNeeded || isCustomTool
+        val noAccessibility = noAccessibilityNeeded || isCustomTool || call.name.startsWith("mcp__")
 
         // For non-accessibility tools, skip the service check entirely.
         // These tools don't reference `service` in the when block below.
@@ -1347,6 +1347,15 @@ class ToolExecutor(private val context: Context) {
         "openWhatsAppChat",  // sends a message
         "shareToApp", "shareText", "shareFile",
         "sendAttachmentTo",  // v4.0.5: sends file to external app (data exfiltration risk)
+        // v4.0.85: Added missing consent tools
+        "writeNfcTag",       // writes to physical NFC tag
+        "irSend",            // transmits IR signal (could control TVs/ACs)
+        "irSendPreset",      // same
+        "toggleBluetooth",   // changes system state
+        "toggleWifi",        // changes system state
+        "setWallpaper",      // replaces home screen wallpaper
+        "replyToNotification", // auto-replies on user's behalf
+        "runShellCommand",   // executes shell commands
     )
 
     /** Build a human-readable consent message for the dialog. */

@@ -623,8 +623,9 @@ class ChatViewModel(
                 // Compute tool filter: contextual groups capped by level budget
                 when {
                     level == 1 -> {
-                        // Tier 1 greeting OR conceptual question → no tools (reasoning mode)
-                        emptyList()
+                        // v4.0.85: FIX — Level 1 now has escape-hatch tools instead of empty.
+                        // Brain can escalate/search if the greeting turns into a real task.
+                        listOf("escalateLevel", "complete", "searchTools", "recallMemory", "speak")
                     }
                     groups.isNotEmpty() -> {
                         // Contextual match → send just the relevant groups' tools

@@ -557,12 +557,14 @@ class LLMClient(private val context: Context) {
             // The thinking/reasoning_effort fields enable the MODEL's native
             // chain-of-thought capability where the provider supports it.
             //
-            // WHY this matters: without reasoning, Aira jumps into tasks
-            // blindly (e.g. tapping wrong Twitter composer 13 times, calling
-            // non-existent run_command tool from stale skills). With reasoning,
-            // the model considers 2-3 approaches before acting — like Z.ai Code
-            // does when building this project.
-            put("thinking", JSONObject().put("type", "enabled"))
+            // v4.0.85: FIX — Gate thinking field by providerId.
+            // The 'thinking' field is Z.ai/GLM-specific. OpenAI/Groq return HTTP 400
+            // for unknown parameters. Only send to providers that support it.
+            // Gemini uses generationConfig.thinkingConfig (handled in buildGeminiRequest).
+            // Anthropic uses thinking.budget_tokens (handled in buildAnthropicRequest).
+            if (providerId in setOf("zai_direct", "custom")) {
+                put("thinking", JSONObject().put("type", "enabled"))
+            }
 
             // v4.0.73: OpenAI o-series models use a DIFFERENT param name.
             // "thinking" is Z.ai-specific; OpenAI uses "reasoning_effort".

@@ -57,11 +57,14 @@ class BatteryRuleReceiver : BroadcastReceiver() {
                 if (percent < 0) return
 
                 // v4.0.80: GAP 4 FIX — Record battery pattern for proactive observer
-                try {
-                    com.ai.agent.proactive.ProactiveObserver.recordTrigger(
-                        context, "battery:$percent", null
-                    )
-                } catch (_: Exception) {}
+                // v4.0.85: Check if proactive is enabled before recording
+                if (com.ai.agent.proactive.ProactiveSettings.isEnabled(context)) {
+                    try {
+                        com.ai.agent.proactive.ProactiveObserver.recordTrigger(
+                            context, "battery:$percent", null
+                        )
+                    } catch (_: Exception) {}
+                }
 
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 rules.filter { it.triggerType == "battery_low" }.forEach { rule ->

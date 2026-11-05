@@ -678,7 +678,7 @@ private fun ProviderSetupStep(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Skip uses the Z.ai Sandbox proxy (no key needed, sandbox must be running).",
+            text = "Skip — configure your API key in Hub → AI Settings → API Keys.",
             color = custom.fg3,
             fontSize = 10.sp,
             lineHeight = 13.sp,
