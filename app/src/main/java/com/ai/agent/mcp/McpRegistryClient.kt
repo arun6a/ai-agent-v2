@@ -143,7 +143,14 @@ object McpRegistryClient {
                     RegexOption.DOT_MATCHES_ALL
                 )
                 for (match in resultPattern.findAll(html).take(10)) {
-                    val resultUrl = match.groupValues[1]
+                    var resultUrl = match.groupValues[1]
+                    // v4.0.86: Decode DuckDuckGo redirect URLs (//duckduckgo.com/l/?uddg=ENCODED_URL)
+                    if (resultUrl.contains("uddg=")) {
+                        val uddgMatch = Regex("uddg=([^&]+)").find(resultUrl)
+                        if (uddgMatch != null) {
+                            resultUrl = java.net.URLDecoder.decode(uddgMatch.groupValues[1], "UTF-8")
+                        }
+                    }
                     val title = match.groupValues[2].replace(Regex("<[^>]+>"), "").trim()
                     if (title.isEmpty() || resultUrl.isEmpty()) continue
 

@@ -372,7 +372,7 @@ Reply:"""
 
         // Groups matched. Now check: is this ACTION or CONCEPTUAL?
         // Layer 2: Free pattern detection
-        val isConceptual = isConceptualQuestion(msg)
+        val isConceptual = if (com.ai.agent.llm.AIProvider.isPatternDetectionEnabled(context)) isConceptualQuestion(msg) else false
         val hasAction = hasActionIntent(msg)
 
         if (isConceptual && !hasAction) {
@@ -388,7 +388,7 @@ Reply:"""
         }
 
         // AMBIGUOUS — Layer 2 couldn't decide. Try Layer 3 (LLM classifier).
-        if (USE_LLM_INTENT_CLASSIFIER) {
+        if (com.ai.agent.llm.AIProvider.isLlmIntentEnabled(context)) {
             val intent = llmClassifyIntent(userMessage, context)
             if (intent != null) {
                 return when (intent) {

@@ -178,8 +178,10 @@ class LLMClient(private val context: Context) {
                 val request = requestBuilder.post(requestBody.toRequestBody(jsonMediaType)).build()
 
                 Log.d("LLMClient", "Request attempt $attempt to $endpoint")
+                val _chatStart = System.currentTimeMillis()
                 val response = client.newCall(request).execute()
                 val responseBody = response.body?.string() ?: ""
+                val _chatLatency = (System.currentTimeMillis() - _chatStart).toInt()
 
                 // v2.1.1: Smarter rate-limit + error handling.
                 if (response.code == 429) {
@@ -358,7 +360,7 @@ class LLMClient(private val context: Context) {
                 }
 
                 Log.d("LLMClient", "Response: ${(llmResponse.reply + llmResponse.toolCalls.toString()).take(200)}...")
-                return@withContext llmResponse
+                return@withContext llmResponse.copy(latencyMs = _chatLatency)
             } catch (e: Exception) {
                 Log.e("LLMClient", "Request failed (attempt $attempt)", e)
                 lastError = e.message

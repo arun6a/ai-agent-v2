@@ -347,6 +347,14 @@ fun ConnectorsSection() {
                             connectedServers = McpManager.getAllServers()
                         }
                     },
+                    onConnect = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                McpManager.connect(context, config)
+                            }
+                            connectedServers = McpManager.getAllServers()
+                        }
+                    },
                     onRemove = {
                         scope.launch {
                             withContext(Dispatchers.IO) {
@@ -442,6 +450,7 @@ private fun McpSearchResultCard(
 private fun McpServerCard(
     config: McpServerConfig,
     onDisconnect: () -> Unit,
+    onConnect: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val custom = LocalCustomColors.current
@@ -474,7 +483,7 @@ private fun McpServerCard(
         Spacer(Modifier.size(8.dp))
         Column(horizontalAlignment = Alignment.End) {
             Button(
-                onClick = onDisconnect,
+                onClick = if (config.connected) onDisconnect else onConnect,
                 colors = ButtonDefaults.buttonColors(containerColor = custom.surface3),
             ) {
                 Text(if (config.connected) "Disconnect" else "Connect", color = m3.onSurface, fontSize = 10.sp)

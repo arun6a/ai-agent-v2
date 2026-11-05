@@ -164,7 +164,7 @@ object CustomTools {
         try {
             var command = tool.handler
             for ((key, value) in args) {
-                command = command.replace("{$key}", value.toString())
+                command = command.replace("{$key}", "'" + value.toString().replace("'", "'\\''") + "'")
             }
             // v4.0.44: Fix regex error — was using Regex("\\{[^}]+}") which crashes on Android
             // because the closing } is not escaped. Use simple string check instead.

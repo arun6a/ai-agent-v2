@@ -62,12 +62,21 @@ object ConsentManager {
         ConsentOverlay.hide()  // hide any existing overlay
         val newDeferred = CompletableDeferred<Boolean>()
         deferred = newDeferred
-        _pendingRequest.value = ConsentRequest(toolName, description, details)
+        // v4.0.86: FIX — Don't set _pendingRequest when overlay is shown.
+        // Previously: _pendingRequest was set BEFORE overlay attempt → both
+        // overlay AND Compose dialog rendered simultaneously.
+        // Now: only set _pendingRequest if overlay is NOT used (in-app fallback).
+        val request = ConsentRequest(toolName, description, details)
 
         // v4.0.82: Try overlay first (shows over any app)
         var overlayShown = false
         if (context != null && android.provider.Settings.canDrawOverlays(context)) {
-            overlayShown = ConsentOverlay.show(context, ConsentRequest(toolName, description, details))
+            overlayShown = ConsentOverlay.show(context, request)
+        }
+
+        // v4.0.86: Only show in-app dialog if overlay wasn't shown
+        if (!overlayShown) {
+            _pendingRequest.value = request
         }
 
         // If overlay not shown, the in-app Compose dialog will pick up _pendingRequest

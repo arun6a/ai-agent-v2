@@ -342,14 +342,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Incoming call (phone state) -->
-        <receiver
-            android:name=".rules.IncomingCallReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.PHONE_STATE" />
-            </intent-filter>
-        </receiver>
+        <!-- v4.0.86: IncomingCallReceiver removed from manifest (caused InstantiationException) -->
 
         <!-- Screen on/off -->
         <receiver

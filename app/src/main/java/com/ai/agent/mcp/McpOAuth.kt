@@ -80,7 +80,11 @@ object McpOAuth {
         val callbackServer = startCallbackListener(callbackCode)
 
         val redirectUri = "http://localhost:$CALLBACK_PORT$CALLBACK_PATH"
-        val authUrl = buildAuthUrl(metadata.authorizationEndpoint, clientId, challenge, redirectUri)
+        // v4.0.86: FIX — Add OAuth state parameter for CSRF protection (RFC 6749 §10.12).
+        val state = Base64.getUrlEncoder().withoutPadding().encodeToString(
+            ByteArray(16).also { SecureRandom().nextBytes(it) }
+        )
+        val authUrl = buildAuthUrl(metadata.authorizationEndpoint, clientId, challenge, redirectUri, state)
 
         Log.i(TAG, "Opening browser for OAuth: ${authUrl.take(100)}...")
         try {
@@ -205,7 +209,7 @@ object McpOAuth {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
     }
 
-    private fun buildAuthUrl(authEndpoint: String, clientId: String?, challenge: String, redirectUri: String): String {
+    private fun buildAuthUrl(authEndpoint: String, clientId: String?, challenge: String, redirectUri: String, state: String): String {
         val params = StringBuilder()
         params.append("response_type=code")
         if (clientId != null) params.append("&client_id=").append(java.net.URLEncoder.encode(clientId, "UTF-8"))
@@ -213,6 +217,7 @@ object McpOAuth {
         params.append("&code_challenge=").append(challenge)
         params.append("&code_challenge_method=S256")
         params.append("&scope=mcp")
+        params.append("&state=").append(state)  // v4.0.86: CSRF protection
         return "$authEndpoint?$params"
     }
 

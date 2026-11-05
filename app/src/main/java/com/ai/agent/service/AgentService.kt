@@ -109,7 +109,9 @@ class AgentService : Service() {
 
         // v4.0.17: Register programmatic receivers for Android 14+ compatibility.
         // Android 14 blocks manifest-declared receivers for some actions.
-        registerProgrammaticReceivers()
+        // v4.0.86: REMOVED registerProgrammaticReceivers() — caused double registration
+        // with RuleTriggerManager.registerAll(). Rules were firing TWICE → double SMS, double LLM cost.
+        // registerProgrammaticReceivers()
 
         // v3.0.0: Schedule all time rules (in case app was killed + restarted)
         try {
@@ -671,6 +673,14 @@ class AgentService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Failed to unregister screen receiver", e)
         }
+        // v4.0.86: FIX — Unregister ALL remaining receivers (was only 2 of 6).
+        for (receiver in listOf(batteryReceiver, headsetReceiver, wifiReceiver, connectivityReceiver)) {
+            try { receiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
+        }
+        batteryReceiver = null
+        headsetReceiver = null
+        wifiReceiver = null
+        connectivityReceiver = null
         // v3.0.4: DON'T unregister triggers when AgentService dies.
         // Since we use applicationContext for registerReceiver(), the receivers
         // survive AgentService death. unregisterAll() was KILLING the receivers

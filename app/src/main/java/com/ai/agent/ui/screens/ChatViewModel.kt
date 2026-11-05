@@ -594,7 +594,7 @@ class ChatViewModel(
             // When USE_COMBINED_APPROACH = false:
             //   Falls back to v4.0.72 behavior (pure LevelManager OR pure ContextualPromptBuilder)
             val useCombined = com.ai.agent.llm.AIProvider.isCombinedApproachEnabled(context)
-            val useLevels = LevelManager.USE_CAPABILITY_LEVELS
+            val useLevels = com.ai.agent.llm.AIProvider.isCapabilityLevelsEnabled(context)
             // v4.0.74: On-Demand Architecture — send only meta-tools + quick-access upfront.
             // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
             val useOnDemand = com.ai.agent.llm.AIProvider.isOnDemandEnabled(context)
@@ -735,7 +735,7 @@ class ChatViewModel(
                 val allAvoid = allMemory.entries
                     .filter { it.key.startsWith("avoid_") }
                     .take(5)
-                if (allAvoid.isNotEmpty()) {
+                if (allAvoid.isNotEmpty() && com.ai.agent.llm.AIProvider.isFailureRulesEnabled(context)) {
                     // Filter by word overlap with the current task.
                     val taskWords = userMessage.lowercase()
                         .replace(Regex("[^a-z0-9\\s]"), " ")
@@ -1509,7 +1509,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     // v3.0.9: Auto-expand contextual prompt if AI called a tool not in groups
                     // v4.0.73: Also trigger in combined approach mode — if AI calls a tool
                     // not in the current contextual filter, add that tool's group dynamically.
-                    if ((contextualEnabled || useCombined) && userMessage.isNotEmpty()) {
+                    if ((contextualEnabled || useCombined) && userMessage.isNotEmpty() && com.ai.agent.llm.AIProvider.isAutoExpandEnabled(context)) {
                         val missingTools = llmResponse.toolCalls.filter { call ->
                             !com.ai.agent.llm.ContextualPromptBuilder.isToolAvailable(userMessage, call.name)
                         }

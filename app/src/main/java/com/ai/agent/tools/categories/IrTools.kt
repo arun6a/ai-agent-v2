@@ -180,7 +180,7 @@ object IrTools {
         )
 
         // Common LG TV power code
-        val lgTvPower = intArrayOf(
+        val _lgTvPower = intArrayOf(
             9000, 4500,
             560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 560, 1690, 560, 560, 560, 560,
             560, 560, 560, 560, 560, 1690, 560, 560, 560, 1690, 560, 1690, 560, 1690, 560, 560,
@@ -189,13 +189,12 @@ object IrTools {
             40000
         )
 
+        // v4.0.86: FIX — Only return real codes. Don't return wrong codes for unimplemented presets.
+        // Previous code returned samsungTvPower for ALL actions (mute, volume_up, etc.) → wrong IR signal.
         return when {
             device == "tv" && action == "power" -> samsungTvPower
-            device == "tv" && action == "mute" -> samsungTvPower  // placeholder — would need actual mute code
-            device == "tv" && action == "volume_up" -> samsungTvPower  // placeholder
-            device == "tv" && action == "volume_down" -> samsungTvPower  // placeholder
-            device == "ac" && action == "power" -> lgTvPower  // placeholder
-            else -> null
+            device == "ac" && action == "power" -> _lgTvPower
+            else -> null  // Unimplemented preset — caller will return error
         }
     }
 }
