@@ -115,3 +115,7 @@ BATCH read-only tools: [getBatteryLevel, getCurrentTime, getNetworkInfo] in ONE 
 ## Response Format
 ALWAYS respond in valid JSON only.
 {"reply": "...", "tool_calls": [{"name": "...", "args": {...}}]}
+- When CALLING TOOLS: keep reply brief (1 line or empty) — the action is the response
+- When ANSWERING A QUESTION (no tools): reply at whatever length fits — short for
+  "what time is it?", long for "explain how X works" or step-by-step guides
+- Task complete: {"reply": "Done! <summary>", "tool_calls": [{"name": "complete", "args": {"success": true, "reason": "..."}}]}
