@@ -39,6 +39,26 @@ object McpOAuth {
     private const val CALLBACK_PATH = "/callback"
     private const val TIMEOUT_MS = 300000L
 
+    /**
+     * v4.0.89: Known OAuth providers — hardcoded endpoints for services that
+     * don't expose /.well-known/oauth-authorization-server.
+     *
+     * When RFC 9728 discovery finds an authorization_server URL that's in this
+     * map, we use these endpoints directly instead of failing.
+     *
+     * These providers also DON'T support DCR (Dynamic Client Registration), so
+     * the user must provide a client_id (register an OAuth app with the provider).
+     * Keyed by the authorization_server URL from resource_metadata.
+     */
+    private val KNOWN_PROVIDERS: Map<String, OAuthMetadata> = mapOf(
+        // GitHub MCP → authorization_servers: ["https://github.com/login/oauth"]
+        "https://github.com/login/oauth" to OAuthMetadata(
+            authorizationEndpoint = "https://github.com/login/oauth/authorize",
+            tokenEndpoint = "https://github.com/login/oauth/access_token",
+            registrationEndpoint = null,  // GitHub doesn't support DCR
+        ),
+    )
+
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -70,8 +90,23 @@ object McpOAuth {
         }
 
         val clientId = if (metadata.registrationEndpoint != null) {
+            // DCR supported — auto-register a client
             dynamicRegister(metadata.registrationEndpoint, config.name)
-        } else null
+        } else {
+            // v4.0.89: No DCR — use the user-provided client_id (if set on the config).
+            // For providers like GitHub that don't support DCR, the user must register
+            // an OAuth app with the provider and pass the client_id via the config.
+            if (config.clientId.isNotEmpty()) {
+                config.clientId
+            } else {
+                config.lastError = "This server doesn't support auto-registration (DCR). " +
+                    "Register an OAuth app with the provider and pass the client_id. " +
+                    "For GitHub: github.com/settings/developers → New OAuth App → " +
+                    "redirect URI = http://localhost:$CALLBACK_PORT$CALLBACK_PATH"
+                Log.w(TAG, config.lastError)
+                return false
+            }
+        }
 
         val verifier = generateCodeVerifier()
         val challenge = generateCodeChallenge(verifier)
@@ -155,6 +190,23 @@ object McpOAuth {
 
     private suspend fun discoverMetadata(serverUrl: String): OAuthMetadata? {
         return withContext(Dispatchers.IO) {
+            // v4.0.89: RFC 9728 — Modern MCP OAuth discovery flow.
+            //
+            // Modern MCP servers (GitHub, Smithery-hosted, etc.) DON'T expose
+            // /.well-known/oauth-authorization-server directly. Instead they:
+            //   1. Return 401 on the MCP endpoint with a www-authenticate header:
+            //      `Bearer resource_metadata="<url>"`
+            //   2. That resource_metadata URL returns JSON with `authorization_servers`
+            //   3. Each authorization_server has its own /.well-known/oauth-authorization-server
+            //
+            // Older servers (Notion, Linear, Zapier) still use RFC 8414 directly.
+            // We try RFC 9728 first, then fall back to RFC 8414.
+
+            // ---- Step 1: Try RFC 9728 (resource_metadata indirection) ----
+            val rfc9728Result = discoverViaRfc9728(serverUrl)
+            if (rfc9728Result != null) return@withContext rfc9728Result
+
+            // ---- Step 2: Fall back to RFC 8414 (direct .well-known) ----
             try {
                 val wellKnownUrl = getBaseUrl(serverUrl) + "/.well-known/oauth-authorization-server"
                 val request = Request.Builder().url(wellKnownUrl).build()
@@ -168,6 +220,91 @@ object McpOAuth {
                 )
             } catch (e: Exception) {
                 Log.w(TAG, "OAuth metadata discovery failed: ${e.message}")
+                null
+            }
+        }
+    }
+
+    /**
+     * v4.0.89: RFC 9728 discovery — the modern MCP OAuth flow.
+     *
+     * 1. GET the MCP server URL → expect 401 with www-authenticate header
+     * 2. Parse resource_metadata URL from the header
+     * 3. GET that URL → returns {authorization_servers: [...]}
+     * 4. For each authorization server, try its /.well-known/oauth-authorization-server
+     *
+     * Returns null if any step fails (caller falls back to RFC 8414).
+     */
+    private suspend fun discoverViaRfc9728(serverUrl: String): OAuthMetadata? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Step 1: GET the MCP endpoint, expect 401 with resource_metadata
+                val request = Request.Builder().url(serverUrl).build()
+                val response = httpClient.newCall(request).execute()
+                // We expect 401, but proceed regardless — check the header
+                val wwwAuthHeader = response.header("www-authenticate") ?: return@withContext null
+                response.close()
+
+                // Step 2: Parse resource_metadata URL from the header
+                // Header format: Bearer error="...", resource_metadata="https://..."
+                val resourceMetadataUrl = Regex("resource_metadata=\"([^\"]+)\"")
+                    .find(wwwAuthHeader)?.groupValues?.getOrNull(1)
+                    ?: return@withContext null
+
+                Log.i(TAG, "RFC 9728: resource_metadata at $resourceMetadataUrl")
+
+                // Step 3: GET the resource metadata URL → get authorization_servers
+                val resourceRequest = Request.Builder().url(resourceMetadataUrl).build()
+                val resourceResponse = httpClient.newCall(resourceRequest).execute()
+                if (!resourceResponse.isSuccessful) return@withContext null
+                val resourceJson = JSONObject(resourceResponse.body?.string() ?: "")
+                val authServers = resourceJson.optJSONArray("authorization_servers")
+                    ?: return@withContext null
+
+                // Step 4: For each authorization server, try its .well-known
+                for (i in 0 until authServers.length()) {
+                    val authServerUrl = authServers.getString(i)
+                    // First try .well-known/oauth-authorization-server
+                    val metadata = fetchAuthServerMetadata(authServerUrl)
+                    if (metadata != null) {
+                        Log.i(TAG, "RFC 9728: found OAuth metadata via $authServerUrl")
+                        return@withContext metadata
+                    }
+                    // v4.0.89: Fall back to known providers (GitHub, etc. don't expose .well-known)
+                    val knownMetadata = KNOWN_PROVIDERS[authServerUrl]
+                    if (knownMetadata != null) {
+                        Log.i(TAG, "RFC 9728: using known provider config for $authServerUrl")
+                        return@withContext knownMetadata
+                    }
+                }
+                null
+            } catch (e: Exception) {
+                Log.w(TAG, "RFC 9728 discovery failed: ${e.message}")
+                null
+            }
+        }
+    }
+
+    /** Fetch /.well-known/oauth-authorization-server from an authorization server URL. */
+    private suspend fun fetchAuthServerMetadata(authServerUrl: String): OAuthMetadata? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val wellKnownUrl = authServerUrl.trimEnd('/') +
+                    "/.well-known/oauth-authorization-server"
+                val request = Request.Builder().url(wellKnownUrl).build()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) return@withContext null
+                val json = JSONObject(response.body?.string() ?: "")
+                val authEndpoint = json.optString("authorization_endpoint", "")
+                val tokenEndpoint = json.optString("token_endpoint", "")
+                if (authEndpoint.isEmpty() || tokenEndpoint.isEmpty()) return@withContext null
+                OAuthMetadata(
+                    authorizationEndpoint = authEndpoint,
+                    tokenEndpoint = tokenEndpoint,
+                    registrationEndpoint = json.optString("registration_endpoint")
+                        .takeIf { it.isNotEmpty() },
+                )
+            } catch (e: Exception) {
                 null
             }
         }
