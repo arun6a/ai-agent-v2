@@ -104,13 +104,19 @@ class ProactiveAlarmReceiver : BroadcastReceiver() {
                 val result = ProactiveTickWorker.tick(context)
                 when (result) {
                     is ProactiveResult.Suggest -> {
-                        // Show a notification with the suggestion
+                        // v4.0.87: Show a notification (app in background) AND publish to
+                        // ProactiveBus so the open chat can show an inline banner.
                         showSuggestionNotification(context, result.action, result.reason)
+                        ProactiveBus.publish(result)
                     }
                     is ProactiveResult.Execute -> {
                         // Auto-execute (if enabled) — would call AgentService here
                         Log.i("ProactiveAlarm", "Auto-execute: ${result.action}")
                         showSuggestionNotification(context, result.action, "Auto-executed: ${result.reason}")
+                        // v4.0.87: Also surface as an inline banner (downgraded to suggestion).
+                        ProactiveBus.publish(
+                            ProactiveResult.Suggest(result.action, "Auto-executed: ${result.reason}")
+                        )
                     }
                     is ProactiveResult.Silent -> {
                         Log.i("ProactiveAlarm", "Silent: ${result.reason}")

@@ -4,6 +4,65 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.87 (versionCode 215) — Chat UI Improvements
+**Date:** 2026-11-05
+**APK:** 42 MB (`ai-agent-v4.0.87-debug.apk`)
+
+### 5 Chat UX improvements
+
+#### 1. Thinking + Tool Execution Cards — Better UX
+- AI step messages now render as a unified **Step Card** with a clear header:
+  `● Step 3/80 · executing · 5 calls ▶`
+- Status dot colors by state: accent (executing, pulses), success (done), error (red)
+- Thinking text is collapsible — collapsed shows a 2-line preview, expanded shows full reasoning
+- Tool-call cards sit below the step card, each independently expandable (unchanged)
+- Replaces the old generic "💭 Thinking" bubble with a structured, scannable layout
+
+#### 2. "Stopping..." State
+- When the user taps Stop, a clear **Stopping banner** appears at the top of the chat
+  (`⏹ Stopping… — Finishing the current step`)
+- `stopAgent()` no longer clears `isThinking`/`isExecuting` instantly, so the UI shows
+  "stopping" instead of abruptly going idle — the banner stays until the loop's `finally`
+  block winds everything down
+- The TaskBanner is hidden while stopping (no redundant Stop button)
+
+#### 3. Message Actions — Long press
+- Long-press any message (user or AI) → **ModalBottomSheet** with:
+  - 📋 **Copy** — copies message text to clipboard
+  - 🔄 **Regenerate** — re-runs from the user message that produced this reply
+  - 🗑️ **Delete** — removes the message from the chat
+- Haptic feedback on long-press; sheet shows a preview snippet of the targeted message
+
+#### 4. Proactive Suggestion Banner
+- `ProactiveTickWorker` results now surface as an **inline banner** at the top of the chat
+  (not just a notification) when the app is open
+- New `ProactiveBus` singleton bridges the background `ProactiveAlarmReceiver` → the
+  foreground `ChatViewModel` via a `StateFlow`
+- Banner shows "✨ Aira suggests: {action}" + reason + **[Do it]** / **[Dismiss]**
+- "Do it" sends the suggestion as a user message; "Dismiss" clears it
+
+#### 5. Files Card — attached / created / file ops
+- **Attached files** (user): staged attachments now render as file cards below the user
+  bubble (📎 name + size + "attached" badge) — previously they were invisible in chat
+- **File operations** (AI tools): `writeFile`, `copyFile`, `moveFile`, `deleteFile`,
+  `createDirectory` results are extracted and rendered as visual cards:
+  - 📄 created · 📋 copied · ↔️ moved · 🗑️ deleted · 📁 dir created
+  - Each card shows the filename + a colored status badge
+
+### Files changed
+- `proactive/ProactiveBus.kt` (new) — StateFlow bridge for proactive suggestions
+- `proactive/ProactiveScheduler.kt` — publishes Suggest/Execute to ProactiveBus
+- `ui/screens/ChatViewModel.kt` — `ChatMessage.attachments`/`fileOps`, `FileOp` model,
+  `ChatUiState.proactiveSuggestion`, `observeProactiveSuggestions()`, `deleteMessage()`,
+  `regenerateFromMessage()`, `acceptProactiveSuggestion()`, `extractFileOps()`,
+  `stopAgent()` fix, `sendMessage()` stores attachments
+- `ui/components/ChatMessageItem.kt` — `StepCard`, `StatusDot`, `AttachedFileCard`,
+  `FileOpCard`, `combinedClickable` long-press
+- `ui/screens/ChatScreen.kt` — `StoppingBanner`, `ProactiveSuggestionBanner`,
+  `MessageActionsSheet` (ModalBottomSheet), long-press wiring, banner layout
+
+---
+
 ## v4.0.73 (versionCode 201) — Combined Approach + Universal Reasoning + Skill Fix
 **Date:** 2026-11-03
 

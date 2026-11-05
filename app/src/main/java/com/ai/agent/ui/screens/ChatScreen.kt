@@ -61,11 +61,16 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.ContentCopy  // v4.0.87: message action
+import androidx.compose.material.icons.outlined.Refresh    // v4.0.87: regenerate action
+import androidx.compose.material.icons.outlined.Lightbulb  // v4.0.87: proactive banner
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.ExperimentalMaterial3Api  // v4.0.87: ModalBottomSheet
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet  // v4.0.87: message actions
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -86,6 +91,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager  // v4.0.87: copy message
+import androidx.compose.ui.text.AnnotatedString  // v4.0.87: clipboard text
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -128,10 +135,13 @@ fun ChatScreen(
     val custom = LocalCustomColors.current
     val m3 = MaterialTheme.colorScheme
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current  // v4.0.87: message copy
 
     val state by viewModel.state.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    // v4.0.87: Long-press target for the message-actions bottom sheet (Copy/Delete/Regenerate).
+    var messageActionTarget by remember { mutableStateOf<ChatMessage?>(null) }
 
     // v2.2.0 Issue 113e — Load the session id passed from navigation.
     LaunchedEffect(pendingSessionId) {
@@ -278,59 +288,80 @@ fun ChatScreen(
             if (state.messages.isEmpty()) {
                 // Empty state — input bar below is enough to start.
             } else {
-                // v2.2.0 Issue 111 — TaskBanner now lives INSIDE the LazyColumn
-                // as the first item so it scrolls with messages instead of
-                // floating on top of (and overlapping) the first chat bubble.
-                val showBanner = state.isThinking || state.isExecuting || state.currentIteration > 0
+                // v4.0.87: Banners (Stopping + Proactive) sit ABOVE the scroll area.
+                val showStopping = state.stopRequested
 
-                // v4.0.69: Removed StepGroupCard — now each message shows individually.
-                // Each ChatMessageItem has its own thinking bubble + per-call expand.
-                // This makes the chat look like Z.ai Code's chat interface.
-
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    // v2.2.0 Issue 111 — Banner as the first scrollable item.
-                    if (showBanner) {
-                        item(key = "task-banner") {
-                            TaskBanner(
-                                currentIteration = state.currentIteration,
-                                maxIterations = state.maxIterations,
-                                apiCalls = state.apiCallCount,
-                                isExecuting = state.isExecuting,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                                onStop = { viewModel.stopAgent() },
-                            )
-                        }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // ---- v4.0.87 Feature 2: "Stopping…" state banner ----
+                    if (showStopping) {
+                        StoppingBanner()
+                    }
+                    // ---- v4.0.87 Feature 4: Proactive suggestion inline banner ----
+                    state.proactiveSuggestion?.let { suggestion ->
+                        ProactiveSuggestionBanner(
+                            suggestion = suggestion,
+                            onAccept = { viewModel.acceptProactiveSuggestion() },
+                            onDismiss = { viewModel.dismissProactiveSuggestion() },
+                        )
                     }
 
-                    // v4.0.69: Show each message individually — no grouping.
-                    // Each step message shows its own thinking bubble + tool call cards.
-                    // Each tool call card expands/collapses independently.
-                    state.messages.forEachIndexed { index, msg ->
-                        val isLastAi = !msg.isUser && index == state.messages.lastIndex
-                        item(key = msg.id) {
-                            ChatMessageItem(
-                                message = msg,
-                                isLastAi = isLastAi,
-                                thinking = state.isThinking,
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                    }
+                    // v2.2.0 Issue 111 — TaskBanner now lives INSIDE the LazyColumn
+                    // as the first item so it scrolls with messages instead of
+                    // floating on top of (and overlapping) the first chat bubble.
+                    // v4.0.87: Hide the TaskBanner while stopping (StoppingBanner replaces it).
+                    val showBanner = !showStopping &&
+                        (state.isThinking || state.isExecuting || state.currentIteration > 0)
 
-                    // Inline thinking indicator at the very end while the LLM is responding.
-                    if (state.isThinking && (state.messages.isEmpty() || !state.messages.last().isUser)) {
-                        val last = state.messages.lastOrNull()
-                        if (last == null || last.text.isNotBlank() || last.toolCalls.isNotEmpty()) {
-                            item(key = "thinking-tail") {
-                                Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                                    com.ai.agent.ui.components.ThinkingIndicator(label = "thinking…")
+                    // v4.0.69: Removed StepGroupCard — now each message shows individually.
+                    // Each ChatMessageItem has its own thinking bubble + per-call expand.
+                    // This makes the chat look like Z.ai Code's chat interface.
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        // v2.2.0 Issue 111 — Banner as the first scrollable item.
+                        if (showBanner) {
+                            item(key = "task-banner") {
+                                TaskBanner(
+                                    currentIteration = state.currentIteration,
+                                    maxIterations = state.maxIterations,
+                                    apiCalls = state.apiCallCount,
+                                    isExecuting = state.isExecuting,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                    onStop = { viewModel.stopAgent() },
+                                )
+                            }
+                        }
+
+                        // v4.0.69: Show each message individually — no grouping.
+                        // Each step message shows its own thinking bubble + tool call cards.
+                        // Each tool call card expands/collapses independently.
+                        state.messages.forEachIndexed { index, msg ->
+                            val isLastAi = !msg.isUser && index == state.messages.lastIndex
+                            item(key = msg.id) {
+                                ChatMessageItem(
+                                    message = msg,
+                                    isLastAi = isLastAi,
+                                    thinking = state.isThinking,
+                                    onLongPress = { messageActionTarget = msg },  // v4.0.87: long-press → actions
+                                    modifier = Modifier.animateItem(),
+                                )
+                            }
+                        }
+
+                        // Inline thinking indicator at the very end while the LLM is responding.
+                        if (state.isThinking && (state.messages.isEmpty() || !state.messages.last().isUser)) {
+                            val last = state.messages.lastOrNull()
+                            if (last == null || last.text.isNotBlank() || last.toolCalls.isNotEmpty()) {
+                                item(key = "thinking-tail") {
+                                    Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                                        com.ai.agent.ui.components.ThinkingIndicator(label = "thinking…")
+                                    }
                                 }
                             }
                         }
@@ -384,12 +415,278 @@ fun ChatScreen(
         )
     }
 
+    // v4.0.87: Message actions bottom sheet (long-press → Copy / Regenerate / Delete).
+    messageActionTarget?.let { target ->
+        MessageActionsSheet(
+            message = target,
+            onCopy = {
+                clipboardManager.setText(AnnotatedString(target.text))
+                Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                messageActionTarget = null
+            },
+            onRegenerate = {
+                viewModel.regenerateFromMessage(target.id)
+                messageActionTarget = null
+            },
+            onDelete = {
+                viewModel.deleteMessage(target.id)
+                messageActionTarget = null
+            },
+            onDismiss = { messageActionTarget = null },
+        )
+    }
+
     // Toast on error (separate from inline error bubble).
     LaunchedEffect(state.error) {
         state.error?.let {
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
             viewModel.dismissError()
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v4.0.87 Feature 2: "Stopping…" state banner — shown when the user taps Stop
+// while the agent loop is winding down (stopRequested == true). Replaces the
+// TaskBanner so the user gets clear, unambiguous feedback that cancellation
+// is in progress (not "idle"). Auto-clears when the loop's finally block runs.
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun StoppingBanner() {
+    val custom = LocalCustomColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.warn.copy(alpha = 0.12f))
+            .border(1.dp, custom.warn.copy(alpha = 0.35f))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Pulsing stop icon
+        val transition = rememberInfiniteTransition(label = "stop-pulse")
+        val alpha by transition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(animation = tween(700), repeatMode = RepeatMode.Reverse),
+            label = "stop-pulse-alpha",
+        )
+        Icon(
+            imageVector = Icons.Outlined.Stop,
+            contentDescription = null,
+            tint = custom.warn,
+            modifier = Modifier
+                .size(16.dp)
+                .alpha(alpha),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(
+                text = "Stopping…",
+                color = custom.warn,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "Finishing the current step — this takes a moment.",
+                color = custom.fg2,
+                fontSize = 11.sp,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v4.0.87 Feature 4: Proactive suggestion inline banner — shown at the top of
+// the chat when ProactiveTickWorker produces a Suggest result. Inline (not a
+// notification) so the user sees it in context. Tap "Do it" to send it as a
+// message, or "Dismiss" to clear.
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun ProactiveSuggestionBanner(
+    suggestion: com.ai.agent.proactive.ProactiveResult.Suggest,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.accent.copy(alpha = 0.08f))
+            .border(1.dp, custom.accent.copy(alpha = 0.35f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Lightbulb,
+            contentDescription = null,
+            tint = custom.accent,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Aira suggests",
+                color = custom.accent,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = suggestion.action,
+                color = m3.onSurface,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            if (suggestion.reason.isNotBlank()) {
+                Text(
+                    text = suggestion.reason,
+                    color = custom.fg2,
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Row(
+            modifier = Modifier
+                .background(custom.accent, RoundedCornerShape(8.dp))
+                .clickable(onClick = onAccept)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Do it",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Spacer(Modifier.width(6.dp))
+        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Dismiss",
+                tint = custom.fg3,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v4.0.87 Feature 3: Message actions bottom sheet — long-press any message to
+// open this sheet with Copy / Regenerate / Delete actions.
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MessageActionsSheet(
+    message: ChatMessage,
+    onCopy: () -> Unit,
+    onRegenerate: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = m3.surface,
+        dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() },
+    ) {
+        Column(modifier = Modifier.padding(bottom = 16.dp)) {
+            // Header — a preview of the selected message
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (message.isUser) "Your message" else "Aira's reply",
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            // Preview snippet
+            val preview = message.text.take(120) + if (message.text.length > 120) "…" else ""
+            Text(
+                text = preview,
+                color = custom.fg2,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .background(custom.surface2, RoundedCornerShape(8.dp))
+                    .border(1.dp, custom.border, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            // ---- Copy ----
+            MessageActionRow(
+                icon = Icons.Outlined.ContentCopy,
+                label = "Copy",
+                tint = custom.fg2,
+                onClick = onCopy,
+            )
+            // ---- Regenerate ----
+            MessageActionRow(
+                icon = Icons.Outlined.Refresh,
+                label = "Regenerate",
+                tint = custom.accent,
+                onClick = onRegenerate,
+            )
+            // ---- Delete ----
+            MessageActionRow(
+                icon = Icons.Outlined.DeleteOutline,
+                label = "Delete",
+                tint = custom.error,
+                onClick = onDelete,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Text(
+            text = label,
+            color = m3.onSurface,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

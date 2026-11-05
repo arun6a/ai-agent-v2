@@ -52,6 +52,10 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis(),
     val toolCalls: List<ToolCallDisplay> = emptyList(),
     val status: MessageStatus = MessageStatus.IDLE,
+    /** v4.0.87: Files the user attached to this message (so they render as cards). */
+    val attachments: List<Attachment> = emptyList(),
+    /** v4.0.87: File operations performed by tools in this step (created/copied/moved/deleted). */
+    val fileOps: List<FileOp> = emptyList(),
 )
 
 data class ToolCallDisplay(
@@ -63,6 +67,22 @@ data class ToolCallDisplay(
 )
 
 enum class MessageStatus { IDLE, THINKING, EXECUTING, SUCCESS, ERROR }
+
+/**
+ * v4.0.87: A file operation performed by a tool, surfaced as a visual card in chat.
+ * - CREATED    → writeFile succeeded
+ * - COPIED     → copyFile succeeded (path = destination)
+ * - MOVED      → moveFile succeeded (path = destination)
+ * - DELETED    → deleteFile succeeded
+ * - DIR_CREATED→ createDirectory succeeded
+ */
+data class FileOp(
+    val kind: Kind,
+    val path: String,
+    val detail: String = "",  // e.g. "2.1KB" or "← notes.txt"
+) {
+    enum class Kind { CREATED, COPIED, MOVED, DELETED, DIR_CREATED }
+}
 
 /** A file the user has staged to send with the next message. */
 data class Attachment(
@@ -101,6 +121,8 @@ data class ChatUiState(
     val sessions: List<AgentDatabase.ChatSession> = emptyList(),
     // v2.4.0: Removed webViewVisible/webViewUrl/webViewUserMode/webViewAlive —
     // browser is now a separate Compose destination (Routes.BROWSER), not an overlay.
+    /** v4.0.87: Proactive suggestion surfaced inline (from ProactiveBus). Null = no banner. */
+    val proactiveSuggestion: com.ai.agent.proactive.ProactiveResult.Suggest? = null,
 )
 
 class ChatViewModel(
@@ -129,6 +151,8 @@ class ChatViewModel(
         refreshSessions()
         // v2.4.0: Removed EmbeddedBrowserBridge registration — browser is now a Compose destination.
         // BrowserController.setNavigationCallback (registered in AppNavigation) handles nav.
+        // v4.0.87: Collect proactive suggestions from ProactiveBus → inline chat banner.
+        observeProactiveSuggestions()
     }
 
     override fun onCleared() {
@@ -347,7 +371,12 @@ class ChatViewModel(
         } catch (e: Exception) {
             Log.w(TAG, "Failed to persist user message to session $sessionId: ${e.message}")
         }
-        val userMsg = ChatMessage(text = trimmed, isUser = true, status = MessageStatus.IDLE)
+        val userMsg = ChatMessage(
+            text = trimmed,
+            isUser = true,
+            status = MessageStatus.IDLE,
+            attachments = attachments,  // v4.0.87: show attached files as cards in chat
+        )
         _state.update { s ->
             s.copy(
                 messages = s.messages + userMsg,
@@ -366,7 +395,10 @@ class ChatViewModel(
     }
 
     fun stopAgent() {
-        _state.update { it.copy(stopRequested = true, isThinking = false, isExecuting = false) }
+        // v4.0.87: Keep isThinking/isExecuting as-is so the UI can show a clear
+        // "Stopping…" banner until the loop's finally block winds everything down.
+        // (Previously we cleared them here, making the chat look idle instantly.)
+        _state.update { it.copy(stopRequested = true) }
         loopJob?.cancel()
     }
 
@@ -1931,6 +1963,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             isUser = false,
             toolCalls = results,
             status = status,
+            fileOps = extractFileOps(results),  // v4.0.87: surface created/copied/moved/deleted files
         )
         _state.update { s -> s.copy(messages = s.messages + msg) }
         // v2.2.1: Save step messages to DB so they persist across app restarts.
@@ -1968,6 +2001,97 @@ ALWAYS state index + text + reason before clicking. No exceptions.
             "launchApp" -> "Try: searchInApp instead, or open via browser."
             else -> "Try a different approach, or call readScreen to see what's on screen."
         }
+    }
+
+    // ---- v4.0.87: Proactive suggestions + message actions + file-op extraction ----
+
+    /** Collect proactive suggestions published by ProactiveBus into UI state. */
+    private fun observeProactiveSuggestions() {
+        viewModelScope.launch {
+            com.ai.agent.proactive.ProactiveBus.suggestions.collect { suggestion ->
+                _state.update { it.copy(proactiveSuggestion = suggestion) }
+            }
+        }
+    }
+
+    /** Dismiss the current proactive suggestion banner. */
+    fun dismissProactiveSuggestion() {
+        com.ai.agent.proactive.ProactiveBus.clear()
+        _state.update { it.copy(proactiveSuggestion = null) }
+    }
+
+    /** Accept the proactive suggestion — send it as a user message. */
+    fun acceptProactiveSuggestion() {
+        val suggestion = _state.value.proactiveSuggestion ?: return
+        dismissProactiveSuggestion()
+        sendMessage(suggestion.action)
+    }
+
+    /** v4.0.87: Delete a single message from the chat (long-press → Delete). */
+    fun deleteMessage(id: String) {
+        _state.update { s ->
+            s.copy(messages = s.messages.filterNot { it.id == id })
+        }
+    }
+
+    /**
+     * v4.0.87: Regenerate a message.
+     * - If [id] is a USER message: drop it + everything after, re-send its text.
+     * - If [id] is an AI message: find the preceding user message, drop the AI
+     *   message + everything after it, then re-send that user message.
+     */
+    fun regenerateFromMessage(id: String) {
+        val messages = _state.value.messages
+        val idx = messages.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val target = messages[idx]
+        val userIdx = if (target.isUser) idx else {
+            var u = idx - 1
+            while (u >= 0 && !messages[u].isUser) u--
+            u
+        }
+        if (userIdx < 0) return
+        val text = messages[userIdx].text
+        // Keep everything before the user message we're regenerating from.
+        _state.update { s -> s.copy(messages = s.messages.take(userIdx)) }
+        sendMessage(text)
+    }
+
+    /**
+     * v4.0.87: Inspect successful tool results and extract file operations so
+     * they can be rendered as visual file cards in the chat.
+     */
+    private fun extractFileOps(results: List<ToolCallDisplay>): List<FileOp> {
+        val ops = mutableListOf<FileOp>()
+        for (r in results) {
+            if (!r.success) continue
+            when (r.name) {
+                "writeFile" -> {
+                    val path = r.args["path"] as? String ?: continue
+                    val content = r.args["content"] as? String ?: ""
+                    ops.add(FileOp(FileOp.Kind.CREATED, path, "${content.length} chars"))
+                }
+                "copyFile" -> {
+                    val src = r.args["source"] as? String ?: continue
+                    val dst = r.args["destination"] as? String ?: continue
+                    ops.add(FileOp(FileOp.Kind.COPIED, dst, "← ${src.substringAfterLast('/')}"))
+                }
+                "moveFile" -> {
+                    val src = r.args["source"] as? String ?: continue
+                    val dst = r.args["destination"] as? String ?: continue
+                    ops.add(FileOp(FileOp.Kind.MOVED, dst, "← ${src.substringAfterLast('/')}"))
+                }
+                "deleteFile" -> {
+                    val path = r.args["path"] as? String ?: continue
+                    ops.add(FileOp(FileOp.Kind.DELETED, path))
+                }
+                "createDirectory" -> {
+                    val path = r.args["path"] as? String ?: continue
+                    ops.add(FileOp(FileOp.Kind.DIR_CREATED, path))
+                }
+            }
+        }
+        return ops
     }
 
     companion object {
