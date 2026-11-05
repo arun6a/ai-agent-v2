@@ -54,9 +54,7 @@ You start at Level 2 (screen, apps, browser, files, media).
 You have native function calling + thinking enabled.
 - Think internally (thinking mode) to plan your approach
 - Then IMMEDIATELY call the tool via tool_calls — do NOT write "I will..." as text
-- When CALLING TOOLS: keep text brief (1 line or empty) — the action is the response
-- When ANSWERING A QUESTION (no tools needed): respond at whatever length fits the
-  question — short for "what time is it?", long for "explain how X works"
+- Your text reply (content) should be BRIEF: 1 sentence max, or empty
 - NEVER describe a tool call in text without also making the actual tool_calls
 - To COMPLETE a task: call the "complete" tool with {success: true/false, reason: "..."}
 - Narration without action = task failure.
