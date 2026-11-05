@@ -136,6 +136,8 @@ class ToolExecutor(private val context: Context) {
             "escalateLevel",  // v4.0.72: capability level escalation
             // v4.0.26: Custom tool management
             "createCustomTool", "listCustomTools", "deleteCustomTool",
+            // v4.0.88: Connector management (AI-created connectors with OAuth)
+            "createConnector", "listConnectors", "deleteConnector", "connectConnector",
             // v4.0.61: Tool search — search ALL tools by keyword
             "searchTools",
             // v4.0.63: Terminal management tools
@@ -165,7 +167,9 @@ class ToolExecutor(private val context: Context) {
      * Called by ToolSchemas to build the tools array for native function calling.
      */
     fun getAllToolNames(context: Context): List<String> {
-        return getAvailableToolNames() + com.ai.agent.tools.custom.CustomToolStore.getToolNames(context)
+        return getAvailableToolNames() +
+            com.ai.agent.tools.custom.CustomToolStore.getToolNames(context) +
+            com.ai.agent.tools.custom.ConnectorStore.getToolNames(context)  // v4.0.88
     }
 
     // v3.6.0: Tool → required permission mapping for auto-detection.
@@ -300,6 +304,8 @@ class ToolExecutor(private val context: Context) {
             "escalateLevel",  // v4.0.72: capability level escalation
             // v4.0.26: Custom tool management + custom tools don't need accessibility
             "createCustomTool", "listCustomTools", "deleteCustomTool", "runShellCommand",
+            // v4.0.88: Connector management — HTTP calls, no accessibility
+            "createConnector", "listConnectors", "deleteConnector", "connectConnector",
             // v4.0.61: searchTools — just searches schemas, no accessibility
             "searchTools",
             // v4.0.63: Terminal management — HTTP calls, no accessibility
@@ -324,7 +330,11 @@ class ToolExecutor(private val context: Context) {
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
         // Check if this is a custom tool — if so, skip accessibility.
         val isCustomTool = com.ai.agent.tools.custom.CustomToolStore.get(context, call.name) != null
-        val noAccessibility = noAccessibilityNeeded || isCustomTool || call.name.startsWith("mcp__")
+        // v4.0.88: Connector endpoint tools (e.g., gmail__send_email) don't need accessibility.
+        val isConnectorTool = call.name.contains("__") &&
+            com.ai.agent.tools.custom.ConnectorStore.resolveTool(context, call.name) != null
+        val noAccessibility = noAccessibilityNeeded || isCustomTool || isConnectorTool ||
+            call.name.startsWith("mcp__")
 
         // For non-accessibility tools, skip the service check entirely.
         // These tools don't reference `service` in the when block below.
@@ -833,6 +843,11 @@ class ToolExecutor(private val context: Context) {
             "createCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             "listCustomTools" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
             "deleteCustomTool" -> com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+            // v4.0.88: Connector management (AI-created connectors with OAuth)
+            "createConnector" -> com.ai.agent.tools.categories.ConnectorTools.execute(call, context, service, database)
+            "listConnectors" -> com.ai.agent.tools.categories.ConnectorTools.execute(call, context, service, database)
+            "deleteConnector" -> com.ai.agent.tools.categories.ConnectorTools.execute(call, context, service, database)
+            "connectConnector" -> com.ai.agent.tools.categories.ConnectorTools.execute(call, context, service, database)
             // v4.0.61: searchTools — search ALL tools by keyword
             "searchTools" -> searchTools(call, context)
             // v4.0.63: Terminal management tools
@@ -987,6 +1002,14 @@ class ToolExecutor(private val context: Context) {
                 val customTool = com.ai.agent.tools.custom.CustomToolStore.get(context, call.name)
                 if (customTool != null) {
                     com.ai.agent.tools.categories.CustomTools.execute(call, context, service, database)
+                } else if (call.name.contains("__")) {
+                    // v4.0.88: Check if this is a connector endpoint tool (e.g., gmail__send_email)
+                    val resolved = com.ai.agent.tools.custom.ConnectorStore.resolveTool(context, call.name)
+                    if (resolved != null) {
+                        com.ai.agent.tools.categories.ConnectorTools.executeEndpoint(context, call.name, call.args)
+                    } else {
+                        ToolResult(false, "unknown tool: ${call.name}")
+                    }
                 } else {
                     ToolResult(false, "unknown tool: ${call.name}")
                 }

@@ -372,6 +372,31 @@ object ToolSchemas {
             mapOf(
                 "name" to Param("string", "Name of the custom tool to delete.", required = true),
             )),
+        // v4.0.88: Connector management — AI-created connectors with OAuth support
+        Schema("createConnector", "[SINGLE CALL] Create a connector to an external service API. Discovers endpoints from docs/web search, then defines them here. Each endpoint becomes a callable tool: {name}__{endpoint}. Three auth types: 'none' (public API), 'apikey' (bearer token), 'oauth_pkce' (OAuth 2.0 + PKCE browser login). For oauth_pkce, register an OAuth app with the provider to get a client_id, then call connectConnector(name) to open the login page.",
+            mapOf(
+                "name" to Param("string", "Short identifier (lowercase, e.g. 'gmail', 'home_assistant').", required = true),
+                "description" to Param("string", "What this connector does (shown to user).", required = true),
+                "authType" to Param("string", "Auth: 'none' | 'apikey' | 'oauth_pkce'.", required = true),
+                "apiBase" to Param("string", "API base URL, e.g. 'https://gmail.googleapis.com'.", required = true),
+                "endpoints" to Param("string", "JSON array: [{\"name\":\"send_email\",\"method\":\"POST\",\"path\":\"/gmail/v1/users/me/messages/send\",\"bodyTemplate\":\"{\\\"raw\\\":\\\"{raw}\\\"}\"}]. Use {param} placeholders in path/body.", required = true),
+                "apiKey" to Param("string", "For apikey auth: the API key/token.", required = false),
+                "apiKeyHeader" to Param("string", "Header name for API key (default 'Authorization').", required = false),
+                "apiKeyPrefix" to Param("string", "Prefix before key (default 'Bearer', use '' for raw).", required = false),
+                "authorizeUrl" to Param("string", "For oauth_pkce: provider's authorize URL.", required = false),
+                "tokenUrl" to Param("string", "For oauth_pkce: provider's token URL.", required = false),
+                "scopes" to Param("string", "For oauth_pkce: space-separated OAuth scopes.", required = false),
+                "clientId" to Param("string", "For oauth_pkce: OAuth client_id (register an app with the provider).", required = false),
+            )),
+        Schema("listConnectors", "[BATCHABLE] [NO VERIFY] List all connectors you've created. Shows name, auth type, connection status, and available tools."),
+        Schema("deleteConnector", "[SINGLE CALL] Delete a connector and all its tools.",
+            mapOf(
+                "name" to Param("string", "Connector name to delete.", required = true),
+            )),
+        Schema("connectConnector", "[SINGLE CALL] Start the OAuth login flow for a connector (authType='oauth_pkce'). Opens the browser for the user to authorize. After approval, the connector's tools become callable.",
+            mapOf(
+                "name" to Param("string", "Connector name to connect.", required = true),
+            )),
         // v4.0.61: searchTools — search ALL tools (built-in + custom) by name or description.
         // Use when you're not sure which tool to use, or when you think a tool might not exist.
         // Returns matching tool names + descriptions (max 15 results).
@@ -852,6 +877,46 @@ object ToolSchemas {
                 }
             } catch (e: Exception) {
                 // Ignore — custom tools are optional
+            }
+
+            // v4.0.88: Auto-inject connector endpoint tools (e.g., gmail__send_email).
+            // Each connector's endpoints become callable tools, like MCP tools.
+            try {
+                val connectors = com.ai.agent.tools.custom.ConnectorStore.load(context)
+                for (conn in connectors) {
+                    for (ep in conn.endpoints) {
+                        val namespacedName = "${conn.name}__${ep.name}"
+                        if (filter != null && namespacedName !in filter) continue
+                        val properties = JSONObject()
+                        val required = JSONArray()
+                        for (paramName in ep.params) {
+                            properties.put(paramName, JSONObject()
+                                .put("type", "string")
+                                .put("description", "Parameter: $paramName"))
+                            required.put(paramName)
+                        }
+                        val parameters = JSONObject()
+                            .put("type", "object")
+                            .put("properties", properties)
+                            .put("additionalProperties", false)
+                        if (required.length() > 0) {
+                            parameters.put("required", required)
+                        }
+                        val statusNote = if (conn.authType == "oauth_pkce" && !conn.connected)
+                            " [NOT CONNECTED — call connectConnector(name=\"${conn.name}\") first]"
+                        else ""
+                        val function = JSONObject()
+                            .put("name", namespacedName)
+                            .put("description", "(Connector: ${conn.name}) ${ep.description}$statusNote")
+                            .put("parameters", parameters)
+                        val tool = JSONObject()
+                            .put("type", "function")
+                            .put("function", function)
+                        tools.put(tool)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore — connectors are optional
             }
 
             // v4.0.80: GAP 1 FIX — Auto-inject MCP tools from connected servers.

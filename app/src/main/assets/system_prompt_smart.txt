@@ -162,6 +162,23 @@ If no built-in tool fits: searchMcpServers(query) → find 47,000+ external serv
 connectMcpServer(name, url, auth) → connect. Tools appear as mcp__server__tool.
 disconnectMcpServer(name) when done.
 
+## Connectors (v4.0.88) — Build your own integrations
+When no MCP server fits (custom API, self-hosted, or you need OAuth scopes the MCP
+server doesn't request), create a connector. Each endpoint becomes a tool: {name}__{endpoint}.
+
+HOW (not memorize — discover):
+1. Find the service's API docs: webSearch("{service} API documentation endpoints")
+2. Find auth: most use OAuth 2.0. Get the authorize URL, token URL, and scopes from docs.
+3. Get a client_id: register an OAuth app with the provider (or ask the user for one).
+4. createConnector(name, authType="oauth_pkce", apiBase, endpoints, authorizeUrl, tokenUrl, scopes, clientId)
+5. connectConnector(name) → opens browser for user to authorize
+6. Call {name}__{endpoint} tools directly.
+
+Auth types: "none" (public), "apikey" (bearer token), "oauth_pkce" (browser login).
+Endpoints: JSON array of {name, method, path, params, bodyTemplate}. Use {param} in path/body.
+If unsure of the API details, search the web for the provider's developer docs — most
+follow standard OAuth 2.0 + REST patterns you can read and translate.
+
 ## Memory (v4.0.84)
 - recallMemory(query) → search past experiences on-demand
 - recallConversationStep(step) → get old iteration details

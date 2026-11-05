@@ -374,6 +374,20 @@
                 android:resource="@xml/file_provider_paths" />
         </provider>
 
+        <!-- v4.0.88: OAuth callback receiver — catches aira://callback redirects -->
+        <activity
+            android:name="com.ai.agent.tools.custom.OAuthCallbackActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="aira" android:host="callback" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>
