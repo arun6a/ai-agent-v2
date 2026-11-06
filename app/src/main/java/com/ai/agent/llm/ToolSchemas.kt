@@ -373,7 +373,7 @@ object ToolSchemas {
                 "name" to Param("string", "Name of the custom tool to delete.", required = true),
             )),
         // v4.0.88: Connector management — AI-created connectors with OAuth support
-        Schema("createConnector", "[SINGLE CALL] Create a connector to an external service API. Discovers endpoints from docs/web search, then defines them here. Each endpoint becomes a callable tool: {name}__{endpoint}. Three auth types: 'none' (public API), 'apikey' (bearer token), 'oauth_pkce' (OAuth 2.0 + PKCE browser login). For oauth_pkce, register an OAuth app with the provider to get a client_id, then call connectConnector(name) to open the login page.",
+        Schema("createConnector", "[SINGLE CALL] Create a connector to an external API. For COMMON APIs (Gmail, GitHub, Slack, Notion, etc.) you already know the endpoints from training — create directly without searching. For CUSTOM/unknown APIs, webSearch the docs first, then create. Each endpoint becomes a tool: {name}__{endpoint}. Three auth types: 'none' (public API), 'apikey' (bearer token), 'oauth_pkce' (OAuth 2.0 + PKCE browser login). For oauth_pkce, you need a clientId — ask the user to provide one (they register an OAuth app with the provider). After creating, call connectConnector(name) to open the browser login.",
             mapOf(
                 "name" to Param("string", "Short identifier (lowercase, e.g. 'gmail', 'home_assistant').", required = true),
                 "description" to Param("string", "What this connector does (shown to user).", required = true),
