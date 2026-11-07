@@ -437,7 +437,9 @@ class LLMClient(private val context: Context) {
             // Permanent failure — record + try next.
             BindingHealthStore.recordFailure(binding.id, resp.reply.take(100), context)
             lastResp = resp
-            LogCapture.w("LLMClient", "Binding ${binding.providerName} failed: ${resp.reply.take(80)}")
+            // v4.0.91: Log the FULL reply (was truncating to 80 chars, hiding the error reason)
+            LogCapture.w("LLMClient", "Binding ${binding.providerName} failed — reply: '${resp.reply.take(300)}' | toolCalls: ${resp.toolCalls.size}")
+            Log.w("LLMClient", "Binding ${binding.providerName} failed — full reply: ${resp.reply}")
         }
         // v3.3.7: All bindings of the picked model failed — try cross-model fallback.
         // This is the missing piece for "Sandbox goes down → try Gemini Flash".
@@ -1004,14 +1006,59 @@ ALWAYS make the tool_call. Narration without action = task failure."""
             Log.w("LLMClient", "Could not parse Gemini usage: ${e.message}")
         }
 
+        // v4.0.91: Detailed diagnostic logging — log the FULL response when it's
+        // empty/blocked so we can see WHY Gemini returned nothing.
+        // This is diagnostic only — helps identify safety filters, empty candidates,
+        // or other failure modes that were previously silently swallowed.
         val candidates = json.optJSONArray("candidates")
+        val promptFeedback = json.optJSONObject("promptFeedback")
+
+        // Log prompt-level blocking (safety filter blocked the INPUT)
+        if (promptFeedback != null) {
+            val blockReason = promptFeedback.optString("blockReason", "")
+            if (blockReason.isNotEmpty()) {
+                LogCapture.w("LLMClient", "⚠️ GEMINI PROMPT BLOCKED: $blockReason")
+                Log.w("LLMClient", "⚠️ Gemini promptFeedback.blockReason: $blockReason")
+            }
+        }
+
+        // Log candidate-level finish reasons (SAFETY, RECITATION, OTHER, MAX_TOKENS, etc.)
+        if (candidates != null && candidates.length() > 0) {
+            val firstCandidate = candidates.optJSONObject(0)
+            val finishReason = firstCandidate?.optString("finishReason", "") ?: ""
+            if (finishReason.isNotEmpty() && finishReason != "STOP") {
+                LogCapture.w("LLMClient", "⚠️ GEMINI finishReason: $finishReason (not STOP)")
+                Log.w("LLMClient", "⚠️ Gemini finishReason: $finishReason — content may be blocked/empty")
+            }
+        }
+
         val content = candidates
             ?.optJSONObject(0)
             ?.optJSONObject("content")
             ?.optJSONArray("parts")
             ?.optJSONObject(0)
             ?.optString("text")
-            ?: "No response from Gemini"
+            ?: ""
+
+        // v4.0.91: If content is empty, log the full response for diagnosis
+        if (content.isEmpty()) {
+            LogCapture.w("LLMClient", "⚠️ GEMINI EMPTY CONTENT — full response: ${responseBody.take(1000)}")
+            Log.w("LLMClient", "⚠️ Gemini returned empty content. Full response (${responseBody.length} chars): ${responseBody.take(1000)}")
+            // Check for common failure reasons
+            val blockReason = promptFeedback?.optString("blockReason", "") ?: ""
+            val finishReason = candidates?.optJSONObject(0)?.optString("finishReason", "") ?: ""
+            val reason = when {
+                blockReason.isNotEmpty() -> "Prompt blocked: $blockReason"
+                finishReason == "SAFETY" -> "Response blocked by safety filter"
+                finishReason == "RECITATION" -> "Response blocked by recitation filter"
+                finishReason == "MAX_TOKENS" -> "Response cut off (max tokens)"
+                finishReason == "OTHER" -> "Response blocked (other reason)"
+                candidates == null || candidates.length() == 0 -> "No candidates in response"
+                else -> "Unknown — content field empty but finishReason=$finishReason"
+            }
+            return LLMResponse("⚠️ Gemini returned empty: $reason", emptyList())
+        }
+
         // Gemini uses manual JSON format (no native function calling in our impl)
         return parseResponse(content)
     }
