@@ -140,6 +140,8 @@ class ToolExecutor(private val context: Context) {
             "createConnector", "listConnectors", "deleteConnector", "connectConnector",
             // v4.0.61: Tool search — search ALL tools by keyword
             "searchTools",
+            // v4.0.92: Unified search — searches memories + knowledge + tools + MCP in ONE call
+            "searchAll",
             // v4.0.63: Terminal management tools
             "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
             // v4.0.28: Wallpaper
@@ -308,6 +310,8 @@ class ToolExecutor(private val context: Context) {
             "createConnector", "listConnectors", "deleteConnector", "connectConnector",
             // v4.0.61: searchTools — just searches schemas, no accessibility
             "searchTools",
+            // v4.0.92: searchAll — unified search, no accessibility
+            "searchAll",
             // v4.0.63: Terminal management — HTTP calls, no accessibility
             "connectTerminal", "listTerminals", "runOnTerminal", "disconnectTerminal",
             // v4.0.28: Wallpaper
@@ -850,6 +854,8 @@ class ToolExecutor(private val context: Context) {
             "connectConnector" -> com.ai.agent.tools.categories.ConnectorTools.execute(call, context, service, database)
             // v4.0.61: searchTools — search ALL tools by keyword
             "searchTools" -> searchTools(call, context)
+            // v4.0.92: searchAll — unified search across memories + knowledge + tools + MCP
+            "searchAll" -> com.ai.agent.tools.categories.UnifiedSearch.execute(call, context, database)
             // v4.0.63: Terminal management tools
             "connectTerminal" -> com.ai.agent.terminal.TerminalTools.Handler.connectTerminal(call.args, context)
             "listTerminals" -> com.ai.agent.terminal.TerminalTools.Handler.listTerminals(call.args, context)

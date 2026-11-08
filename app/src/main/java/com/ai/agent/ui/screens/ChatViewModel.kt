@@ -730,8 +730,11 @@ class ChatViewModel(
                     "(only failure lessons stored — see below)"
                 } else if (userMessage.length > 10) {
                     // v3.6.2: use FTS5 to find relevant memories for this task.
+                    // v4.0.92: In on-demand mode, limit to 3 memories (lean prompt).
+                    //          In normal mode, use 10 (full context).
+                    val memLimit = if (useOnDemand) 3 else 10
                     try {
-                        val similar = database.recallSimilar(userMessage, limit = 10)
+                        val similar = database.recallSimilar(userMessage, limit = memLimit)
                         if (similar.isNotEmpty()) {
                             // Filter out avoid_ and workflow_ keys (those go in separate sections).
                             similar.filter { !it.first.startsWith("avoid_") && !it.first.startsWith("workflow_") }
@@ -751,9 +754,11 @@ class ChatViewModel(
             }
             // v4.0.74: On-Demand mode skips memory auto-injection.
             // v4.0.75: Now reads from AIProvider (user-configurable in Settings).
-            // Model calls recallMemory(query) when it needs context.
-            // This saves ~500 tokens per request when disabled.
-            val injectMemory = com.ai.agent.llm.AIProvider.isMemoryInjectEnabled(context) && !useOnDemand
+            // v4.0.92: Memory inject is now ENABLED in on-demand mode too (with 3 memories
+            //          instead of 10 to stay lean). This fixes the issue where on-demand
+            //          mode AI didn't recall past experiences (e.g., gmail MCP attempts).
+            //          Model calls recallMemory(query) when it needs more context.
+            val injectMemory = com.ai.agent.llm.AIProvider.isMemoryInjectEnabled(context)
             var systemPrompt = if (injectMemory) {
                 "$basePrompt\n\n## What I Remember About the User\n$memoryStr"
             } else {

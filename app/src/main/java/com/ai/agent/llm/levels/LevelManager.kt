@@ -51,7 +51,7 @@ object LevelManager {
     // v4.0.74: Meta-tools — always available in on-demand mode.
     // These are the "discovery" tools the model uses to find what it needs.
     val META_TOOLS = listOf(
-        "searchTools", "recallMemory", "getSkill", "escalateLevel",
+        "searchTools", "searchAll", "recallMemory", "getSkill", "escalateLevel",
         "createCustomTool", "listCustomTools", "deleteCustomTool",
         "todoWrite", "delegateTask", "speak", "complete",
         "listTerminals", "listSkills", "searchMemory",

@@ -513,7 +513,7 @@ object AIProvider {
     const val DEFAULT_USE_FAILURE_RULES = true
     const val DEFAULT_USE_THINKING = true
     const val DEFAULT_USE_TODO_PLANNING = true
-    const val DEFAULT_USE_CONV_COMPRESSION = false  // Smart mode only
+    const val DEFAULT_USE_CONV_COMPRESSION = true  // v4.0.92: enabled by default (was false)
     const val DEFAULT_MAX_ITERATIONS = 80
 
     // v4.0.79: MCP (Model Context Protocol) flags
@@ -636,7 +636,7 @@ object AIProvider {
                 p.putBoolean(KEY_USE_FAILURE_RULES, true)
                 p.putBoolean(KEY_USE_THINKING, false)
                 p.putBoolean(KEY_USE_TODO_PLANNING, false)
-                p.putBoolean(KEY_USE_CONV_COMPRESSION, false)
+                p.putBoolean(KEY_USE_CONV_COMPRESSION, true)  // v4.0.92: enabled for all presets
             }
             PRESET_SMART -> {
                 // On-demand everything. Max token savings. Needs smart model.
@@ -645,13 +645,13 @@ object AIProvider {
                 p.putBoolean(KEY_USE_ON_DEMAND, true)
                 p.putBoolean(KEY_USE_PATTERN_DETECTION, true)
                 p.putBoolean(KEY_USE_LLM_INTENT, true)
-                p.putBoolean(KEY_USE_MEMORY_INJECT, false)  // on-demand via recallMemory
+                p.putBoolean(KEY_USE_MEMORY_INJECT, true)  // v4.0.92: enabled in on-demand (3 memories, lean)
                 p.putBoolean(KEY_USE_SKILLS_INJECT, false)   // on-demand via getSkill
                 p.putBoolean(KEY_USE_AUTO_EXPAND, true)
                 p.putBoolean(KEY_USE_FAILURE_RULES, true)
                 p.putBoolean(KEY_USE_THINKING, true)
                 p.putBoolean(KEY_USE_TODO_PLANNING, true)
-                p.putBoolean(KEY_USE_CONV_COMPRESSION, true)
+                p.putBoolean(KEY_USE_CONV_COMPRESSION, true)  // v4.0.92: enabled for all presets
             }
             else -> {  // PRESET_BALANCED (default)
                 // Reasoning + smart classification. Recommended for most users.
@@ -666,7 +666,7 @@ object AIProvider {
                 p.putBoolean(KEY_USE_FAILURE_RULES, true)
                 p.putBoolean(KEY_USE_THINKING, true)
                 p.putBoolean(KEY_USE_TODO_PLANNING, true)
-                p.putBoolean(KEY_USE_CONV_COMPRESSION, false)
+                p.putBoolean(KEY_USE_CONV_COMPRESSION, true)  // v4.0.92: enabled for all presets
             }
         }
         p.putString(KEY_PRESET, preset)

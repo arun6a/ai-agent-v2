@@ -404,6 +404,11 @@ object ToolSchemas {
             mapOf(
                 "query" to Param("string", "Search query — keyword or phrase. Matches tool names AND descriptions (case-insensitive). E.g., 'download file', 'whatsapp', 'rule', 'brightness'.", required = true),
             )),
+        // v4.0.92: Unified search — one query, ALL sources (memories + knowledge + tools + MCP)
+        Schema("searchAll", "[BATCHABLE] [NO VERIFY] Search ALL sources in ONE call: memories (past experiences), knowledge files, built-in/custom tools, and MCP servers. Use this INSTEAD of calling recallMemory + searchKnowledge + searchTools + searchMcpServers separately. Saves 3 API calls. Returns top 3-5 results per source, grouped. Example: searchAll(query='gmail') → finds gmail memories + gmail knowledge + connectMcpServer tool + gmail MCP servers.",
+            mapOf(
+                "query" to Param("string", "Search query — what you're looking for. E.g., 'gmail', 'wifi password', 'youtube play'.", required = true),
+            )),
         // v4.0.63: Terminal management tools — connect to any terminal (AndroidIDE, Termux, laptop, cloud)
         Schema("connectTerminal", "[BATCHABLE] [NO VERIFY] Connect to a terminal server (aira-server.js). Tests connection + auto-detects capabilities (pkg, node, java, git, etc.). The terminal must be running aira-server.js. For AndroidIDE-Rv2 on the same phone, use host='127.0.0.1'. For other devices on same WiFi, use their IP (e.g., '192.168.1.100'). Example: connectTerminal(name='phone-androidide', host='127.0.0.1', port=8080, token='aira', type='androidide').",
             mapOf(
