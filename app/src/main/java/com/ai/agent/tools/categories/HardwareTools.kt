@@ -214,7 +214,22 @@ object HardwareTools {
 
             if (enabled) adapter.enable() else adapter.disable()
             Log.i(TAG, "Bluetooth toggled: $enabled")
-            ToolExecutor.ToolResult(true, "Bluetooth ${if (enabled) "enabling" else "disabling"}...")
+
+            // v4.0.93: Wait briefly + verify the actual state (was reporting
+            // success without checking — caused false "✓" when BT stayed ON).
+            Thread.sleep(2000)
+            val actualState = adapter.isEnabled
+            val expectedState = enabled
+            if (actualState == expectedState) {
+                ToolExecutor.ToolResult(true, "Bluetooth ${if (enabled) "enabled" else "disabled"} ✓ verified")
+            } else {
+                // Toggle didn't take effect — report honestly
+                ToolExecutor.ToolResult(false,
+                    "Bluetooth toggle did not take effect. " +
+                    "Expected: ${if (enabled) "ON" else "OFF"}, " +
+                    "Actual: ${if (actualState) "ON" else "OFF"}. " +
+                    "This device may require manual toggle in Settings → Bluetooth.")
+            }
         } catch (e: SecurityException) {
             ToolExecutor.ToolResult(false, "Permission denied: ${e.message}")
         } catch (e: Exception) {

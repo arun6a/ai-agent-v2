@@ -1074,9 +1074,15 @@ ALWAYS make the tool_call. Narration without action = task failure."""
         cleaned = cleaned.replace(Regex("<think>[\\s\\S]*?</think>", RegexOption.IGNORE_CASE), "")
         
         // Step 2: Remove markdown code fences
+        // v4.0.93: Improved fence stripping — handle ```json anywhere in the text,
+        // not just at the start. Also handle ```json\n at the beginning of lines.
         if (cleaned.contains("```")) {
-            cleaned = cleaned.replace(Regex("^```(?:json)?\\s*"), "")
-                .replace(Regex("\\s*```$"), "")
+            // Strip opening fence: ```json or ``` at start of a line
+            cleaned = cleaned.replace(Regex("```(?:json)?\\s*\\n?"), "")
+            // Strip closing fence: ``` at end
+            cleaned = cleaned.replace(Regex("\\s*```\\s*$"), "")
+            // Also strip any remaining standalone ```
+            cleaned = cleaned.replace(Regex("```"), "")
         }
 
         // Step 3: Try to extract JSON from the content

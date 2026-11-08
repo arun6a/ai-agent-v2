@@ -183,7 +183,10 @@ object ConnectorTools {
 
     private fun parseEndpoints(jsonStr: String): List<ConnectorStore.Endpoint> {
         return try {
-            val arr = org.json.JSONArray(jsonStr)
+            // v4.0.93: Replace escaped forward slashes (\/) with regular (/).
+            // Some LLMs output JSON with \/ which causes parsing to fail.
+            val cleaned = jsonStr.replace("\\/", "/")
+            val arr = org.json.JSONArray(cleaned)
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)
                 val paramsArr = o.optJSONArray("params")

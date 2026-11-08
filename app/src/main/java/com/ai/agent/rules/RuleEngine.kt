@@ -201,8 +201,15 @@ If the task is impossible, call complete(success=false, reason="...")."""
 
             // AGENT LOOP — max 10 rounds
             val maxIterations = 10
+            // v4.0.93: Track if replyToNotification already succeeded — prevent double replies
+            var hasReplied = false
             for (iteration in 1..maxIterations) {
                 Log.i(TAG, "--- Smart rule iteration $iteration/${maxIterations} ---")
+
+                // v4.0.93: If we already replied, inject "you replied — now complete"
+                if (hasReplied) {
+                    conversation.append("\n\n⚠️ You already sent a reply via replyToNotification. Do NOT reply again. Call complete(success=true, reason=\"Reply sent\") NOW.")
+                }
 
                 // v4.0.20: Use chatWithFailover (was chat()) for multi-binding
                 // failover. If the active binding fails (quota/auth), this
@@ -231,15 +238,29 @@ If the task is impossible, call complete(success=false, reason="...")."""
                     break
                 }
 
+                // v4.0.93: BLOCK replyToNotification if already replied (anti-double-reply)
+                val filteredToolCalls = if (hasReplied) {
+                    response.toolCalls.filter { it.name != "replyToNotification" }
+                } else {
+                    response.toolCalls
+                }
+                if (filteredToolCalls.isEmpty() && response.toolCalls.isNotEmpty()) {
+                    // All tool calls were replyToNotification but we already replied → force complete
+                    Log.i(TAG, "✅ Smart rule auto-completed: already replied, blocking duplicate replyToNotification")
+                    db.logAction("Smart rule '${rule.name}' completed: reply already sent, blocked duplicate")
+                    break
+                }
+
                 // Execute tool calls
-                val results = toolExecutor.executeTools(response.toolCalls)
+                val results = toolExecutor.executeTools(filteredToolCalls)
 
                 // Log results
                 results.forEachIndexed { i, result ->
-                    Log.i(TAG, "Tool ${response.toolCalls[i].name}: ${if (result.success) "✓" else "✗"} ${result.output.take(200)}")
+                    Log.i(TAG, "Tool ${filteredToolCalls[i].name}: ${if (result.success) "✓" else "✗"} ${result.output.take(200)}")
 
                     // v3.0.5: If replyToNotification succeeded, save reply to conversation memory
-                    if (response.toolCalls[i].name == "replyToNotification" && result.success) {
+                    if (filteredToolCalls[i].name == "replyToNotification" && result.success) {
+                        hasReplied = true  // v4.0.93: Mark as replied to block future replies
                         try {
                             val pkg = response.toolCalls[i].args["package"] as? String
                                 ?: response.toolCalls[i].args["arg0"] as? String ?: ""
@@ -260,7 +281,7 @@ If the task is impossible, call complete(success=false, reason="...")."""
                 // Add results to conversation for next iteration
                 conversation.append("\n\n[Round $iteration results]:")
                 results.forEachIndexed { i, result ->
-                    val call = response.toolCalls[i]
+                    val call = filteredToolCalls[i]
                     conversation.append("\nTool: ${call.name}(${call.args})")
                     conversation.append("\nResult: ${if (result.success) "✓" else "✗"} ${result.output.take(500)}")
                 }

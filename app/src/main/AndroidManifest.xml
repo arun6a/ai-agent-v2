@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- v4.0.93: Allow Aira to see ALL installed apps (Android 11+ package visibility).
+         Without this, getLaunchIntentForPackage() returns null for apps Aira hasn't
+         interacted with, and listInstalledApps() misses system apps. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <!-- ====== Permissions (carried over from v1 — do NOT modify) ====== -->
 
     <uses-permission android:name="android.permission.INTERNET" />

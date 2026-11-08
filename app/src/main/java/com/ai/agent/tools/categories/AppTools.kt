@@ -32,8 +32,11 @@ object AppTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "launchApp" -> {
-                val pkg = (call.args["package"] as? String ?: call.args["pkg"] as? String)
-                    ?: return ToolExecutor.ToolResult(false, "missing package")
+                // v4.0.93: Accept packageName/pkg/package — AI uses different param names
+                val pkg = (call.args["package"] as? String
+                    ?: call.args["pkg"] as? String
+                    ?: call.args["packageName"] as? String)
+                    ?: return ToolExecutor.ToolResult(false, "missing package. Use: package=\"com.app.name\"")
                 val launched = service!!.launchApp(pkg)
                 if (!launched) return ToolExecutor.ToolResult(false, "launchApp($pkg) failed — startActivity returned false")
                 // Wait for the app to actually come to foreground before returning.
@@ -53,7 +56,10 @@ object AppTools {
             }
             "listInstalledApps" -> ToolExecutor.ToolResult(true, getInstalledApps(context))
             "getAppInfo" -> {
-                val pkg = call.args["package"] as? String ?: return ToolExecutor.ToolResult(false, "missing package")
+                val pkg = (call.args["package"] as? String
+                    ?: call.args["packageName"] as? String
+                    ?: call.args["pkg"] as? String)
+                    ?: return ToolExecutor.ToolResult(false, "missing package")
                 try {
                     val pm = context.packageManager
                     val info = pm.getPackageInfo(pkg, 0)
@@ -521,10 +527,12 @@ object AppTools {
         return try {
             val pm = context.packageManager
             val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            val thirdParty = packages
-                .filter { it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0 }
+            // v4.0.93: Show ALL apps including system apps (was filtering FLAG_SYSTEM).
+            // Filtering caused false "not installed" for YouTube, Settings, Clock, etc.
+            val allApps = packages
+                .sortedBy { it.packageName }
                 .joinToString("\n") { "package:${it.packageName}" }
-            "Third-party apps (${packages.size} total):\n$thirdParty"
+            "Installed apps (${packages.size} total):\n$allApps"
         } catch (e: Exception) {
             "Error listing apps: ${e.message}"
         }
