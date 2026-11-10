@@ -261,6 +261,186 @@ This is the work that was interrupted. Resume here.
 
 ---
 
+## 9.1 DEEP CODE ANALYSIS (2026-11-10, pre-v4.0.96)
+
+Full codebase + log read complete. Here are the EXACT root causes + fix locations:
+
+### ROOT CAUSE #1: Native Function Calling Type Mismatch (7 failures)
+**Files:** `LLMClient.kt` lines 1166-1171 (Gemini parser) + 1022-1029 (OpenAI parser)
+
+**The bug:** When parsing native function call args, the code does:
+```kotlin
+args[key] = argsObj.get(key)  // returns JSONObject/JSONArray for nested types!
+```
+For `todoWrite(todos=[{...}])`, Gemini sends `args` as:
+```json
+{"todos": [{"content": "step 1", "status": "pending"}]}
+```
+`argsObj.get("todos")` returns a `JSONArray` object. But the tool handler at `ToolExecutor.kt:951` does:
+```kotlin
+val todosJson = call.args["todos"] as? String  // ← JSONArray is NOT a String!
+```
+The `as? String` cast returns null → "missing todos" error.
+
+Same pattern in:
+- `ConnectorTools.kt:55` — `args["endpoints"] as? String` (gets JSONArray, not String)
+- `ConnectorTools.kt:50` — `args["description"] as? String` (works for strings, but if Gemini sends it differently...)
+
+**The fix:** Add a `normalizeArg` function in LLMClient that converts JSONObject → Map and JSONArray → List<String> before putting into args. Then update each tool handler to accept `as? List<*>` OR `as? String` (parse if string).
+
+**Fix location:**
+- `LLMClient.kt:1170` — replace `args[key] = argsObj.get(key)` with `args[key] = normalizeJsonValue(argsObj.get(key))`
+- `LLMClient.kt:1028` — same fix for OpenAI parser
+- `ToolExecutor.kt:951` — change `as? String` to handle both String and List:
+  ```kotlin
+  val todosJson = when (val v = call.args["todos"]) {
+      is String -> v
+      is List<*> -> org.json.JSONArray(v).toString()  // or build JSON string
+      else -> null
+  } ?: return ToolResult(false, "missing todos")
+  ```
+- `ConnectorTools.kt:55` — same pattern for `endpoints`
+- `ConnectorTools.kt:50` — make `description` optional (use `?: ""`)
+
+### ROOT CAUSE #2: actionChain Nested Map Cast (1 failure)
+**File:** `ToolExecutor.kt:1095`
+
+Even though `actionChain` handles `is List<*>` at line 1049, the inner cast fails:
+```kotlin
+val toolArgs = (actionRaw["args"] as? Map<String, Any>) ?: emptyMap()
+```
+`actionRaw` is a `JSONObject` (from the JSONArray), and `actionRaw["args"]` is a `JSONObject`, NOT a `Map<String, Any>`. The cast returns null → emptyMap() → tool runs with no args.
+
+**Fix:** Same normalizeArg helper — convert JSONObject to Map recursively.
+
+### ROOT CAUSE #3: recallMemory Missing Alias (1 failure)
+**File:** `MemoryTools.kt:137`
+```kotlin
+val query = call.args["query"] as? String  // AI passed key= instead
+```
+**Fix:** Add alias in `normalizePositionalArgs`:
+```kotlin
+// In argAliases map or a new section:
+"recallMemory" -> mapOf("key" to "query", "q" to "query", "search" to "query")
+```
+
+### ROOT CAUSE #4: setAlarm Wrong Permission Name (1 failure)
+**File:** `AndroidManifest.xml:50`
+```xml
+<uses-permission android:name="android.permission.SET_ALARM" />  ← WRONG
+```
+The correct permission is `com.android.alarm.permission.SET_ALARM`.
+Reference: https://developer.android.com/reference/android/provider/AlarmClock#ACTION_SET_ALARM
+
+**Fix:** Change line 50 to:
+```xml
+<uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+```
+
+### ROOT CAUSE #5: createRule No Interval Type (1 failure)
+**File:** `RuleTools.kt:67-81`
+AI called: `createRule(triggerValue="every 2 hours", triggerType="time")`
+But `time` type expects `HH:MM` format → fails validation.
+
+**Fix:** Add `"interval"` to `validTypes` list (line 39-61), and add a branch:
+```kotlin
+if (triggerType == "interval") {
+    // Parse "every 2 hours", "every 30 minutes", "every 10 minutes"
+    val regex = Regex("every\\s+(\\d+)\\s+(hour|minute|min|hr)", RegexOption.IGNORE_CASE)
+    val match = regex.find(triggerValue)
+        ?: return ToolResult(false, "invalid interval format. Use 'every N hours' or 'every N minutes'")
+    val n = match.groupValues[1].toInt()
+    val unit = match.groupValues[2].lowercase().startsWith("h")
+    val intervalMs = if (unit) n * 3600000L else n * 60000L
+    // Store as interval-based rule — RuleScheduler checks intervalMs
+}
+```
+
+### ROOT CAUSE #6: createCalendarEvent Missing Alias (1 failure)
+**File:** `ContactTools.kt:102`
+AI called: `createCalendarEvent(title=..., start=2026-11-11 10:00, duration=60)`
+But code expects `startTime` (not `start`) and `durationMinutes` (not `duration`).
+
+**Fix:** Add aliases in normalizePositionalArgs:
+```kotlin
+"createCalendarEvent" -> mapOf("start" to "startTime", "duration" to "durationMinutes", "dur" to "durationMinutes")
+```
+
+### ROOT CAUSE #7: speak Positional Arg (1 failure)
+**File:** `ToolExecutor.kt` normalizePositionalArgs — `speak` not in argOrder map
+AI called: `speak(0=Please charge your phone)` — positional arg `0`
+
+**Fix:** Add `speak` to the argOrder map:
+```kotlin
+"speak" -> listOf("text")
+```
+
+### ROOT CAUSE #8: GEMINI EMPTY CONTENT False Positive (99 warnings)
+**File:** `LLMClient.kt:1146-1148`
+```kotlin
+if (content.isEmpty()) {
+    LogCapture.w("LLMClient", "⚠️ GEMINI EMPTY CONTENT — full response: ${responseBody.take(1000)}")
+```
+This fires EVERY TIME Gemini returns only function calls (no text). 99 warnings in 1 log file = pure noise.
+
+**Fix:** Move the warning AFTER the functionCall check. Only warn if BOTH text AND functionCall are empty:
+```kotlin
+// After the functionCall parsing loop:
+if (content.isEmpty() && toolCalls.isEmpty()) {
+    LogCapture.w("LLMClient", "⚠️ GEMINI EMPTY CONTENT — full response: ${responseBody.take(1000)}")
+}
+```
+
+### Per-Tool Failure Summary
+| Tool | Total | Failed | Root Cause |
+|------|-------|--------|------------|
+| todoWrite | 21 | 5 | #1 (JSONArray as? String) |
+| createConnector | 2 | 2 | #1 + description required |
+| recallKnowledge | 5 | 1 | #1 (missing query alias) |
+| speak | 4 | 2 | #7 + 1 coroutine cancel (expected) |
+| getWeather | 2 | 2 | GPS off (expected) |
+| createRule | 3 | 1 | #5 (no interval type) |
+| setAlarm | 1 | 1 | #4 (wrong permission name) |
+| createCalendarEvent | 1 | 1 | #6 (missing alias) |
+| recallMemory | 1 | 1 | #3 (missing key= alias) |
+| actionChain | 1 | 1 | #2 (nested JSONObject cast) |
+| clickByText | 2 | 1 | text not on screen (expected) |
+| getBluetoothState | 1 | 1 | ✅ FIXED in v4.0.95 |
+| setBrightness | 1 | 1 | ✅ FIXED in v4.0.95 |
+| searchMcpServers | 1 | 1 | MCP disabled (expected) |
+| delegateTask | 1 | 1 | sub-agent hit iteration limit (expected) |
+
+### Fix Priority for v4.0.96
+1. **#1 + #2** (LLMClient normalizeArg helper) — fixes 8 failures at once
+2. **#8** (GEMINI EMPTY CONTENT) — removes 99 warnings
+3. **#4** (setAlarm permission) — 1 line fix
+4. **#3 + #6 + #7** (aliases in normalizePositionalArgs) — 3 failures
+5. **#5** (createRule interval) — 1 failure, slightly more code
+6. ConnectorTools `description` optional — 1 failure
+
+Total fixable: 13 out of 22 failures. The other 9 are expected behavior (GPS off, MCP disabled, coroutine cancelled, iteration limits, text not found).
+
+### v4.0.96 Implementation Plan (exact files to edit)
+1. `LLMClient.kt` — add `normalizeJsonValue()` helper + call it in both parsers (lines 1028, 1170)
+2. `LLMClient.kt:1146-1148` — move GEMINI EMPTY CONTENT warning after functionCall check
+3. `ToolExecutor.kt:1287-1313` — add aliases for recallMemory, createCalendarEvent, speak
+4. `ToolExecutor.kt:951` — change `as? String` to handle both String and List
+5. `ToolExecutor.kt:1095` — change `as? Map<String, Any>` to handle JSONObject
+6. `ConnectorTools.kt:50` — make description optional (`?: ""`)
+7. `ConnectorTools.kt:55` — change `as? String` to handle both String and List
+8. `RuleTools.kt:39-81` — add "interval" triggerType + parser
+9. `AndroidManifest.xml:50` — fix permission name to `com.android.alarm.permission.SET_ALARM`
+
+### Expected Result
+- 8 tool failures → 0 (parser fixes)
+- 3 tool failures → 0 (alias fixes)
+- 1 tool failure → 0 (permission fix)
+- 1 tool failure → 0 (interval type)
+- 99 log warnings → ~0
+- **84% success rate → 94% success rate** (only 9 expected failures remain)
+
+---
+
 ## 10. Immediate Next Steps (decision pending)
 
 User was asked to pick one:
