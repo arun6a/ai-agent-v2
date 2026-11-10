@@ -125,7 +125,13 @@ class LLMClient(private val context: Context) {
                 }
 
                 val requestBody = when {
-                    isGeminiEndpoint -> buildGeminiRequest(effectiveModel, userMessage, systemPrompt)
+                    isGeminiEndpoint -> buildGeminiRequest(effectiveModel, userMessage,
+                        // v4.0.94: When tools are sent, adapt the prompt to NOT ask for
+                        // manual JSON (Gemini will use native functionCall format instead).
+                        if (effectiveToolFilter != null && effectiveToolFilter.isNotEmpty())
+                            adaptPromptForNativeTools(systemPrompt)
+                        else systemPrompt,
+                        effectiveToolFilter)
                     isAnthropicEndpoint -> buildAnthropicRequest(effectiveModel, userMessage, systemPrompt, effectiveToolFilter, maxTokens ?: 0)
                     else -> buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, effectiveToolFilter, maxTokens ?: 0)
                 }
@@ -849,7 +855,22 @@ ALWAYS make the tool_call. Narration without action = task failure."""
      * Build request body for Gemini API (different format).
      * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent?key=<key>
      */
-    private fun buildGeminiRequest(model: String, userMessage: String, systemPrompt: String): String {
+    /**
+     * v4.0.94: Build Gemini API request with NATIVE function calling.
+     *
+     * Sends tools as `function_declarations` in the API request so Gemini
+     * returns structured `functionCall` objects — not manual JSON text.
+     * This fixes the MALFORMED_FUNCTION_CALL errors from Gemini 3.5 Flash Lite.
+     *
+     * Gemini tools format:
+     * "tools": [{"function_declarations": [{"name":"...", "description":"...", "parameters": {...}}]}]
+     */
+    private fun buildGeminiRequest(
+        model: String,
+        userMessage: String,
+        systemPrompt: String,
+        toolFilter: List<String>? = null,
+    ): String {
         val body = JSONObject().apply {
             put("system_instruction", JSONObject().apply {
                 put("parts", JSONArray().put(JSONObject().put("text", systemPrompt)))
@@ -859,11 +880,92 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                 put("parts", JSONArray().put(JSONObject().put("text", userMessage)))
             }))
             put("generationConfig", JSONObject().apply {
-                put("temperature", 0.3)  // v6.4.2: lower temp for more consistent JSON
-                put("maxOutputTokens", 8192)  // v6.4.2: was 1024 (too low — JSON got cut off!)
+                put("temperature", 0.3)
+                put("maxOutputTokens", 8192)
                 put("topP", 0.9)
                 put("topK", 40)
             })
+
+            // v4.0.94: Add native tools if a tool filter is provided.
+            // This lets Gemini return structured functionCall objects instead of
+            // manual JSON text — fixing MALFORMED_FUNCTION_CALL errors.
+            if (toolFilter != null && toolFilter.isNotEmpty()) {
+                val functionDeclarations = JSONArray()
+                for (schema in ToolSchemas.allSchemas()) {
+                    if (schema.name !in toolFilter) continue
+                    val params = JSONObject()
+                        .put("type", "object")
+                    val properties = JSONObject()
+                    val required = JSONArray()
+                    for ((pname, param) in schema.params) {
+                        properties.put(pname, JSONObject()
+                            .put("type", param.type)
+                            .put("description", param.description))
+                        if (param.required) required.put(pname)
+                    }
+                    params.put("properties", properties)
+                    if (required.length() > 0) params.put("required", required)
+
+                    val funcDecl = JSONObject()
+                        .put("name", schema.name)
+                        .put("description", schema.description)
+                        .put("parameters", params)
+                    functionDeclarations.put(funcDecl)
+                }
+
+                // Also add custom tools + connector tools
+                try {
+                    val customTools = com.ai.agent.tools.custom.CustomToolStore.load(context)
+                    for (ct in customTools) {
+                        if (ct.name !in toolFilter) continue
+                        val params = JSONObject().put("type", "object")
+                        val properties = JSONObject()
+                        val required = JSONArray()
+                        for (paramName in ct.parameters) {
+                            properties.put(paramName, JSONObject()
+                                .put("type", "string")
+                                .put("description", "Parameter: $paramName"))
+                            required.put(paramName)
+                        }
+                        params.put("properties", properties)
+                        if (required.length() > 0) params.put("required", required)
+                        functionDeclarations.put(JSONObject()
+                            .put("name", ct.name)
+                            .put("description", "(Custom Tool) ${ct.description}")
+                            .put("parameters", params))
+                    }
+                } catch (_: Exception) {}
+
+                try {
+                    val connectors = com.ai.agent.tools.custom.ConnectorStore.load(context)
+                    for (conn in connectors) {
+                        for (ep in conn.endpoints) {
+                            val toolName = "${conn.name}__${ep.name}"
+                            if (toolName !in toolFilter) continue
+                            val params = JSONObject().put("type", "object")
+                            val properties = JSONObject()
+                            val required = JSONArray()
+                            for (paramName in ep.params) {
+                                properties.put(paramName, JSONObject()
+                                    .put("type", "string")
+                                    .put("description", "Parameter: $paramName"))
+                                required.put(paramName)
+                            }
+                            params.put("properties", properties)
+                            if (required.length() > 0) params.put("required", required)
+                            functionDeclarations.put(JSONObject()
+                                .put("name", toolName)
+                                .put("description", "(Connector: ${conn.name}) ${ep.description}")
+                                .put("parameters", params))
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                if (functionDeclarations.length() > 0) {
+                    put("tools", JSONArray().put(JSONObject()
+                        .put("function_declarations", functionDeclarations)))
+                }
+            }
         }
         return body.toString()
     }
@@ -1044,14 +1146,55 @@ ALWAYS make the tool_call. Narration without action = task failure."""
         if (content.isEmpty()) {
             LogCapture.w("LLMClient", "⚠️ GEMINI EMPTY CONTENT — full response: ${responseBody.take(1000)}")
             Log.w("LLMClient", "⚠️ Gemini returned empty content. Full response (${responseBody.length} chars): ${responseBody.take(1000)}")
-            // Check for common failure reasons
+
+            // v4.0.94: Check for native functionCall in the response parts.
+            // When tools are sent via API, Gemini returns functionCall objects
+            // instead of text JSON. Parse them here.
+            val parts = candidates?.optJSONObject(0)
+                ?.optJSONObject("content")
+                ?.optJSONArray("parts")
+            if (parts != null && parts.length() > 0) {
+                val toolCalls = mutableListOf<ToolCall>()
+                var textReply = ""
+                for (i in 0 until parts.length()) {
+                    val part = parts.optJSONObject(i)
+                    // Check for native functionCall
+                    val functionCall = part?.optJSONObject("functionCall")
+                    if (functionCall != null) {
+                        val name = functionCall.optString("name", "")
+                        val argsObj = functionCall.optJSONObject("args") ?: JSONObject()
+                        val args = mutableMapOf<String, Any>()
+                        val keys = argsObj.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            args[key] = argsObj.get(key)
+                        }
+                        if (name.isNotEmpty()) {
+                            toolCalls.add(ToolCall(name, args))
+                            Log.i("LLMClient", "Gemini native functionCall: $name(${args.keys.joinToString(",")})")
+                        }
+                    } else {
+                        // Regular text part
+                        val text = part?.optString("text", "") ?: ""
+                        if (text.isNotEmpty()) textReply += text
+                    }
+                }
+                if (toolCalls.isNotEmpty()) {
+                    Log.i("LLMClient", "Gemini native function calling: ${toolCalls.size} tool call(s): ${toolCalls.map { it.name }}")
+                    return LLMResponse(textReply.ifEmpty { "Executing..." }, toolCalls)
+                }
+            }
+
+            // No functionCall found — check for failure reasons
             val blockReason = promptFeedback?.optString("blockReason", "") ?: ""
             val finishReason = candidates?.optJSONObject(0)?.optString("finishReason", "") ?: ""
+            val finishMessage = candidates?.optJSONObject(0)?.optString("finishMessage", "") ?: ""
             val reason = when {
                 blockReason.isNotEmpty() -> "Prompt blocked: $blockReason"
                 finishReason == "SAFETY" -> "Response blocked by safety filter"
                 finishReason == "RECITATION" -> "Response blocked by recitation filter"
                 finishReason == "MAX_TOKENS" -> "Response cut off (max tokens)"
+                finishReason == "MALFORMED_FUNCTION_CALL" -> "Malformed function call: $finishMessage"
                 finishReason == "OTHER" -> "Response blocked (other reason)"
                 candidates == null || candidates.length() == 0 -> "No candidates in response"
                 else -> "Unknown — content field empty but finishReason=$finishReason"
@@ -1059,7 +1202,7 @@ ALWAYS make the tool_call. Narration without action = task failure."""
             return LLMResponse("⚠️ Gemini returned empty: $reason", emptyList())
         }
 
-        // Gemini uses manual JSON format (no native function calling in our impl)
+        // Gemini uses manual JSON format (v4.0.94: fallback when no native functionCall)
         return parseResponse(content)
     }
 
