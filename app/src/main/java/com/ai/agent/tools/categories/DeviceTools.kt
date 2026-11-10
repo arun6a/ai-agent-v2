@@ -116,6 +116,15 @@ object DeviceTools {
                 }
                 // v2.5.1: If user passes 0-100, treat as percentage → convert to 0-255.
                 val finalLevel = if (level <= 100) (level * 255 / 100) else level
+
+                // v4.0.95: Check WRITE_SETTINGS permission before trying
+                if (!android.provider.Settings.System.canWrite(context)) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot change brightness — WRITE_SETTINGS not granted. " +
+                        "Go to Settings → Apps → Aira → Modify system settings → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Modify settings")
+                }
+
                 try {
                     // v2.5.1: Set brightness mode to MANUAL first (otherwise setting value is ignored)
                     android.provider.Settings.System.putInt(
@@ -130,7 +139,9 @@ object DeviceTools {
                     )
                     ToolExecutor.ToolResult(true, "Brightness set to $finalLevel (user requested $level${if (level <= 100) "%" else ""})")
                 } catch (e: SecurityException) {
-                    ToolExecutor.ToolResult(false, "Cannot change brightness — need WRITE_SETTINGS permission. Grant in Settings → Apps → Aira → Modify system settings.")
+                    ToolExecutor.ToolResult(false,
+                        "Cannot change brightness — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Modify settings → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Cannot change brightness: ${e.message}")
                 }

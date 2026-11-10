@@ -164,6 +164,14 @@ object HardwareTools {
      * Get Bluetooth adapter state.
      */
     private fun getBluetoothState(context: Context): ToolExecutor.ToolResult {
+        // v4.0.95: Check BLUETOOTH_CONNECT permission on Android 12+ before accessing Bluetooth
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
+                != PackageManager.PERMISSION_GRANTED) {
+                return ToolExecutor.ToolResult(false,
+                    "BLUETOOTH_CONNECT permission not granted. Go to Settings → Apps → Aira → Permissions → Nearby devices → Allow")
+            }
+        }
         return try {
             val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
                 ?: return ToolExecutor.ToolResult(false, "Bluetooth service not available")
@@ -176,7 +184,11 @@ object HardwareTools {
                 BluetoothAdapter.STATE_TURNING_OFF -> "TURNING_OFF"
                 else -> "UNKNOWN"
             }
-            ToolExecutor.ToolResult(true, "Bluetooth: $state")
+            ToolExecutor.ToolResult(true, "Bluetooth: $state\nName: ${adapter.name ?: "(unknown)"}\nAddress: ${adapter.address ?: "(hidden)"}")
+        } catch (e: SecurityException) {
+            ToolExecutor.ToolResult(false,
+                "Bluetooth SecurityException: ${e.message}. " +
+                "On Xiaomi/MIUI: go to Security Center → Permissions → Apps → Aira → Bluetooth → Allow")
         } catch (e: Exception) {
             ToolExecutor.ToolResult(false, "Failed to get Bluetooth state: ${e.message}")
         }
@@ -205,6 +217,17 @@ object HardwareTools {
     private fun toggleBluetooth(args: Map<String, Any>, context: Context): ToolExecutor.ToolResult {
         val enabled = args["enabled"] as? Boolean
             ?: return ToolExecutor.ToolResult(false, "missing enabled. Example: toggleBluetooth(enabled=true)")
+
+        // v4.0.95: Check BLUETOOTH_CONNECT permission on Android 12+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
+                != PackageManager.PERMISSION_GRANTED) {
+                return ToolExecutor.ToolResult(false,
+                    "BLUETOOTH_CONNECT permission not granted. " +
+                    "Go to Settings → Apps → Aira → Permissions → Nearby devices → Allow. " +
+                    "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Bluetooth")
+            }
+        }
 
         return try {
             val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
