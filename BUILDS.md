@@ -4,6 +4,229 @@ Complete changelog for every build of Aira (AI Agent v2).
 
 ---
 
+## v4.0.95 (versionCode 223) — Permission Hardening + 14 New Manifest Permissions
+**Date:** 2026-11-10
+**APK:** 42 MB (`ai-agent-v4.0.95-debug.apk`)
+**Build:** succeeded in sandbox (Gradle 8.10.2 + JDK 21 + Android SDK 34)
+
+### Theme
+Turn silent `SecurityException` failures into actionable "go to Settings → X" error messages. Declare 14 permissions needed for future tools. No new features — purely defensive.
+
+### 1. 14 New Permissions in AndroidManifest.xml
+
+**Hardware control (for tools that already exist but couldn't run):**
+- `TRANSMIT_IR` — `irSend()` on devices with IR blaster (Xiaomi/Redmi/Mi)
+- `ANSWER_PHONE_CALLS` — future call-screening tool (Android 8+)
+- `READ_PHONE_NUMBERS` — `readContacts` enrichment with phone numbers (Android 11+)
+- `BODY_SENSORS` — heart rate, SpO2 sensors (future health tools)
+- `ACTIVITY_RECOGNITION` — step counter, walking/cycling detection
+- `HIGH_SAMPLING_RATE_SENSORS` — gyro/accel at >200Hz (future motion tools)
+- `READ_BASIC_PHONE_STATE` — lightweight phone state read (Android 13+)
+
+**Foreground service types (Android 14+ requirement — without them, AgentService crashes):**
+- `FOREGROUND_SERVICE_CAMERA` — `takePhoto()`, future document scanner
+- `FOREGROUND_SERVICE_MICROPHONE` — `VoiceManager` STT, future wake-word
+- `FOREGROUND_SERVICE_LOCATION` — `getCurrentLocation()` background rules
+- `FOREGROUND_SERVICE_BLUETOOTH` — BLE scanning rules
+- `FOREGROUND_SERVICE_CONNECTED_DEVICE` — USB OTG, NFC
+
+**Account & alarm:**
+- `GET_ACCOUNTS` — future Gmail triage / Google account integration
+- `USE_FULL_SCREEN_INTENT` — call/alarm notifications that take over the screen
+
+### 2. `setBrightness` Pre-Checks WRITE_SETTINGS (DeviceTools.kt)
+
+**Before:** `Settings.System.putInt()` threw `SecurityException` with a generic error.
+
+**After:** Pre-checks `Settings.System.canWrite(context)` and returns early with actionable guidance:
+```
+Cannot change brightness — WRITE_SETTINGS not granted.
+Go to Settings → Apps → Aira → Modify system settings → Allow.
+On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Modify settings
+```
+Plus a separate `SecurityException` catch with MIUI-specific path.
+
+### 3. Bluetooth Permission Pre-Checks (HardwareTools.kt)
+
+`getBluetoothState()` and `toggleBluetooth()` now pre-check `BLUETOOTH_CONNECT` on Android 12+ (API 31+) before accessing the adapter, returning:
+```
+BLUETOOTH_CONNECT permission not granted.
+Go to Settings → Apps → Aira → Permissions → Nearby devices → Allow.
+On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Bluetooth
+```
+
+Bonus: `getBluetoothState()` now returns the device name + MAC address alongside the state — useful for the AI to reference the device by name.
+
+### Pattern Established
+```
+1. Check permission via ContextCompat.checkSelfPermission() BEFORE the operation
+2. If missing → return early with the exact permission name + standard Android path + MIUI path
+3. Try the operation
+4. Catch SecurityException separately → same MIUI hint
+5. Catch Exception → generic fallback
+```
+
+### Files Changed
+- `app/build.gradle.kts` — versionCode 222→223, versionName 4.0.94→4.0.95
+- `AndroidManifest.xml` — 14 new permission declarations
+- `tools/categories/DeviceTools.kt` — setBrightness pre-check + MIUI hint
+- `tools/categories/HardwareTools.kt` — getBluetoothState + toggleBluetooth pre-checks + name/address return
+
+### What v4.0.95 Does NOT Do
+- ❌ Doesn't request permissions at runtime (only declares them — runtime requests happen in MainActivity on first launch)
+- ❌ Doesn't apply the pre-check pattern to other tools (only setBrightness + 2 BT tools — candidates for v4.0.96: takePhoto, sendSMS, getCurrentLocation, readContacts, readSms)
+- ❌ Doesn't solve the underlying MIUI permission issue (the Antigravity/ADB-client approach would — deferred)
+
+---
+
+## v4.0.94 (versionCode 222) — Native Function Calling for Gemini API
+**Date:** 2026-11-10
+
+### Root Cause Fix
+Gemini 3.5 Flash Lite was returning `MALFORMED_FUNCTION_CALL` because `buildGeminiRequest()` never sent the tools array to the API. The model tried to call tools but couldn't format them correctly.
+
+### Changes to LLMClient.kt
+1. `buildGeminiRequest()` now accepts `toolFilter` parameter:
+   - Builds Gemini-format tools array (`function_declarations`)
+   - Includes built-in tools + custom tools + connector tools
+   - Format: `tools: [{function_declarations: [{name, description, parameters}]}]`
+2. `parseGeminiResponse()` now handles native `functionCall` objects:
+   - Checks `parts[]` for `functionCall` objects (not just text)
+   - Extracts name + args from `functionCall`
+   - Returns structured `ToolCall` list (not manual JSON parsing)
+   - Falls back to text/JSON parsing when no `functionCall` found
+3. When tools are sent, system prompt is adapted (no JSON tool-call format instructions — Gemini handles it natively)
+
+---
+
+## v4.0.93 (versionCode 221) — Fix 7 Bugs from Log Analysis
+**Date:** 2026-11-08
+
+7 fixes based on real user log analysis (4381 lines):
+
+1. **`launchApp` packageName alias** (AppTools.kt) — AI kept calling `launchApp(packageName=...)` but code only accepted `package=` or `pkg=`. Added `packageName` as a third alias → 90% of "missing package" errors fixed. Also fixed `getAppInfo`.
+2. **`<queries>` in AndroidManifest** (Android 11+ package visibility) — Without `<queries>`, `getLaunchIntentForPackage()` returned null for unseen apps. Added `<intent>` query for MAIN+LAUNCHER → Aira can now see ALL launcher apps. Fixes "startActivity returned false" for apps not recently used.
+3. **`listInstalledApps` shows ALL apps** — Removed `FLAG_SYSTEM` filter → YouTube, Settings, Clock now visible. Was causing false "not installed" conclusions for system/pre-installed apps. Apps now sorted alphabetically.
+4. **`createConnector` handles `\/` escaped slashes** (ConnectorTools.kt)
+5. **`connectConnector` validation** — checks saved connector exists before attempting OAuth
+6. **`replyToNotification`** — handles WhatsApp's flat notification layout (was expecting RemoteInput only)
+7. **Memory dedup** — FTS5 was returning duplicate rows for the same memory at different timestamps
+
+---
+
+## v4.0.92 (versionCode 220) — RAG Improvements
+**Date:** 2026-11-07
+
+3 RAG improvements (low-risk, high-impact):
+
+1. **Unified `searchAll(query)` tool** (saves 3 API calls per search):
+   - Searches ALL sources in ONE call: memories (FTS5) + knowledge files + tools + MCP servers
+   - Runs all 4 searches in parallel (`coroutineScope + async`)
+   - Returns top 3-5 per source, grouped, compact output
+   - Added to `META_TOOLS` (available in on-demand mode)
+   - Replaces the pattern of calling `recallMemory` + `searchKnowledge` + `searchTools` + `searchMcpServers` separately (4 iterations → 1)
+
+2. **Auto-inject memories in on-demand mode** (was disabled):
+   - Previously: `!useOnDemand` disabled memory injection for on-demand mode
+   - Now: memory inject is ENABLED in on-demand mode (limited to 3 memories, ~150 tokens)
+   - In normal mode: still uses 10 memories (full context)
+   - Fixes the issue where on-demand AI didn't recall past experiences
+
+3. **Conversation compression ON by default**:
+   - `USE_CONV_COMPRESSION` now defaults to `true`
+   - When iterations > 5, replaces old conversation with compact summary + keeps recent 3 iterations in full
+
+---
+
+## v4.0.91 (versionCode 219) — Diagnostic Logging for Gemini Empty Response
+**Date:** 2026-11-06
+
+**DIAGNOSTIC BUILD ONLY** — no behavior fixes. Adds detailed logging to identify WHY Gemini returned empty responses (the "Binding Google failed: " with no error detail issue).
+
+### Changes to LLMClient.kt
+1. `parseGeminiResponse()` now logs:
+   - `promptFeedback.blockReason` (if prompt was blocked by safety filter)
+   - `candidates[0].finishReason` (SAFETY, RECITATION, MAX_TOKENS, OTHER)
+   - FULL response body (first 1000 chars) when content is empty
+   - Returns descriptive error: `"Gemini returned empty: <reason>"` instead of empty string
+2. `chatWithFailover` binding failure log now shows:
+   - Full reply (was truncated to 80 chars, hiding the error reason)
+   - Tool call count
+   - `"Binding Google failed — full reply: <actual reply>"`
+
+---
+
+## v4.0.90 (versionCode 218) — Rules in level0/level2 + Connector Over-Researching Fix
+**Date:** 2026-11-06
+
+Two fixes:
+
+1. **Rules Engine missing from level0.txt + level2.txt**:
+   - Both prompts had ZERO mentions of `createRule`
+   - AI at those levels didn't know Rules existed
+   - User saying "remind me every morning at 8am" at Level 2 → AI couldn't create a rule
+   - Added concise Rules section to both: when to create (triggers), `createRule` signature, `triggerType` options, DIRECT vs SMART actions
+   - `system_prompt_smart.txt` already had the full Rules section (lines 242-287)
+
+2. **Connector over-researching** (from user logs):
+   - AI spent 7 iterations searching (webSearch, searchTools, recallSimilar, listKnowledge) before calling `createConnector` — burned the daily quota
+   - Root cause: tool description said "Discovers endpoints from docs/web search"
+   - Fix: clear "WHEN to search vs create directly" guidance in all 3 prompts + tool schema
+     - Common APIs (Gmail, GitHub, etc.) → create DIRECTLY, no search
+     - Custom/unknown APIs → webSearch docs first, then create
+   - Updated tool schema description to match
+
+---
+
+## v4.0.89 (versionCode 217) — RFC 9728 MCP OAuth Discovery + Known Providers
+**Date:** 2026-11-06
+
+### MCP OAuth Enhancements
+- Implemented RFC 9728 (Protected Resource Metadata) discovery for MCP servers
+- `McpClient` now follows `WWW-Authenticate: Bearer resource_metadata="..."` → fetches metadata → finds authorization_servers → performs OAuth
+- Added a built-in registry of known MCP providers with their OAuth endpoints
+- Auto-discovers OAuth flow when connecting to authenticated MCP servers
+
+---
+
+## v4.0.88 (versionCode 216) — AI-Created Connectors with OAuth + Response Length Caps
+**Date:** 2026-11-05
+
+Three commits (26e5e3a, a2e86da, 15b2e05) + one revert (094624d):
+
+### 1. AI-Created Connectors with OAuth (a2e86da)
+Connector system — the AI builds integrations at runtime:
+- `ConnectorStore` — data class + JSON persistence (modeled on `CustomToolStore`)
+- `ConnectorExecutor` — OAuth 2.0 + PKCE flow + API calls + token refresh
+- `ConnectorTools` — `createConnector` / `listConnectors` / `deleteConnector` / `connectConnector`
+- `aira://callback` deep link in AndroidManifest + `OAuthCallbackActivity`
+- Connector endpoint tools (`name__endpoint`) auto-injected in `ToolSchemas` + `ToolExecutor`
+- Minimal teacher-style system prompt (not hardcoded APIs)
+
+The AI discovers API endpoints from web docs and creates connectors with full OAuth support — no pre-registration needed. Each endpoint becomes a callable tool. Three auth types: `none`, `apikey`, `oauth_pkce`.
+
+### 2. Connector Prompt in All Levels (26e5e3a)
+Previously only `system_prompt_smart.txt` (Level 3) had the connector section. Now `level0.txt` (on-demand) and `level2.txt` (standard default) also teach the AI about `createConnector`. Level 1 (greeting) doesn't need it — too simple.
+
+### 3. Response Length Caps — Let AI Choose (15b2e05)
+`level0.txt` (on-demand) had "Your text reply should be BRIEF: 1 sentence max" which was too aggressive — it capped ALL responses, even explanations.
+
+Changed to conditional guidance:
+- When CALLING TOOLS: keep text brief (the action is the response)
+- When ANSWERING A QUESTION: respond at whatever length fits the question
+
+Same conditional guidance applied to `level2.txt`. `level1.txt` and `system_prompt_smart.txt` already let the AI choose freely.
+
+### 4. Revert: Keep Length Caps as Designed (094624d)
+The "1 sentence max" in `level0.txt` is intentional for on-demand mode (cheap/fast tool-call responses). The 3-layer intent detection (v4.0.73) handles the tool-vs-question decision BEFORE choosing the level:
+- Layer 0: greeting → Level 1 (no tools, can be long)
+- Layer 2: "how does"/"explain"/"difference between" → Level 1 (no tools)
+- Layer 2: "send"/"open"/"play" (action verbs) → Level 2/3 (tools, brief)
+
+So the length caps are correct per-level: Level 0 (1 sentence max, action mode), Level 1 (no cap), Level 2 (brief), Level 3 (very long allowed).
+
+---
+
 ## v4.0.87 (versionCode 215) — Chat UI Improvements
 **Date:** 2026-11-05
 **APK:** 42 MB (`ai-agent-v4.0.87-debug.apk`)
