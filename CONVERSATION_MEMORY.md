@@ -192,15 +192,84 @@ All use `XTransformPort` query param for gateway routing. CORS `*` enabled. Auto
 
 ---
 
-## 9. Immediate Next Steps (decision pending)
+## 9. THE LOGS.TXT ANALYSIS (recovered 2026-11-10)
+
+**CRITICAL CONTEXT:** This is what we were doing before the Antigravity tangent.
+
+User uploaded `/home/z/my-project/upload/logs.txt` — 4717 lines of real Aira runtime logs from the phone, capturing a **40-task test suite** the AI ran against itself. The AI executed 136 tool calls: 114 succeeded, 22 failed (84% success rate).
+
+### The Actual Sequence of Events
+1. User shared logs.txt for analysis
+2. I analyzed it, identified the bugs below
+3. I started fixing them, was about to build
+4. **User stopped me** → pivoted to Antigravity app discussion
+5. Discussed Antigravity vs Shizuku vs Aira (ADB client approach) — Section 4
+6. User said "come back to aira agent ai v2"
+7. **I forgot the logs.txt work entirely** and picked up at v4.0.95 (permission hardening, which was already in the working tree)
+8. Built v4.0.95, pushed to GitHub
+9. User reminded me: "We are checking the logs.txt, and you give some suggestions to fix and while you fixing and ready to build i stopped and i bring topic about antigravity app then i switch topic to aira you for get"
+
+### Bugs Found in logs.txt (22 failures, grouped by root cause)
+
+#### A. CRITICAL: List/Array Parser Bug (3 tools affected)
+The tool argument parser is rejecting valid JSON arrays passed by the AI:
+
+1. **`todoWrite` (5 failures)** — AI passes `todos=[{...},{...}]` as a valid JSON array, parser says "missing todos"
+2. **`actionChain` (1 failure)** — AI passes `actions=[{name,args},{name,args}]`, parser says "missing 'actions' list"
+3. **`createConnector` (1 failure)** — AI passes `endpoints=[{...}]`, parser says "missing endpoints (JSON array)"
+
+**Root cause hypothesis:** The parser expects a stringified JSON but the AI passes a native array (from native function calling). The v4.0.94 Gemini native function calling fix may have exposed this — now arrays arrive as native lists instead of strings.
+
+#### B. Parameter Alias Bugs (2 tools)
+4. **`recallMemory(key=...)` (1 failure)** — AI calls with `key=` but tool expects `query=`. Needs alias (like v4.0.93 `packageName` fix for `launchApp`)
+5. **`speak(0=Please charge your phone)` (1 failure)** — AI passes positional arg `0=` instead of `text=`. Needs positional arg support OR better schema clarity
+
+#### C. Permission Errors (3 tools) — PARTIALLY FIXED
+6. **`setBrightness` → WRITE_SETTINGS** ✅ FIXED in v4.0.95 (pre-check + MIUI hint)
+7. **`getBluetoothState` → BLUETOOTH_CONNECT** ✅ FIXED in v4.0.95 (pre-check + MIUI hint)
+8. **`setAlarm` → Permission Denial: starting Intent SET_ALARM** ❌ NOT FIXED — needs `com.android.alarm.permission.SET_ALARM` permission OR foreground intent approach
+
+#### D. Schema Clarity Issues (3 tools)
+9. **`createRule(triggerValue="every 2 hours", triggerType="time")`** — `time` type expects `HH:MM` but AI passed natural language. Needs an `interval` triggerType for recurring schedules
+10. **`createConnector` → "missing description"** — description param should be optional or the schema should make it clearer
+11. **`createCalendarEvent` → "missing startTime"** — AI didn't pass startTime; schema needs to make required fields clearer
+
+#### E. False Positive Warning (99 occurrences!)
+12. **"⚠️ GEMINI EMPTY CONTENT" fires even when Gemini returns function calls** — 99 warnings in the log, but 113 functionCall objects were successfully parsed. The v4.0.91 diagnostic logging logs "EMPTY CONTENT" whenever there's no text, even when functionCall IS present. Should be downgraded to debug-level or removed now that v4.0.94 confirmed function call parsing works.
+
+#### F. Minor/Expected
+13. **`getWeather` → "GPS not available"** (2 failures) — expected, GPS was off
+14. **`searchMcpServers` → "MCP is disabled"** — expected, user had MCP off
+15. **`speak` → "TTS error: StandaloneCoroutine was cancelled"** — agent was stopped mid-speech, expected
+16. **`clickByText(AI Settings)`** — accessibility couldn't find the text on screen
+17. **`delegateTask(screen)` completed in 5 iterations** — sub-agent hit iteration limit, not a crash
+
+#### G. Honesty System Working ✅
+Line 4399: `complete(success=true) but 4 tools failed — overriding to success=false` — The v4.0.60 "honest agent" system correctly caught the AI lying about success.
+
+### The Fix Plan (what I was about to build before the interruption)
+
+**v4.0.96 — Log Analysis Fixes:**
+1. Fix list/array parser in `ToolExecutor.kt` (affects todoWrite, actionChain, createConnector) — HIGHEST PRIORITY, 7 failures
+2. Add `key=` alias to `recallMemory` (like v4.0.93 packageName fix)
+3. Add `interval` triggerType to `createRule` for recurring schedules
+4. Make `description` optional in `createConnector`
+5. Add `SET_ALARM` permission to manifest + handle foreground intent
+6. Remove or downgrade "GEMINI EMPTY CONTENT" false positive warning
+
+This is the work that was interrupted. Resume here.
+
+---
+
+## 10. Immediate Next Steps (decision pending)
 
 User was asked to pick one:
-1. **Finish v4.0.95** — commit permission work + BUILDS.md entry
-2. **Backfill BUILDS.md** — write entries for v4.0.88–v4.0.94
-3. **Start v4.0.96** — pick a new feature from Section 6 and implement in Kotlin
+1. **Finish v4.0.95** — commit permission work + BUILDS.md entry ✅ DONE
+2. **Backfill BUILDS.md** — write entries for v4.0.88–v4.0.94 ✅ DONE
+3. **Start v4.0.96** — resume the logs.txt fix work from Section 9 above
 4. **Something else** — user-directed
 
-User's last message: "Also Try to remember our conversation" → this file.
+User's last message: confirming the logs.txt context loss. Need to acknowledge the lost context and offer to resume the log-fix work.
 
 ---
 
