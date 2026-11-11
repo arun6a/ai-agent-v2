@@ -1632,46 +1632,11 @@ ALWAYS make the tool_call. Narration without action = task failure."""
 
         /**
          * v4.0.96: Normalize JSON values from org.json into plain Kotlin types.
-         *
-         * When parsing native function-calling responses (Gemini functionCall,
-         * OpenAI tool_calls, Anthropic tool_use, manual JSON), `JSONObject.get(key)`
-         * returns `JSONObject` / `JSONArray` for nested values — NOT `Map` / `List`.
-         * Tool handlers then do `as? String` or `as? Map<String, Any>` and the cast
-         * fails silently, producing "missing argument" errors even though the AI
-         * sent a perfectly valid value.
-         *
-         * This helper recursively converts:
-         *   JSONObject  →  Map<String, Any>
-         *   JSONArray   →  List<Any>
-         *   String/Int/Double/Boolean/Long  →  unchanged
-         *   null        →  null (filtered by the caller if needed)
-         *
-         * Apply at EVERY `args[key] = ...get(key)` site (5 places as of v4.0.96).
+         * v4.0.98: Extracted to JsonNormalizer object for unit testing.
+         * Now delegates to com.ai.agent.util.JsonNormalizer.normalize().
          */
         private fun normalizeJsonValue(value: Any?): Any? {
-            return when (value) {
-                is org.json.JSONObject -> {
-                    val map = mutableMapOf<String, Any>()
-                    val keys = value.keys()
-                    while (keys.hasNext()) {
-                        val k = keys.next()
-                        val v = normalizeJsonValue(value.get(k))
-                        if (v != null) map[k] = v
-                    }
-                    map
-                }
-                is org.json.JSONArray -> {
-                    val list = mutableListOf<Any>()
-                    for (i in 0 until value.length()) {
-                        val item = normalizeJsonValue(value.opt(i))
-                        if (item != null) list.add(item)
-                    }
-                    list
-                }
-                is String, is Int, is Long, is Double, is Boolean -> value
-                // org.json.NULL and actual null both fall through to null
-                else -> null
-            }
+            return com.ai.agent.util.JsonNormalizer.normalize(value)
         }
     }
 }

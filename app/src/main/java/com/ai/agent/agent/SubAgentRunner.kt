@@ -21,7 +21,13 @@ import kotlinx.coroutines.withContext
  */
 object SubAgentRunner {
     private const val TAG = "SubAgentRunner"
-    private const val MAX_ITERATIONS = 5
+    // v4.0.99: Increased from 5 to 10. Screen automation tasks need more steps:
+    // launchApp → readScreen → clickByText → type → submitInput → readScreen → clickElement → complete
+    // That's 8 tool calls, which exceeds the old 5-iteration limit.
+    // Screen-type agents get 15 (complex flows like YouTube search → play).
+    private const val MAX_ITERATIONS_DEFAULT = 10
+    private const val MAX_ITERATIONS_SCREEN = 15
+    private const val MAX_ITERATIONS_RESEARCH = 8
 
     data class SubAgentResult(
         val success: Boolean,
@@ -58,9 +64,16 @@ object SubAgentRunner {
         var iteration = 0
         var totalToolCalls = 0
 
-        while (iteration < MAX_ITERATIONS) {
+        // v4.0.99: Per-agentType iteration limit.
+        val maxIterations = when (agentType) {
+            "screen" -> MAX_ITERATIONS_SCREEN
+            "research" -> MAX_ITERATIONS_RESEARCH
+            else -> MAX_ITERATIONS_DEFAULT
+        }
+
+        while (iteration < maxIterations) {
             iteration++
-            Log.i(TAG, "Sub-agent iteration $iteration/$MAX_ITERATIONS")
+            Log.i(TAG, "Sub-agent iteration $iteration/$maxIterations")
 
             val response = try {
                 llmClient.chatWithFailover(conversation.toString(), systemPrompt, toolFilter)
@@ -104,8 +117,8 @@ object SubAgentRunner {
         }
 
         // Max iterations reached
-        Log.w(TAG, "Sub-agent reached max iterations ($MAX_ITERATIONS)")
-        SubAgentResult(false, "Sub-agent reached max iterations without completing", MAX_ITERATIONS, totalToolCalls)
+        Log.w(TAG, "Sub-agent reached max iterations ($maxIterations)")
+        SubAgentResult(false, "Sub-agent reached max iterations ($maxIterations) without completing", maxIterations, totalToolCalls)
     }
 
     /**

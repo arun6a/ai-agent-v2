@@ -12,8 +12,8 @@ android {
         applicationId = "com.ai.agent.v2"
         minSdk = 24
         targetSdk = 34
-        versionCode = 226
-        versionName = "4.0.98"
+        versionCode = 227
+        versionName = "4.0.99"
     }
 
     buildTypes {
@@ -75,4 +75,9 @@ dependencies {
 
     // === Accompanist (system UI controller) ===
     implementation("com.google.accompanist:accompanist-systemuicontroller:0.34.0")
+
+    // === Testing ===
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }

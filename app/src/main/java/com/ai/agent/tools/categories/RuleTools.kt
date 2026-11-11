@@ -33,7 +33,13 @@ object RuleTools {
                 val triggerValue = call.args["triggerValue"] as? String
                     ?: return ToolExecutor.ToolResult(false, "missing triggerValue (e.g., '07:00', 'com.whatsapp:Mom', '20')")
                 val action = call.args["action"] as? String ?: return ToolExecutor.ToolResult(false, "missing action")
-                val days = call.args["days"] as? String  // nullable — "mon,tue,wed,thu,fri" or null for daily
+                // v4.0.99: days can arrive as String ("mon,tue") or List (native function calling).
+                // Also accept text= alias for replyToNotification compatibility.
+                val days: String? = when (val v = call.args["days"]) {
+                    is String -> v
+                    is List<*> -> v.joinToString(",") { it.toString().lowercase().take(3) }
+                    else -> null
+                }
 
                 // v2.5.0: Expanded trigger types — all supported by manifest receivers.
                 val validTypes = listOf(
@@ -70,23 +76,15 @@ object RuleTools {
                 // v4.0.96: Parse interval triggerType — accepts natural language like
                 // "every 2 hours", "every 30 minutes", "every 45 mins".
                 // v4.0.98: Also accepts "30 minutes", "2 hours", "30m", "2h" (without "every" prefix).
-                // Converts to a normalized "every Nh" or "every Nm" format stored in triggerValue.
+                // v4.0.98: Extracted to IntervalParser for unit testing.
                 var normalizedTriggerValue = triggerValue
                 if (triggerType == "interval") {
-                    // v4.0.98: More lenient regex — "every" prefix is now optional.
-                    val regex = Regex("(?:every\\s+)?(\\d+)\\s*(hour|hr|hours|minute|min|mins|minutes|h|m)", RegexOption.IGNORE_CASE)
-                    val match = regex.find(triggerValue)
-                    if (match == null) {
+                    val parsed = com.ai.agent.util.IntervalParser.parse(triggerValue)
+                    if (parsed == null) {
                         return ToolExecutor.ToolResult(false,
                             "invalid interval format. Use 'N hours' or 'N minutes', e.g., '2 hours', '30 minutes', 'every 2h', '30m'. Got: '$triggerValue'")
                     }
-                    val n = match.groupValues[1].toIntOrNull()
-                        ?: return ToolExecutor.ToolResult(false, "invalid interval number: ${match.groupValues[1]}")
-                    if (n <= 0) {
-                        return ToolExecutor.ToolResult(false, "interval must be > 0. Got: $n")
-                    }
-                    val unit = match.groupValues[2].lowercase()
-                    normalizedTriggerValue = if (unit.startsWith("h")) "every ${n}h" else "every ${n}m"
+                    normalizedTriggerValue = parsed.normalized()
                     Log.i(TAG, "Normalized interval: '$triggerValue' → '$normalizedTriggerValue'")
                 }
 
@@ -266,7 +264,11 @@ object RuleTools {
                 val newTriggerType = call.args["triggerType"] as? String
                 val newTriggerValue = call.args["triggerValue"] as? String
                 val newAction = call.args["action"] as? String
-                val newDays = call.args["days"] as? String  // pass "" to clear, "mon,tue" to set, null to leave unchanged
+                val newDays: String? = when (val v = call.args["days"]) {  // v4.0.99: accept String or List
+                    is String -> v
+                    is List<*> -> v.joinToString(",") { it.toString().lowercase().take(3) }
+                    else -> null
+                }
                 val newEnabled = (call.args["enabled"] as? Boolean)
 
                 database.updateRule(

@@ -142,7 +142,7 @@ object WebTools {
                 // which Kotlin treated as a literal string → saved to "$(S..." file.
                 // Now uses proper Kotlin string template ${System.currentTimeMillis()}.
                 // v4.0.27: Also resolve relative paths against the workspace downloads dir.
-                val workspaceDir = "/storage/emulated/0/Aira/downloads"
+                val workspaceDir = com.ai.agent.Config.DOWNLOADS_DIR  // v4.0.99: use Config instead of hardcoded path
                 val path = when {
                     call.args["path"] == null -> "$workspaceDir/${System.currentTimeMillis()}.bin"
                     (call.args["path"] as String).startsWith("/") -> call.args["path"] as String
