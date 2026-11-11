@@ -1,0 +1,222 @@
+# Aira — Test Results & QA Tracking
+
+**Last updated:** 2026-11-11 (v4.0.99)
+**Current APK:** `ai-agent-v4.0.99-debug.apk` (42 MB, versionCode 227)
+
+---
+
+## How to Run Tests
+
+### Unit Tests (JVM — no device needed)
+```bash
+cd ai-agent-v2
+./gradlew testDebugUnitTest
+```
+- Runtime: ~25-30 seconds
+- No Android device required
+- Tests live in `app/src/test/java/com/ai/agent/util/`
+- HTML report: `app/build/reports/tests/testDebugUnitTest/index.html`
+
+### Build APK
+```bash
+cd ai-agent-v2
+export ANDROID_HOME=/home/z/android-sdk
+export JAVA_HOME=/home/z/jdk-21
+export PATH=$JAVA_HOME/bin:$PATH
+./gradlew assembleDebug
+# APK: app/build/outputs/apk/debug/app-debug.apk
+```
+
+---
+
+## Unit Test Results — v4.0.99
+
+**Total: 106 tests, 0 failures, 0 errors, 0 skipped**
+
+| Test File | Tests | Failures | Status |
+|-----------|-------|----------|--------|
+| `JsonNormalizerTest.kt` | 24 | 0 | ✅ PASS |
+| `IntervalParserTest.kt` | 35 | 0 | ✅ PASS |
+| `PathResolverTest.kt` | 18 | 0 | ✅ PASS |
+| `RuleValidatorTest.kt` | 29 | 0 | ✅ PASS |
+
+### Test Coverage by Area
+
+#### JsonNormalizer (24 tests) — v4.0.96 fix
+The `normalizeJsonValue` function that converts `JSONObject`→`Map` and `JSONArray`→`List`. This was the root cause of 7 failures in the v4.0.94 logs (todoWrite, createConnector, actionChain all failed because arrays arrived as JSONArray but tools expected String).
+
+- Primitive types pass through unchanged (String, Int, Long, Double, Boolean)
+- JSONObject → Map conversion
+- JSONArray → List conversion
+- Nested structures (todoWrite args, createConnector endpoints, actionChain)
+- Null filtering (from objects and arrays)
+- Edge cases (empty objects, nested empty, array of arrays)
+- Real-world Gemini functionCall args
+
+#### IntervalParser (35 tests) — v4.0.98 fix
+The interval parser for `createRule(triggerType="interval")`. Had 3 failures in v4.0.97 logs (AI tried `*/30`, `30 minutes`, `every 30 minutes` before getting it right).
+
+- With "every" prefix (original format)
+- Without "every" prefix (v4.0.98 fix)
+- Short forms (2h, 30m)
+- Unit variations (hour/hr/hours, minute/min/mins)
+- Case insensitivity
+- `normalize()` method
+- `toMillis()` method
+- Invalid inputs (empty, cron syntax, garbage, zero)
+- Real-world log inputs from v4.0.97 test run
+
+#### PathResolver (18 tests) — v4.0.98 fix
+Relative path auto-resolve for file tools. Had 3 failures in v4.0.97 logs (`writeFile(path="Aira/test.txt")` → ENOENT).
+
+- Absolute paths returned as-is
+- Relative paths resolved against workspace
+- `/sdcard/` → `/storage/emulated/0/` normalization
+- Null path returns workspace root
+- Edge cases (empty string, dots, double dots)
+- Real-world log inputs
+
+#### RuleValidator (29 tests) — new in v4.0.99
+Validates rule trigger types, time formats, and day names.
+
+- Time format HH:MM validation (valid + invalid cases)
+- Day name validation (mon, tue, wed, thu, fri, sat, sun)
+- Trigger type validation (all 34 supported types)
+- Case sensitivity
+- Edge cases
+
+---
+
+## Device Test Results
+
+### v4.0.97 Test Run (Xiaomi Pad 7) — 2026-11-11
+- **Total tool calls:** 193
+- **Successes:** 160 (83%)
+- **Failures:** 33 (17%)
+- **GEMINI EMPTY CONTENT warnings:** 0 (was 99 before v4.0.96 fix)
+- **Log file:** `upload/logs.txt` (4974 lines)
+
+### v4.0.97 Test Run #2 — 2026-11-11
+- **Total tool calls:** 63
+- **Successes:** 55 (87%)
+- **Failures:** 8 (13%)
+- **WiFi toggle incident:** Yes — Aira toggled WiFi off, agent died
+- **Log file:** `upload/logs.txt` (520 lines, partial run)
+
+### Bugs Found + Fixed in v4.0.96–v4.0.99
+
+| Version | Bug | Fix | Tests |
+|---------|-----|-----|-------|
+| v4.0.96 | todoWrite rejects List args | normalizeJsonValue helper | 24 tests |
+| v4.0.96 | createConnector rejects List endpoints | normalizeJsonValue helper | (above) |
+| v4.0.96 | setAlarm Permission Denial | Fixed permission name | — |
+| v4.0.96 | createCalendarEvent missing alias | start→startTime alias | — |
+| v4.0.96 | createRule no interval type | Added interval triggerType | 35 tests |
+| v4.0.96 | GEMINI EMPTY CONTENT false positive | Moved warning after functionCall check | — |
+| v4.0.97 | Permission errors silent | Pre-check + MIUI hints for all tools | — |
+| v4.0.98 | searchTools infinite loop | Loop detector after 3 repeats | — |
+| v4.0.98 | Relative paths fail | PathResolver auto-resolve | 18 tests |
+| v4.0.98 | Interval format strict | More lenient parser | 35 tests |
+| v4.0.98 | getCallLog LIMIT SQL error | Removed LIMIT from sortOrder | — |
+| v4.0.98 | type/submitInput on own UI | Fixed package check (com.ai.agent.v2) | — |
+| v4.0.98 | safeToggleWifi kills agent | Warning before WiFi off | — |
+| v4.0.99 | Sub-agent 5 iteration limit | Increased to 10/15/8 per type | — |
+| v4.0.99 | createRule days rejects List | Accept String + List | — |
+| v4.0.99 | Hardcoded paths | Use Config constants | — |
+
+---
+
+## Test Infrastructure
+
+### Files Added
+```
+app/src/main/java/com/ai/agent/util/
+  ├── JsonNormalizer.kt     — extracted from LLMClient (production)
+  ├── IntervalParser.kt     — extracted from RuleTools (production)
+  ├── PathResolver.kt       — extracted from FileTools (production)
+  └── RuleValidator.kt      — extracted from RuleTools (production)
+
+app/src/test/java/com/ai/agent/util/
+  ├── JsonNormalizerTest.kt  — 24 tests
+  ├── IntervalParserTest.kt  — 35 tests
+  ├── PathResolverTest.kt    — 18 tests
+  └── RuleValidatorTest.kt   — 29 tests
+```
+
+### Build Dependencies
+```kotlin
+// app/build.gradle.kts
+testImplementation("junit:junit:4.13.2")
+testImplementation("org.json:json:20240303")
+testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+```
+
+### Key Facts
+- Tests do NOT increase APK size (testImplementation is compile-only)
+- Tests run on JVM — no Android device needed
+- Full test suite runs in ~25 seconds
+- Pattern: extract pure logic → standalone object → test without Context
+
+---
+
+## For Other AIs — How to Contribute
+
+### Adding New Tests
+1. Find a function with bugs (check `upload/logs.txt` for `→ ✗` lines)
+2. Extract the pure logic to a standalone object in `app/src/main/java/com/ai/agent/util/`
+3. Write a test file in `app/src/test/java/com/ai/agent/util/`
+4. Run `./gradlew testDebugUnitTest` to verify
+5. Update this document with new test counts
+
+### Reporting Device Test Results
+1. Run the test suite on a real device
+2. Share `logs.txt` (from `/sdcard/Aira/logs/` or equivalent)
+3. Add a new section under "Device Test Results" above with:
+   - Version tested
+   - Device name
+   - Total tool calls / successes / failures
+   - Notable bugs found
+   - Log file location
+
+### Bug Report Template
+```
+### Bug: [short description]
+- **Version:** v4.0.99
+- **Tool:** toolName
+- **Input:** toolName(param="value")
+- **Expected:** [what should happen]
+- **Actual:** [what happened]
+- **Root cause:** [if known]
+- **Fix:** [if known]
+- **Test added:** [test file name or "pending"]
+```
+
+---
+
+## Pending Tests (Not Yet Written)
+
+| Function | File | Priority | Why |
+|----------|------|----------|-----|
+| Positional args normalizer | ToolExecutor.kt | High | `speak(0="text")` failed in logs |
+| Permission checker | ToolExecutor.kt | Medium | v4.0.95/97 pre-checks |
+| Tool name resolver | ToolExecutor.kt | Medium | Case-insensitive matching |
+| Connector endpoint parser | ConnectorTools.kt | Low | Already handled by normalizeJsonValue |
+| Memory FTS5 search | AgentDatabase.kt | Low | Hard to test without SQLite |
+
+---
+
+## Version History
+
+| Version | Date | Tests | APK | Key Changes |
+|---------|------|-------|-----|-------------|
+| v4.0.94 | Nov 10 | 0 | — | Native function calling for Gemini |
+| v4.0.95 | Nov 10 | 0 | 42 MB | Permission hardening + 14 new permissions |
+| v4.0.96 | Nov 11 | 0 | 42 MB | normalizeJsonValue + 7 log fixes |
+| v4.0.97 | Nov 11 | 0 | 42 MB | Permission pre-checks for all tools |
+| v4.0.98 | Nov 11 | 0 | 42 MB | searchTools loop + safeToggleWifi + 10 fixes |
+| v4.0.99 | Nov 11 | 106 | 42 MB | Sub-agent limit + days List + test infrastructure |
+
+---
+
+**Maintained by:** Z.ai Code (primary) + other AIs (welcome to contribute)
+**Update protocol:** After each test run or fix, update this document and commit to GitHub.

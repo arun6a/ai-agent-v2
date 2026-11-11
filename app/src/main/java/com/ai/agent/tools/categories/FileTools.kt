@@ -24,9 +24,8 @@ object FileTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "listFiles" -> {
-                // v4.0.98: Auto-resolve relative paths to Aira workspace.
-                val rawPath = call.args["path"] as? String ?: "/storage/emulated/0/Aira"
-                val path = if (rawPath.startsWith("/")) rawPath else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawPath"
+                val rawPath = call.args["path"] as? String ?: com.ai.agent.Config.WORKSPACE_DIR
+                val path = com.ai.agent.util.PathResolver.resolve(rawPath)
                 try {
                     val dir = java.io.File(path)
                     if (!dir.exists()) return ToolExecutor.ToolResult(false, "Directory not found: $path")
