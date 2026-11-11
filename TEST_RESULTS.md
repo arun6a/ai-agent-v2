@@ -1,6 +1,6 @@
 # Aira — Test Results & QA Tracking
 
-**Last updated:** 2026-11-11 (v4.0.99)
+**Last updated:** 2026-11-12 (v4.0.99-collab3)
 **Current APK:** `ai-agent-v4.0.99-debug.apk` (42 MB, versionCode 227)
 
 ---
@@ -31,14 +31,104 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 ## Unit Test Results — v4.0.99
 
-**Total: 106 tests, 0 failures, 0 errors, 0 skipped**
+**Total: 458 tests, 0 failures, 0 errors, 0 skipped**
 
-| Test File | Tests | Failures | Status |
-|-----------|-------|----------|--------|
-| `JsonNormalizerTest.kt` | 24 | 0 | ✅ PASS |
-| `IntervalParserTest.kt` | 35 | 0 | ✅ PASS |
-| `PathResolverTest.kt` | 18 | 0 | ✅ PASS |
-| `RuleValidatorTest.kt` | 29 | 0 | ✅ PASS |
+| Test File | Tests | Failures | Added By |
+|-----------|-------|----------|----------|
+| `JsonNormalizerTest.kt` | 24 | 0 | v4.0.99 (other AI) |
+| `IntervalParserTest.kt` | 35 | 0 | v4.0.99 (other AI) |
+| `PathResolverTest.kt` | 18 | 0 | v4.0.99 (other AI) |
+| `RuleValidatorTest.kt` | 29 | 0 | v4.0.99 (other AI) |
+| `ShellCommandValidatorTest.kt` | 48 | 0 | collab1 |
+| `PatternKeyGeneratorTest.kt` | 38 | 0 | collab1 |
+| `McpServerConfigTest.kt` | 45 | 0 | collab1 |
+| `McpNamespaceParserTest.kt` | 36 | 0 | collab2 |
+| `TierClassifierTest.kt` | 44 | 0 | collab2 |
+| `RuleActionParserTest.kt` | 59 | 0 | collab3 |
+| `ConnectorUrlBuilderTest.kt` | 52 | 0 | collab3 |
+| `ConversationStoreTest.kt` | 30 | 0 | collab3 |
+
+---
+
+## Collaborator Test Sessions (collab1-collab3, total 458)
+
+All pushed by the Collaborator AI (Z.ai). Pattern: extract pure logic from an
+Android-bound class into `app/src/main/java/com/ai/agent/util/`, test it fully on
+the JVM, document bugs found during extraction. **The extracted objects are
+faithful copies — wiring the original classes to delegate to them is left to the
+maintainer (each file lists its wiring GAPs in the header).**
+
+### collab3 — 2026-11-12 — +141 tests (317 → 458)
+
+New utilities + tests:
+
+1. **RuleActionParser.kt** (59 tests) — extracted from `RuleEngine` (v3.0.0):
+   `isDirectRule` classification, `stripPrefix`, `splitToolCalls`,
+   `parseToolCall` (positional + named args, Int coercion, quote stripping).
+   Bugs documented in header + asserted in tests:
+   - **GAP-1 (HIGH):** args split on "," is not quote-aware —
+     `speak("hello, world")` becomes TWO args ("hello", "world"). Corrupts any
+     message containing a comma.
+   - **GAP-2 (MEDIUM):** quoted numerics lose their type — `speak("50")` passes
+     Int 50; short phone numbers become Ints, long ones stay String (type
+     depends on the value, not the quoting).
+   - **GAP-3 (LOW):** `foo( )` yields `{"0": ""}` instead of empty args.
+   - **GAP-4 (LOW):** named-arg keys are not unquoted: `foo("key"=v)`.
+   - **GAP-5 (LOW):** no DOTALL — newline inside parens → silently SMART rule.
+   - **GAP-6 (INFO):** `tool:direct:foo(1)` is NOT direct (colon survives);
+     `direct:tool:foo(1)` is.
+   - **GAP-7 (MEDIUM):** removePrefix runs before trim — leading whitespace on
+     `rule.action` breaks the `direct:` prefix and the rule silently degrades
+     to a SMART rule (extra LLM call, needs internet).
+
+2. **ConnectorUrlBuilder.kt** (52 tests) — extracted from `ConnectorExecutor`
+   (v4.0.88): PKCE verifier/challenge/state, authorize URL, token request
+   bodies, `{param}` path + body substitution, query-string building, apiBase
+   joining, API-key header, 60s token-expiry skew guard.
+   - Includes the **official RFC 7636 Appendix B test vector**
+     (`dBjftJeZ…` → `E9Melhoa…`) — the S256 challenge implementation is proven
+     spec-compliant.
+   - **GAP-1 (HIGH):** `renderBodyTemplate` does not JSON-escape values —
+     `He said "hi"` produces invalid JSON → connector APIs return 400.
+   - **GAP-2 (MEDIUM):** leftover `{placeholders}` are never removed when an
+     arg is missing — literal `{param}` is sent to the API.
+   - **GAP-3 (MEDIUM):** path substitution uses URLEncoder (form encoding,
+     space → `+`) instead of percent-encoding for path segments.
+   - **GAP-4 (LOW):** authorize URL with an existing query gets a second `?`.
+   - **GAP-5 (LOW):** empty `apiBase` → relative URL → OkHttp throws.
+   - **GAP-6 (INFO):** query keys are not URL-encoded (values are).
+
+3. **ConversationStoreTest.kt** (30 tests) — the agent loop's externalized
+   memory (v4.0.76), tested DIRECTLY (already pure Kotlin, no extraction
+   needed): add/get by step, 500/1000 truncations, the 80-entry cap (exact
+   drop boundary), recent-window, progress summary, clear + snapshot safety,
+   duplicate-step behavior. Quirks documented:
+   - **QUIRK-1:** `toolCallsSummary` is NOT truncated (other fields are).
+   - **QUIRK-2 (crash risk):** `getRecentIterations(-1)` throws
+     IllegalArgumentException (Kotlin takeLast contract).
+   - **QUIRK-3:** duplicate step numbers allowed; `getIteration` returns first.
+
+### collab2 — 2026-11-11 — +80 tests (237 → 317)
+- **McpNamespaceParser.kt** (36 tests) — from `McpManager.resolveTool`;
+  `__`-in-server-name bug documented.
+- **TierClassifier.kt** (44 tests) — from `ContextualPromptBuilder`; tier
+  1/2/3 classification, greeting detection, medium-complexity heuristics.
+
+### collab1 — 2026-11-11 — +131 tests (106 → 237)
+- **ShellCommandValidator.kt** (48 tests) — from `CustomTools.kt`; 6 shell
+  bypass gaps documented (`rm -r -f`, `find / -delete`, `dd of=`, `curl | sh`,
+  `chmod -R 777 /data`, subdir rm).
+- **PatternKeyGenerator.kt** (38 tests) — from `PatternLearner`; 40-char
+  prefix collision bug documented.
+- **McpServerConfigTest.kt** (45 tests) — isHealthy, isTokenExpired,
+  namespacing, defaults.
+
+### Not JVM-testable (device tests)
+- **ConsentManager** — depends on ConsentOverlay (WindowManager/Looper) and
+  `Settings.canDrawOverlays`. On the JVM the overlay object cannot initialize.
+  Covered by tomorrow's device-test plan item #1 (show/hide race).
+
+---
 
 ### Test Coverage by Area
 
@@ -200,7 +290,11 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 | Positional args normalizer | ToolExecutor.kt | High | `speak(0="text")` failed in logs |
 | Permission checker | ToolExecutor.kt | Medium | v4.0.95/97 pre-checks |
 | Tool name resolver | ToolExecutor.kt | Medium | Case-insensitive matching |
-| Connector endpoint parser | ConnectorTools.kt | Low | Already handled by normalizeJsonValue |
+| ~~Rule action parser~~ ✅ DONE | ~~RuleEngine.kt~~ → RuleActionParser.kt | — | collab3 (59 tests) |
+| ~~Connector URL/PKCE~~ ✅ DONE | ~~ConnectorExecutor.kt~~ → ConnectorUrlBuilder.kt | — | collab3 (52 tests) |
+| ~~ConversationStore~~ ✅ DONE | ConversationStore.kt | — | collab3 (30 tests) |
+| ConsentManager state machine | ConsentManager.kt | Medium | Needs JVM-safe refactor (overlay deps) |
+| ConnectorStore JSON round-trip | ConnectorStore.kt | Medium | Needs Context-free JSON extraction |
 | Memory FTS5 search | AgentDatabase.kt | Low | Hard to test without SQLite |
 
 ---
@@ -215,6 +309,9 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 | v4.0.97 | Nov 11 | 0 | 42 MB | Permission pre-checks for all tools |
 | v4.0.98 | Nov 11 | 0 | 42 MB | searchTools loop + safeToggleWifi + 10 fixes |
 | v4.0.99 | Nov 11 | 106 | 42 MB | Sub-agent limit + days List + test infrastructure |
+| v4.0.99-collab1 | Nov 11 | 237 | — | ShellCommandValidator + PatternKeyGenerator + MCP config tests |
+| v4.0.99-collab2 | Nov 11 | 317 | — | McpNamespaceParser + TierClassifier tests |
+| v4.0.99-collab3 | Nov 12 | 458 | — | RuleActionParser + ConnectorUrlBuilder + ConversationStore tests (13 new GAPs documented) |
 
 ---
 
