@@ -1,6 +1,6 @@
 # Aira — Test Results & QA Tracking
 
-**Last updated:** 2026-11-12 (v4.0.99-collab3)
+**Last updated:** 2026-11-12 (v4.0.99-collab4)
 **Current APK:** `ai-agent-v4.0.99-debug.apk` (42 MB, versionCode 227)
 
 ---
@@ -31,7 +31,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 ## Unit Test Results — v4.0.99
 
-**Total: 458 tests, 0 failures, 0 errors, 0 skipped**
+**Total: 585 tests, 0 failures, 0 errors, 0 skipped**
 
 | Test File | Tests | Failures | Added By |
 |-----------|-------|----------|----------|
@@ -47,16 +47,71 @@ export PATH=$JAVA_HOME/bin:$PATH
 | `RuleActionParserTest.kt` | 59 | 0 | collab3 |
 | `ConnectorUrlBuilderTest.kt` | 52 | 0 | collab3 |
 | `ConversationStoreTest.kt` | 30 | 0 | collab3 |
+| `ToolCallNormalizerTest.kt` | 68 | 0 | collab4 |
+| `ToolNameResolverTest.kt` | 16 | 0 | collab4 |
+| `ConsentStateMachineTest.kt` | 17 | 0 | collab4 |
+| `ConnectorJsonTest.kt` | 26 | 0 | collab4 |
 
 ---
 
-## Collaborator Test Sessions (collab1-collab3, total 458)
+## Collaborator Test Sessions (collab1-collab4, total 585)
 
 All pushed by the Collaborator AI (Z.ai). Pattern: extract pure logic from an
 Android-bound class into `app/src/main/java/com/ai/agent/util/`, test it fully on
 the JVM, document bugs found during extraction. **The extracted objects are
 faithful copies — wiring the original classes to delegate to them is left to the
 maintainer (each file lists its wiring GAPs in the header).**
+
+### collab4 — 2026-11-12 — +127 tests (458 → 585)
+
+New utilities + tests:
+
+1. **ToolCallNormalizer.kt** (68 tests) — extracted from `ToolExecutor`
+   (normalizePositionalArgs, v4.0.20 + v4.0.96): global aliases (app/pkg →
+   package, name → package ONLY for the 8 package tools — the v4.0.20
+   regression is now regression-tested), tool-specific aliases from real log
+   analysis (recallMemory key→query, createRule ruleName→name,
+   createConnector baseUrl→apiBase, ...), and positional→named mapping for
+   text-parsed calls (`tap(970, 180)` → x/y, the `speak(0="...")` fix).
+   Bugs documented:
+   - **GAP-1 (MEDIUM):** alias keys are NOT removed when the canonical key
+     already exists — `launchApp(package=, app=)` keeps both; tools iterating
+     args see a stray key.
+   - **GAP-2 (MEDIUM):** global app/pkg aliases apply to ALL tools —
+     `setVolume(pkg="5")` grows a `package` arg.
+   - **GAP-3 (LOW):** non-canonical numeric keys ("01", "-1") trigger the
+     positional path then get SILENTLY DROPPED.
+   - **GAP-4 (LOW):** positional args beyond the signature length are
+     dropped without logging (`tap(0=,1=,2=)` → "2" vanishes).
+   - **GAP-5 (INFO):** tools not in the positional map keep raw {"0":...}
+     keys — new tools must extend the map.
+
+2. **ToolNameResolver.kt** (16 tests) — extracted from `ToolExecutor`
+   (v4.0.18 case-insensitive matching): "createrule"/"TAP"/"CreateRule" →
+   canonical name; unknown names fall back trimmed. GAP: no did-you-mean
+   suggestion for unknown tools.
+
+3. **ConsentStateMachine.kt** (17 tests) — the pure state logic of
+   `ConsentManager` (overlay/Context removed), JVM-testable for the first
+   time. Proves the exact semantics tomorrow's device test #1 needs:
+   - approve → true, deny → false, 30s timeout → false
+   - **second begin() cancels the first waiter with false** (the
+     double-request race, deterministic on JVM)
+   - resolve() with nothing pending is a safe no-op
+   - finish() clears state without completing the waiter
+   - GAP: ConsentManager has the same begin/resolve logic PLUS ConsentOverlay
+     — after wiring, the overlay must stay outside the state machine.
+
+4. **ConnectorJson.kt** (26 tests) — the JSON persistence format of
+   `ConnectorStore` (v4.0.88) extracted for round-trip testing (org.json is
+   available in unit tests). Full/minimal/no-auth connectors, OAuth config,
+   endpoints + params + body templates, unicode descriptions, defaults for
+   hand-edited files (apiKeyHeader→Authorization, icon→🔌, redirectUri→
+   aira://callback). Bugs documented:
+   - **GAP-1 (MEDIUM):** missing `createdAt` in a file yields epoch-1970.
+   - **GAP-2 (LOW):** no schema/version field — no migration path.
+   - **GAP-3 (LOW):** connector names containing `__` are ambiguous in
+     resolveTool (same `__` bug family as McpNamespaceParser).
 
 ### collab3 — 2026-11-12 — +141 tests (317 → 458)
 
@@ -293,7 +348,8 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 | ~~Rule action parser~~ ✅ DONE | ~~RuleEngine.kt~~ → RuleActionParser.kt | — | collab3 (59 tests) |
 | ~~Connector URL/PKCE~~ ✅ DONE | ~~ConnectorExecutor.kt~~ → ConnectorUrlBuilder.kt | — | collab3 (52 tests) |
 | ~~ConversationStore~~ ✅ DONE | ConversationStore.kt | — | collab3 (30 tests) |
-| ConsentManager state machine | ConsentManager.kt | Medium | Needs JVM-safe refactor (overlay deps) |
+| ~~ConsentManager state machine~~ ✅ DONE | ConsentManager.kt → ConsentStateMachine.kt | — | collab4 (17 tests) — overlay stays device-test |
+| ~~ConnectorStore JSON round-trip~~ ✅ DONE | ConnectorStore.kt → ConnectorJson.kt | — | collab4 (26 tests) |
 | ConnectorStore JSON round-trip | ConnectorStore.kt | Medium | Needs Context-free JSON extraction |
 | Memory FTS5 search | AgentDatabase.kt | Low | Hard to test without SQLite |
 
@@ -312,6 +368,7 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 | v4.0.99-collab1 | Nov 11 | 237 | — | ShellCommandValidator + PatternKeyGenerator + MCP config tests |
 | v4.0.99-collab2 | Nov 11 | 317 | — | McpNamespaceParser + TierClassifier tests |
 | v4.0.99-collab3 | Nov 12 | 458 | — | RuleActionParser + ConnectorUrlBuilder + ConversationStore tests (13 new GAPs documented) |
+| v4.0.99-collab4 | Nov 12 | 585 | — | ToolCallNormalizer + ToolNameResolver + ConsentStateMachine + ConnectorJson tests (8 more GAPs) |
 
 ---
 
