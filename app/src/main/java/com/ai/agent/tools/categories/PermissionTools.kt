@@ -48,6 +48,16 @@ object PermissionTools {
      */
     private fun readSms(call: LLMClient.ToolCall, context: Context): ToolExecutor.ToolResult {
         val limit = (call.args["limit"] as? Number)?.toInt() ?: 10
+        // v4.0.97: Pre-check READ_SMS permission before querying content provider.
+        // Without this, contentResolver.query returns null with no explanation.
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.READ_SMS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return ToolExecutor.ToolResult(false,
+                "Cannot read SMS — READ_SMS permission not granted. " +
+                "Go to Settings → Apps → Aira → Permissions → SMS → Allow. " +
+                "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → SMS")
+        }
         return try {
             val uri = android.net.Uri.parse("content://sms/inbox")
             val projection = arrayOf("_id", "address", "date", "body")
@@ -74,7 +84,9 @@ object PermissionTools {
                 ToolExecutor.ToolResult(true, messages.toString())
             }
         } catch (e: SecurityException) {
-            ToolExecutor.ToolResult(false, "Permission missing: Read SMS. Open Hub → Permissions to grant it.")
+            ToolExecutor.ToolResult(false,
+                "Cannot read SMS — SecurityException. " +
+                "On Xiaomi/MIUI: Security Center → Permissions → Aira → SMS → Allow")
         } catch (e: Exception) {
             Log.e(TAG, "readSms failed", e)
             ToolExecutor.ToolResult(false, "Read SMS error: ${e.message}")

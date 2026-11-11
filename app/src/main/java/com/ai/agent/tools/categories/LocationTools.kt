@@ -24,6 +24,20 @@ object LocationTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "getCurrentLocation" -> {
+                // v4.0.97: Pre-check ACCESS_FINE_LOCATION (or COARSE) before querying LocationManager.
+                // Without this, getLastKnownLocation returns null silently with no explanation.
+                val hasFineLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.ACCESS_FINE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val hasCoarseLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (!hasFineLocation && !hasCoarseLocation) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot get location — ACCESS_FINE_LOCATION permission not granted. " +
+                        "Go to Settings → Apps → Aira → Permissions → Location → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Location")
+                }
                 try {
                     val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
                     val providers = lm.getProviders(true)
@@ -40,8 +54,12 @@ object LocationTools {
                     if (location != null) {
                         ToolExecutor.ToolResult(true, "Location: ${location.latitude}, ${location.longitude} (accuracy: ${location.accuracy}m)")
                     } else {
-                        ToolExecutor.ToolResult(false, "Location not available. Enable GPS.")
+                        ToolExecutor.ToolResult(false, "Location permission granted but no fix available. Enable GPS (Location → High Accuracy) and try again.")
                     }
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Cannot get location — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Location → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Location error: ${e.message}")
                 }
@@ -73,25 +91,69 @@ object LocationTools {
             }
             // v2.3.3: getWeather — uses GPS location + free Open-Meteo API (no key needed, works in India)
             "getWeather" -> {
+                // v4.0.97: If no city specified, pre-check location permission before GPS lookup.
+                val city = call.args["city"] as? String
+                if (city == null) {
+                    val hasFineLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val hasCoarseLocation = androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (!hasFineLocation && !hasCoarseLocation) {
+                        return ToolExecutor.ToolResult(false,
+                            "Cannot get weather — ACCESS_FINE_LOCATION permission not granted (needed for GPS). " +
+                            "Either grant location permission, or specify a city: getWeather(city=\"Bangalore\"). " +
+                            "Go to Settings → Apps → Aira → Permissions → Location → Allow. " +
+                            "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Location")
+                    }
+                }
                 try {
-                    // Step 1: Get GPS location
-                    val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
-                    val providers = lm.getProviders(true)
-                    var location: android.location.Location? = null
-                    for (provider in providers) {
-                        try {
-                            @Suppress("MissingPermission")
-                            val loc = lm.getLastKnownLocation(provider)
-                            if (loc != null && (location == null || loc.accuracy < location!!.accuracy)) {
-                                location = loc
-                            }
-                        } catch (_: Exception) {}
+                    // Step 1: Get GPS location (if no city specified)
+                    var lat: Double
+                    var lon: Double
+                    if (city != null) {
+                        // v4.0.97: Geocode the city name to lat/lon using Open-Meteo's geocoding API (free, no key).
+                        val (geoBody, geoCode) = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val url = "https://geocoding-api.open-meteo.com/v1/search?name=" +
+                                java.net.URLEncoder.encode(city, "UTF-8") + "&count=1&language=en&format=json"
+                            val client = okhttp3.OkHttpClient.Builder()
+                                .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+                                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                .build()
+                            val request = okhttp3.Request.Builder().url(url).build()
+                            val response = client.newCall(request).execute()
+                            (response.body?.string() ?: "") to response.code
+                        }
+                        if (geoCode != 200 || geoBody.isEmpty()) {
+                            return ToolExecutor.ToolResult(false, "Geocoding API error: HTTP $geoCode")
+                        }
+                        val geoJson = org.json.JSONObject(geoBody)
+                        val results = geoJson.optJSONArray("results")
+                            ?: return ToolExecutor.ToolResult(false, "City '$city' not found. Try a different name.")
+                        val first = results.optJSONObject(0)
+                            ?: return ToolExecutor.ToolResult(false, "City '$city' not found.")
+                        lat = first.optDouble("latitude", 0.0)
+                        lon = first.optDouble("longitude", 0.0)
+                    } else {
+                        val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+                        val providers = lm.getProviders(true)
+                        var location: android.location.Location? = null
+                        for (provider in providers) {
+                            try {
+                                @Suppress("MissingPermission")
+                                val loc = lm.getLastKnownLocation(provider)
+                                if (loc != null && (location == null || loc.accuracy < location!!.accuracy)) {
+                                    location = loc
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        if (location == null) {
+                            return ToolExecutor.ToolResult(false, "GPS location not available. Enable GPS (Location → High Accuracy) and try again, or specify a city: getWeather(city=\"Bangalore\")")
+                        }
+                        lat = location.latitude
+                        lon = location.longitude
                     }
-                    if (location == null) {
-                        return ToolExecutor.ToolResult(false, "GPS location not available. Enable GPS and try again, or specify a city: getWeather(city=\"Bangalore\")")
-                    }
-                    val lat = location.latitude
-                    val lon = location.longitude
 
                     // Step 2: Call free Open-Meteo API (no API key, works globally including India)
                     val (weatherBody, weatherCode) = withContext(kotlinx.coroutines.Dispatchers.IO) {

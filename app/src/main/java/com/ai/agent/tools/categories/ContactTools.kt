@@ -26,6 +26,15 @@ object ContactTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "readContacts" -> {
+                // v4.0.97: Pre-check READ_CONTACTS permission.
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.READ_CONTACTS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot read contacts — READ_CONTACTS permission not granted. " +
+                        "Go to Settings → Apps → Aira → Permissions → Contacts → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Contacts")
+                }
                 try {
                     val cursor = context.contentResolver.query(
                         android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
@@ -42,12 +51,25 @@ object ContactTools {
                         }
                     }
                     ToolExecutor.ToolResult(true, if (contacts.isEmpty()) "No contacts found" else "Contacts (${contacts.size}):\n${contacts.joinToString("\n")}")
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Cannot read contacts — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Contacts → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Contacts error: ${e.message}")
                 }
             }
             "searchContacts" -> {
                 val query = call.args["name"] as? String ?: return ToolExecutor.ToolResult(false, "missing name")
+                // v4.0.97: Pre-check READ_CONTACTS permission (same as readContacts).
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.READ_CONTACTS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot search contacts — READ_CONTACTS permission not granted. " +
+                        "Go to Settings → Apps → Aira → Permissions → Contacts → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Contacts")
+                }
                 try {
                     val cursor = context.contentResolver.query(
                         android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
@@ -63,6 +85,10 @@ object ContactTools {
                         }
                     }
                     ToolExecutor.ToolResult(true, if (results.isEmpty()) "No contacts found for '$query'" else results.joinToString("\n"))
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Search contacts — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Contacts → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Search error: ${e.message}")
                 }
@@ -148,28 +174,72 @@ object ContactTools {
             "sendSMS" -> {
                 val number = call.args["number"] as? String ?: return ToolExecutor.ToolResult(false, "missing number")
                 val message = call.args["message"] as? String ?: return ToolExecutor.ToolResult(false, "missing message")
+                // v4.0.97: Pre-check SEND_SMS permission before trying to send.
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.SEND_SMS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot send SMS — SEND_SMS permission not granted. " +
+                        "Go to Settings → Apps → Aira → Permissions → SMS → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → SMS")
+                }
                 try {
                     val smsManager = android.telephony.SmsManager.getDefault()
                     smsManager.sendTextMessage(number, null, message, null, null)
                     ToolExecutor.ToolResult(true, "SMS sent to $number: $message")
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Cannot send SMS — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → SMS → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "SMS error: ${e.message}")
                 }
             }
             "callContact" -> {
                 val number = call.args["number"] as? String ?: return ToolExecutor.ToolResult(false, "missing number")
+                // v4.0.97: Pre-check CALL_PHONE permission. If not granted, fall back to dialer (ACTION_DIAL).
+                val hasCallPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.CALL_PHONE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_CALL).apply {
-                        data = android.net.Uri.parse("tel:$number")
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val intent = if (hasCallPermission) {
+                        android.content.Intent(android.content.Intent.ACTION_CALL).apply {
+                            data = android.net.Uri.parse("tel:$number")
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    } else {
+                        // Fall back to dialer — user taps the call button themselves.
+                        android.content.Intent(android.content.Intent.ACTION_DIAL).apply {
+                            data = android.net.Uri.parse("tel:$number")
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
                     }
                     context.startActivity(intent)
-                    ToolExecutor.ToolResult(true, "Calling $number...")
+                    if (hasCallPermission) {
+                        ToolExecutor.ToolResult(true, "Calling $number...")
+                    } else {
+                        ToolExecutor.ToolResult(true, "Opened dialer with $number (CALL_PHONE permission not granted — tap call button). " +
+                            "To grant: Settings → Apps → Aira → Permissions → Phone → Allow. " +
+                            "On Xiaomi/MIUI: also Security Center → Permissions → Aira → Phone")
+                    }
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Call failed — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Phone → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Call error: ${e.message}")
                 }
             }
             "getCallLog" -> {
+                // v4.0.97: Pre-check READ_CALL_LOG permission.
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.READ_CALL_LOG
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot read call log — READ_CALL_LOG permission not granted. " +
+                        "Go to Settings → Apps → Aira → Permissions → Phone → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Phone")
+                }
                 try {
                     val cursor = context.contentResolver.query(
                         android.provider.CallLog.Calls.CONTENT_URI,
@@ -196,6 +266,10 @@ object ContactTools {
                         }
                     }
                     ToolExecutor.ToolResult(true, if (calls.isEmpty()) "No call history" else "Recent calls:\n${calls.joinToString("\n")}")
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Cannot read call log — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Phone → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Call log error: ${e.message}")
                 }
@@ -244,20 +318,43 @@ object ContactTools {
             "makePhoneCall" -> {
                 val number = call.args["number"] as? String
                     ?: return ToolExecutor.ToolResult(false, "missing number")
+                // v4.0.97: Pre-check CALL_PHONE permission. Same fallback logic as callContact —
+                // if not granted, open the dialer instead of failing.
+                val hasCallPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, android.Manifest.permission.CALL_PHONE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 try {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_CALL,
-                        android.net.Uri.parse("tel:$number"))
+                    val intent = if (hasCallPermission) {
+                        android.content.Intent(android.content.Intent.ACTION_CALL,
+                            android.net.Uri.parse("tel:$number"))
+                    } else {
+                        android.content.Intent(android.content.Intent.ACTION_DIAL,
+                            android.net.Uri.parse("tel:$number"))
+                    }
                     intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                     context.startActivity(intent)
                     delay(1000)
-                    ToolExecutor.ToolResult(true, "Calling $number...")
+                    if (hasCallPermission) {
+                        ToolExecutor.ToolResult(true, "Calling $number...")
+                    } else {
+                        ToolExecutor.ToolResult(true, "Opened dialer with $number (CALL_PHONE permission not granted — tap call button). " +
+                            "To grant: Settings → Apps → Aira → Permissions → Phone → Allow. " +
+                            "On Xiaomi/MIUI: also Security Center → Permissions → Aira → Phone")
+                    }
                 } catch (e: SecurityException) {
+                    // Fallback: open dialer if ACTION_CALL fails for any reason.
                     val intent = android.content.Intent(android.content.Intent.ACTION_DIAL,
                         android.net.Uri.parse("tel:$number"))
                     intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-                    context.startActivity(intent)
-                    delay(1000)
-                    ToolExecutor.ToolResult(true, "Opened dialer with $number (CALL_PHONE permission not granted — tap call button)")
+                    try {
+                        context.startActivity(intent)
+                        delay(1000)
+                        ToolExecutor.ToolResult(true, "Opened dialer with $number (CALL_PHONE permission not granted — tap call button). " +
+                            "To grant: Settings → Apps → Aira → Permissions → Phone → Allow. " +
+                            "On Xiaomi/MIUI: also Security Center → Permissions → Aira → Phone")
+                    } catch (_: Exception) {
+                        ToolExecutor.ToolResult(false, "makePhoneCall($number) failed: ${e.message}")
+                    }
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "makePhoneCall($number) failed: ${e.message}")
                 }

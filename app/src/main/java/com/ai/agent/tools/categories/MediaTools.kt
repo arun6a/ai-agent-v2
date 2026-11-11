@@ -53,12 +53,27 @@ object MediaTools {
                 ToolExecutor.ToolResult(true, "Previous track")
             }
             "takePhoto" -> {
+                // v4.0.97: Pre-check CAMERA permission before launching intent.
+                // Previously the camera intent would silently fail or crash with
+                // SecurityException if permission wasn't granted.
+                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.CAMERA
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    return ToolExecutor.ToolResult(false,
+                        "Cannot take photo — CAMERA permission not granted. " +
+                        "Go to Settings → Apps → Aira → Permissions → Camera → Allow. " +
+                        "On Xiaomi/MIUI: also check Security Center → Permissions → Aira → Camera")
+                }
                 try {
                     val intent = android.content.Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
                         addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
                     ToolExecutor.ToolResult(true, "Camera opened")
+                } catch (e: SecurityException) {
+                    ToolExecutor.ToolResult(false,
+                        "Cannot open camera — SecurityException. " +
+                        "On Xiaomi/MIUI: Security Center → Permissions → Aira → Camera → Allow")
                 } catch (e: Exception) {
                     ToolExecutor.ToolResult(false, "Cannot open camera: ${e.message}")
                 }
