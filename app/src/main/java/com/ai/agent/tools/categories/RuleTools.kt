@@ -39,6 +39,10 @@ object RuleTools {
                 val validTypes = listOf(
                     // Time-based
                     "time",
+                    // v4.0.96: Interval-based (e.g., "every 2 hours", "every 30 minutes")
+                    // Resolves the "every 2 hours" failure in logs — AI was passing this
+                    // as triggerType="time" which expects HH:MM format.
+                    "interval",
                     // Notifications + SMS + calls
                     "notification", "incoming_call", "sms_received",
                     // Battery + power
@@ -63,11 +67,32 @@ object RuleTools {
                     return ToolExecutor.ToolResult(false, "invalid triggerType. Use one of: $validTypes")
                 }
 
+                // v4.0.96: Parse interval triggerType — accepts natural language like
+                // "every 2 hours", "every 30 minutes", "every 45 mins".
+                // Converts to a normalized "every Nh" or "every Nm" format stored in triggerValue.
+                var normalizedTriggerValue = triggerValue
+                if (triggerType == "interval") {
+                    val regex = Regex("every\\s+(\\d+)\\s*(hour|hr|hours|minute|min|mins|minutes)", RegexOption.IGNORE_CASE)
+                    val match = regex.find(triggerValue)
+                    if (match == null) {
+                        return ToolExecutor.ToolResult(false,
+                            "invalid interval format. Use 'every N hours' or 'every N minutes', e.g., 'every 2 hours' or 'every 30 minutes'. Got: '$triggerValue'")
+                    }
+                    val n = match.groupValues[1].toIntOrNull()
+                        ?: return ToolExecutor.ToolResult(false, "invalid interval number: ${match.groupValues[1]}")
+                    if (n <= 0) {
+                        return ToolExecutor.ToolResult(false, "interval must be > 0. Got: $n")
+                    }
+                    val unit = match.groupValues[2].lowercase()
+                    normalizedTriggerValue = if (unit.startsWith("h")) "every ${n}h" else "every ${n}m"
+                    Log.i(TAG, "Normalized interval: '$triggerValue' → '$normalizedTriggerValue'")
+                }
+
                 // Validate time format if time-based
                 if (triggerType == "time") {
                     val parts = triggerValue.split(":")
                     if (parts.size != 2 || parts[0].toIntOrNull() !in 0..23 || parts[1].toIntOrNull() !in 0..59) {
-                        return ToolExecutor.ToolResult(false, "invalid time format. Use HH:MM (24-hour), e.g., '07:00'")
+                        return ToolExecutor.ToolResult(false, "invalid time format. Use HH:MM (24-hour), e.g., '07:00'. For recurring intervals use triggerType='interval' with value like 'every 2 hours'.")
                     }
                     // Validate days if provided
                     if (days != null && days.isNotEmpty()) {
@@ -83,7 +108,8 @@ object RuleTools {
                 // v4.0.52: Normalize triggerValue for notification rules — convert display
                 // names to package names so the NotificationListener can match them.
                 // E.g., "WhatsApp" → "com.whatsapp", "Telegram" → "com.telegram.messenger"
-                var normalizedTriggerValue = triggerValue
+                // v4.0.96: normalizedTriggerValue was already declared + initialized above
+                // (in the interval block) — don't redeclare here, just reuse.
                 if (triggerType == "notification" && !triggerValue.contains(":")) {
                     val knownPackages = mapOf(
                         "whatsapp" to "com.whatsapp",
@@ -177,22 +203,28 @@ object RuleTools {
 
                 // v4.0.52: Use normalizedTriggerValue (display name → package name conversion done above)
                 val ruleId = database.addRule(name, triggerType, normalizedTriggerValue, action, days)
-                // Schedule with AlarmManager if it's a time rule
-                if (triggerType == "time") {
-                    try {
-                        com.ai.agent.rules.RuleScheduler(context).scheduleTimeRule(
-                            database.getRules().find { it.id == ruleId }!!
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to schedule rule", e)
+                // Schedule with AlarmManager if it's a time or interval rule
+                // v4.0.96: Added interval rule scheduling (setRepeating).
+                try {
+                    val createdRule = database.getRules().find { it.id == ruleId }!!
+                    val scheduler = com.ai.agent.rules.RuleScheduler(context)
+                    when (triggerType) {
+                        "time" -> scheduler.scheduleTimeRule(createdRule)
+                        "interval" -> scheduler.scheduleIntervalRule(createdRule)
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to schedule rule", e)
                 }
                 val normalizedNote = if (normalizedTriggerValue != triggerValue) {
                     " (normalized from '$triggerValue')"
                 } else ""
+                val scheduleNote = when (triggerType) {
+                    "time" -> "It has been scheduled with the system AlarmManager and will fire even if the app is closed."
+                    "interval" -> "It has been scheduled with AlarmManager.setRepeating — fires automatically at the interval."
+                    else -> ""
+                }
                 ToolExecutor.ToolResult(true, "Created rule '$name' (id=$ruleId, trigger=$triggerType:$normalizedTriggerValue$normalizedNote" +
-                    (if (days != null) ", days=$days" else "") + "). " +
-                    if (triggerType == "time") "It has been scheduled with the system AlarmManager and will fire even if the app is closed." else "")
+                    (if (days != null) ", days=$days" else "") + "). " + scheduleNote)
             }
             "listRules" -> {
                 val rules = database.getRules(enabledOnly = false)

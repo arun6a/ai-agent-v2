@@ -43,13 +43,16 @@ class RuleTriggerReceiver : BroadcastReceiver() {
             Log.i(TAG, "Rule fired: ${rule.name} → action: ${rule.action}")
 
             // v3.0.0: Execute DIRECTLY via RuleEngine — no WorkManager, no AgentService
-            RuleEngine.execute(context, rule, "time rule: ${rule.triggerValue}")
+            RuleEngine.execute(context, rule, "${rule.triggerType} rule: ${rule.triggerValue}")
 
             // Reschedule for next occurrence
+            // v4.0.96: interval rules use setRepeating (auto-recurring), no reschedule needed.
+            // time rules use setExactAndAllowWhileIdle (one-shot) → must reschedule for next fire.
             if (rule.triggerType == "time") {
                 val scheduler = RuleScheduler(context)
                 scheduler.scheduleTimeRule(rule)
             }
+            // interval rules: AlarmManager.setRepeating handles the next fire automatically.
         } catch (e: Exception) {
             Log.e(TAG, "Failed to process rule id=$ruleId", e)
         }

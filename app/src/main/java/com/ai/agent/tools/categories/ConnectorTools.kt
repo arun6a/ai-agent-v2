@@ -47,16 +47,36 @@ object ConnectorTools {
     private suspend fun createConnector(args: Map<String, Any>, context: Context): ToolExecutor.ToolResult {
         val name = args["name"] as? String
             ?: return ToolExecutor.ToolResult(false, "missing name")
-        val description = args["description"] as? String
-            ?: return ToolExecutor.ToolResult(false, "missing description")
+        // v4.0.96: description is now optional (was required, caused 1 failure in logs).
+        // The AI sometimes omits it when the API base URL is self-explanatory.
+        val description = args["description"] as? String ?: ""
         val authType = args["authType"] as? String ?: "none"
         val apiBase = args["apiBase"] as? String ?: ""
 
-        val endpointsStr = args["endpoints"] as? String
-            ?: return ToolExecutor.ToolResult(false, "missing endpoints (JSON array)")
-        val endpoints = parseEndpoints(endpointsStr)
+        // v4.0.96: endpoints can now be a List<Map<String,Any>> (native function calling,
+        // post-normalizeJsonValue) OR a JSON string (manual JSON path). Handle both.
+        val endpoints: List<ConnectorStore.Endpoint> = when (val v = args["endpoints"]) {
+            is String -> parseEndpoints(v)
+            is List<*> -> {
+                // Native function calling: endpoints is List<Map<String,Any>>
+                v.mapNotNull { item ->
+                    @Suppress("UNCHECKED_CAST")
+                    val m = item as? Map<String, Any> ?: return@mapNotNull null
+                    val paramsList = (m["params"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                    ConnectorStore.Endpoint(
+                        name = m["name"] as? String ?: "",
+                        method = (m["method"] as? String ?: "GET").uppercase(),
+                        path = m["path"] as? String ?: "",
+                        description = m["description"] as? String ?: "",
+                        params = paramsList,
+                        bodyTemplate = m["bodyTemplate"] as? String ?: "",
+                    )
+                }.filter { it.name.isNotBlank() && it.path.isNotBlank() }
+            }
+            else -> return ToolExecutor.ToolResult(false, "missing endpoints (JSON array or list of {name, method, path, description})")
+        }
         if (endpoints.isEmpty()) {
-            return ToolExecutor.ToolResult(false, "no valid endpoints parsed from: ${endpointsStr.take(100)}")
+            return ToolExecutor.ToolResult(false, "no valid endpoints parsed from: ${args["endpoints"]?.toString()?.take(100)}")
         }
 
         val oauth = if (authType == "oauth_pkce") {

@@ -830,7 +830,10 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                         val keys = input.keys()
                         while (keys.hasNext()) {
                             val key = keys.next()
-                            args[key] = input.get(key)
+                            // v4.0.96: normalize JSON values — convert JSONObject/JSONArray
+                            // to Map/List so `as? String`/`as? Map` casts in tool handlers work.
+                            val nv = normalizeJsonValue(input.get(key))
+                            if (nv != null) args[key] = nv
                         }
                         if (name.isNotEmpty()) {
                             toolCalls.add(ToolCall(name, args))
@@ -1025,7 +1028,9 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                     val keys = argsJson.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
-                        args[key] = argsJson.get(key)
+                        // v4.0.96: normalize JSON values for tool handlers.
+                        val nv = normalizeJsonValue(argsJson.get(key))
+                        if (nv != null) args[key] = nv
                     }
                 } catch (e: Exception) {
                     // v4.0.20: Model returned non-JSON arguments (e.g., "name=foo, action=bar")
@@ -1142,11 +1147,11 @@ ALWAYS make the tool_call. Narration without action = task failure."""
             ?.optString("text")
             ?: ""
 
-        // v4.0.91: If content is empty, log the full response for diagnosis
+        // v4.0.91: If content is empty, check for native functionCall first (v4.0.94).
+        // v4.0.96: Moved the "EMPTY CONTENT" warning to AFTER the functionCall check —
+        // it was firing 99 times in real logs even when Gemini returned valid functionCall
+        // objects, because Gemini sends ONLY functionCall (no text) when calling tools.
         if (content.isEmpty()) {
-            LogCapture.w("LLMClient", "⚠️ GEMINI EMPTY CONTENT — full response: ${responseBody.take(1000)}")
-            Log.w("LLMClient", "⚠️ Gemini returned empty content. Full response (${responseBody.length} chars): ${responseBody.take(1000)}")
-
             // v4.0.94: Check for native functionCall in the response parts.
             // When tools are sent via API, Gemini returns functionCall objects
             // instead of text JSON. Parse them here.
@@ -1167,7 +1172,9 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                         val keys = argsObj.keys()
                         while (keys.hasNext()) {
                             val key = keys.next()
-                            args[key] = argsObj.get(key)
+                            // v4.0.96: normalize JSON values for tool handlers.
+                            val nv = normalizeJsonValue(argsObj.get(key))
+                            if (nv != null) args[key] = nv
                         }
                         if (name.isNotEmpty()) {
                             toolCalls.add(ToolCall(name, args))
@@ -1184,6 +1191,12 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                     return LLMResponse(textReply.ifEmpty { "Executing..." }, toolCalls)
                 }
             }
+
+            // v4.0.96: NOW log the EMPTY CONTENT warning — only when BOTH text AND
+            // functionCall are absent. This was the false-positive source (99 warnings
+            // in one log file when Gemini was actually returning valid functionCall objects).
+            LogCapture.w("LLMClient", "⚠️ GEMINI EMPTY CONTENT — full response: ${responseBody.take(1000)}")
+            Log.w("LLMClient", "⚠️ Gemini returned empty content. Full response (${responseBody.length} chars): ${responseBody.take(1000)}")
 
             // No functionCall found — check for failure reasons
             val blockReason = promptFeedback?.optString("blockReason", "") ?: ""
@@ -1246,7 +1259,9 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                     val keys = argsObj.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
-                        args[key] = argsObj.get(key)
+                        // v4.0.96: normalize JSON values for tool handlers.
+                        val nv = normalizeJsonValue(argsObj.get(key))
+                        if (nv != null) args[key] = nv
                     }
                     if (name.isNotEmpty()) {
                         toolCalls.add(ToolCall(name, args))
@@ -1339,7 +1354,9 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                     val keys = argsJson.keys()
                     while (keys.hasNext()) {
                         val key = keys.next()
-                        args[key] = argsJson.get(key)
+                        // v4.0.96: normalize JSON values for tool handlers.
+                        val nv = normalizeJsonValue(argsJson.get(key))
+                        if (nv != null) args[key] = nv
                     }
                 } catch (_: Exception) {
                     // Args not valid JSON — try key=value parse
@@ -1609,6 +1626,50 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                 503 -> "Service Unavailable — $providerName is temporarily overloaded or in maintenance. Try again shortly."
                 504 -> "Gateway Timeout — $providerName took too long to respond. The model may be busy; try a smaller request or wait."
                 else -> "$providerName returned an unexpected server error."
+            }
+        }
+
+        /**
+         * v4.0.96: Normalize JSON values from org.json into plain Kotlin types.
+         *
+         * When parsing native function-calling responses (Gemini functionCall,
+         * OpenAI tool_calls, Anthropic tool_use, manual JSON), `JSONObject.get(key)`
+         * returns `JSONObject` / `JSONArray` for nested values — NOT `Map` / `List`.
+         * Tool handlers then do `as? String` or `as? Map<String, Any>` and the cast
+         * fails silently, producing "missing argument" errors even though the AI
+         * sent a perfectly valid value.
+         *
+         * This helper recursively converts:
+         *   JSONObject  →  Map<String, Any>
+         *   JSONArray   →  List<Any>
+         *   String/Int/Double/Boolean/Long  →  unchanged
+         *   null        →  null (filtered by the caller if needed)
+         *
+         * Apply at EVERY `args[key] = ...get(key)` site (5 places as of v4.0.96).
+         */
+        private fun normalizeJsonValue(value: Any?): Any? {
+            return when (value) {
+                is org.json.JSONObject -> {
+                    val map = mutableMapOf<String, Any>()
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val v = normalizeJsonValue(value.get(k))
+                        if (v != null) map[k] = v
+                    }
+                    map
+                }
+                is org.json.JSONArray -> {
+                    val list = mutableListOf<Any>()
+                    for (i in 0 until value.length()) {
+                        val item = normalizeJsonValue(value.opt(i))
+                        if (item != null) list.add(item)
+                    }
+                    list
+                }
+                is String, is Int, is Long, is Double, is Boolean -> value
+                // org.json.NULL and actual null both fall through to null
+                else -> null
             }
         }
     }

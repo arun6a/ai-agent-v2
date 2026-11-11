@@ -39,6 +39,12 @@ class RuleScheduler(private val context: Context) {
         for (rule in timeRules) {
             scheduleTimeRule(rule)
         }
+        // v4.0.96: Schedule interval rules too.
+        val intervalRules = db.getRules(enabledOnly = true).filter { it.triggerType == "interval" }
+        Log.i(TAG, "Scheduling ${intervalRules.size} interval rules")
+        for (rule in intervalRules) {
+            scheduleIntervalRule(rule)
+        }
     }
 
     /**
@@ -109,6 +115,49 @@ class RuleScheduler(private val context: Context) {
     }
 
     /**
+     * v4.0.96: Schedule a single interval rule using setRepeating.
+     * Rule.triggerValue is normalized format "every Nh" or "every Nm"
+     * (e.g., "every 2h", "every 30m").
+     *
+     * Uses AlarmManager.setRepeating() — fires at the interval indefinitely.
+     * Note: setRepeating is NOT exact (can be delayed by Doze), but for reminder
+     * purposes (drink water, posture check) this is acceptable + doesn't require
+     * the SCHEDULE_EXACT_ALARM permission.
+     */
+    fun scheduleIntervalRule(rule: AgentDatabase.Rule) {
+        if (rule.triggerType != "interval") return
+        // Parse "every Nh" or "every Nm"
+        val regex = Regex("every\\s+(\\d+)([hm])", RegexOption.IGNORE_CASE)
+        val match = regex.find(rule.triggerValue) ?: run {
+            Log.e(TAG, "Invalid interval format: ${rule.triggerValue} (expected 'every Nh' or 'every Nm')")
+            return
+        }
+        val n = match.groupValues[1].toLong()
+        val unit = match.groupValues[2].lowercase()
+        val intervalMs = if (unit == "h") n * 3600_000L else n * 60_000L
+        if (intervalMs <= 0) {
+            Log.e(TAG, "Interval must be > 0 for rule ${rule.name}")
+            return
+        }
+
+        val pendingIntent = createPendingIntent(rule.id)
+        alarmManager.cancel(pendingIntent)
+
+        // Fire first time after `intervalMs`, then repeat.
+        val firstFire = System.currentTimeMillis() + intervalMs
+        // v4.0.96: Use setRepeating (inexact, but works in Doze + needs no special perm).
+        // For Android 12+, setRepeating is still available but may be batched.
+        alarmManager.setRepeating(
+            AlarmManager.RTC_WAKEUP,
+            firstFire,
+            intervalMs,
+            pendingIntent
+        )
+        val intervalStr = if (unit == "h") "$n hour(s)" else "$n minute(s)"
+        Log.i(TAG, "Scheduled interval rule ${rule.name} (id=${rule.id}) every $intervalStr (first fire in ${intervalMs / 1000}s)")
+    }
+
+    /**
      * Cancel a scheduled rule.
      */
     fun cancelRule(ruleId: Long) {
@@ -123,11 +172,12 @@ class RuleScheduler(private val context: Context) {
         // Cancel all existing alarms for our rules
         val rules = db.getRules(enabledOnly = false)
         for (rule in rules) {
-            if (rule.triggerType == "time") {
+            // v4.0.96: Cancel both time + interval rules.
+            if (rule.triggerType == "time" || rule.triggerType == "interval") {
                 alarmManager.cancel(createPendingIntent(rule.id))
             }
         }
-        // Reschedule enabled time rules
+        // Reschedule enabled time + interval rules
         scheduleAllTimeRules()
     }
 

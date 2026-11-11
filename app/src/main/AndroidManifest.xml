@@ -47,7 +47,11 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
-    <uses-permission android:name="android.permission.SET_ALARM" />
+    <!-- v4.0.96: FIX — permission name was wrong (android.permission.SET_ALARM doesn't exist).
+         Correct name is com.android.alarm.permission.SET_ALARM. Without this, setAlarm()
+         tool gets 'Permission Denial: starting Intent ACTION_SET_ALARM' even though
+         a permission was declared. See https://developer.android.com/reference/android/provider/AlarmClock#ACTION_SET_ALARM -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />

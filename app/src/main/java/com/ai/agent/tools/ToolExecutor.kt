@@ -948,8 +948,27 @@ class ToolExecutor(private val context: Context) {
             }
             // v4.0.62: TodoWrite — plan + track multi-step tasks
             "todoWrite" -> {
-                val todosJson = call.args["todos"] as? String
-                    ?: return ToolResult(false, "missing todos. Example: todoWrite(todos='[{\"content\":\"step 1\",\"status\":\"pending\"}]')")
+                // v4.0.96: Gemini/OpenAI native function calling passes `todos` as a
+                // native List<Map<String,Any>> (after normalizeJsonValue), not a string.
+                // LLMClient's manual JSON path still sends a string. Handle both.
+                val todosJson: String = when (val v = call.args["todos"]) {
+                    is String -> v
+                    is List<*> -> {
+                        // Convert List<Map> → JSON string for TodoStore.update
+                        val arr = org.json.JSONArray()
+                        for (item in v) {
+                            if (item is Map<*, *>) {
+                                val obj = org.json.JSONObject()
+                                for ((k, value) in item) {
+                                    if (k != null) obj.put(k.toString(), value?.toString() ?: "")
+                                }
+                                arr.put(obj)
+                            }
+                        }
+                        arr.toString()
+                    }
+                    else -> return ToolResult(false, "missing todos. Example: todoWrite(todos='[{\"content\":\"step 1\",\"status\":\"pending\"}]')")
+                }
                 val formatted = com.ai.agent.tools.planning.TodoStore.update(todosJson)
                 LogCapture.i(TAG, "todoWrite: ${com.ai.agent.tools.planning.TodoStore.getTodos().size} items")
                 ToolResult(true, "Todo list updated. This will be shown to you in subsequent prompts.\n\n$formatted")
@@ -1044,11 +1063,18 @@ class ToolExecutor(private val context: Context) {
         // Parse the actions list from args.
         // v4.0.43: Handle JSON string actions — the model sometimes passes actions as a
         // JSON string instead of a List<Map>. Parse it if needed.
+        // v4.0.96: After LLMClient normalizeJsonValue, native function calls send
+        // actions as List<Map<String,Any>> directly. The Map cast at line ~1114 now
+        // succeeds because normalizeJsonValue converts JSONObject → Map recursively.
         var actionsRaw: List<Map<String, Any>>? = null
         when (val actionsArg = call.args["actions"]) {
             is List<*> -> {
-                @Suppress("UNCHECKED_CAST")
-                actionsRaw = actionsArg as? List<Map<String, Any>>
+                // v4.0.96: Each item is now a Map<String, Any> (post-normalizeJsonValue).
+                // Filter out any non-Map items defensively.
+                actionsRaw = actionsArg.mapNotNull { item ->
+                    @Suppress("UNCHECKED_CAST")
+                    (item as? Map<String, Any>)
+                }
             }
             is String -> {
                 // v4.0.43: Parse JSON string to list of maps
@@ -1061,7 +1087,28 @@ class ToolExecutor(private val context: Context) {
                         val keys = item.keys()
                         while (keys.hasNext()) {
                             val k = keys.next()
-                            map[k] = item.get(k)
+                            // v4.0.96: normalize nested values here too (JSONObject/JSONArray
+                            // → Map/List) so the `as? Map<String, Any>` cast below works.
+                            val rawVal = item.get(k)
+                            map[k] = when (rawVal) {
+                                is org.json.JSONObject -> {
+                                    val nested = mutableMapOf<String, Any>()
+                                    val nk = rawVal.keys()
+                                    while (nk.hasNext()) {
+                                        val innerK = nk.next()
+                                        nested[innerK] = rawVal.get(innerK)
+                                    }
+                                    nested
+                                }
+                                is org.json.JSONArray -> {
+                                    val nestedList = mutableListOf<Any>()
+                                    for (j in 0 until rawVal.length()) {
+                                        nestedList.add(rawVal.opt(j) ?: "")
+                                    }
+                                    nestedList
+                                }
+                                else -> rawVal
+                            }
                         }
                         parsed.add(map)
                     }
@@ -1091,6 +1138,7 @@ class ToolExecutor(private val context: Context) {
 
         for ((index, actionRaw) in actionsRaw.withIndex()) {
             val toolName = actionRaw["name"] as? String ?: continue
+            // v4.0.96: actionRaw["args"] is now a Map<String, Any> (post-normalizeJsonValue).
             @Suppress("UNCHECKED_CAST")
             val toolArgs = (actionRaw["args"] as? Map<String, Any>) ?: emptyMap()
             val safe = when {
@@ -1281,6 +1329,29 @@ class ToolExecutor(private val context: Context) {
                 remappedArgs[canonical] = remappedArgs.remove(alias)!!
             }
         }
+
+        // v4.0.96: Per-tool alias map — fix parameter name mismatches the AI commonly makes.
+        // These were found in real log analysis (logs.txt, 4717 lines, 22 failures).
+        // Each entry: alias → canonical. Only applied if canonical isn't already present.
+        val toolSpecificAliases = when (call.name) {
+            // recallMemory expects query=, AI sometimes passes key= or q=
+            "recallMemory" -> mapOf("key" to "query", "q" to "query", "search" to "query")
+            // createCalendarEvent expects startTime= + durationMinutes=, AI passes start= and duration=
+            "createCalendarEvent" -> mapOf("start" to "startTime", "duration" to "durationMinutes", "dur" to "durationMinutes")
+            // recallKnowledge expects query=, AI sometimes passes key= or q=
+            "recallKnowledge" -> mapOf("key" to "query", "q" to "query", "search" to "query")
+            // createRule: AI sometimes passes action_description instead of action
+            "createRule" -> mapOf("ruleName" to "name", "rule_name" to "name")
+            // createConnector: AI sometimes passes desc instead of description, baseUrl instead of apiBase
+            "createConnector" -> mapOf("desc" to "description", "baseUrl" to "apiBase", "base" to "apiBase", "url" to "apiBase")
+            else -> emptyMap()
+        }
+        for ((alias, canonical) in toolSpecificAliases) {
+            if (alias in remappedArgs && canonical !in remappedArgs) {
+                remappedArgs[canonical] = remappedArgs.remove(alias)!!
+            }
+        }
+
         val call = LLMClient.ToolCall(call.name, remappedArgs)
 
         // Only normalize if there are positional args (numeric string keys)
@@ -1292,6 +1363,8 @@ class ToolExecutor(private val context: Context) {
             "tap" -> listOf("x", "y")
             "swipe" -> listOf("x1", "y1", "x2", "y2")
             "type", "clickByText" -> listOf("text")
+            // v4.0.96: speak accepts a positional text arg (AI called speak(0="..."))
+            "speak" -> listOf("text")
             "launchApp" -> listOf("package")
             "searchInApp" -> listOf("package", "query")
             "webSearch", "openGoogleSearch" -> listOf("query", "fetchTop")
