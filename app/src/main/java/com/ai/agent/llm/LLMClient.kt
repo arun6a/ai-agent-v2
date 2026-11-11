@@ -1208,6 +1208,7 @@ ALWAYS make the tool_call. Narration without action = task failure."""
                 finishReason == "RECITATION" -> "Response blocked by recitation filter"
                 finishReason == "MAX_TOKENS" -> "Response cut off (max tokens)"
                 finishReason == "MALFORMED_FUNCTION_CALL" -> "Malformed function call: $finishMessage"
+                finishReason == "UNEXPECTED_TOOL_CALL" -> "Unexpected tool call (Gemini couldn't format the tool call). Simplify the request and try again."  // v4.0.98
                 finishReason == "OTHER" -> "Response blocked (other reason)"
                 candidates == null || candidates.length() == 0 -> "No candidates in response"
                 else -> "Unknown — content field empty but finishReason=$finishReason"

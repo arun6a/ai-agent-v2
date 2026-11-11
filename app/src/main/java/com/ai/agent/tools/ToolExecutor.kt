@@ -993,9 +993,13 @@ class ToolExecutor(private val context: Context) {
                 LogCapture.i(TAG, "delegateTask: type=$agentType, task=${description.take(80)}")
                 kotlinx.coroutines.runBlocking {
                     val result = com.ai.agent.agent.SubAgentRunner.run(context, description, agentType)
+                    // v4.0.98: Changed from ✗ to ⚠ when sub-agent hit iteration limit but still ran.
+                    // This is a soft failure — the sub-agent DID work, it just didn't finish.
+                    val statusIcon = if (!result.success && result.iterations >= 5) "⚠" else if (result.success) "✓" else "✗"
                     ToolResult(result.success,
-                        "Sub-agent (${agentType}) completed in ${result.iterations} iterations, ${result.toolCalls} tool calls.\n" +
-                        "Success: ${result.success}\n" +
+                        "$statusIcon Sub-agent (${agentType}) completed in ${result.iterations} iterations, ${result.toolCalls} tool calls.\n" +
+                        "Success: ${result.success}" +
+                        (if (!result.success && result.iterations >= 5) " (iteration limit reached — partial result below)" else "") + "\n" +
                         "Result: ${result.reply}"
                     )
                 }
@@ -1528,6 +1532,12 @@ class ToolExecutor(private val context: Context) {
      *
      * If no results → tells the AI it can create a custom tool via createCustomTool.
      */
+    // v4.0.98: Track searchTools calls to detect loops. The AI sometimes calls searchTools
+    // 10+ times with the same query without ever calling the actual tool it found.
+    // When we detect a loop (3+ calls with similar query), we inject a strong hint.
+    private var searchToolsCallCount = 0
+    private var lastSearchQuery = ""
+
     private fun searchTools(call: LLMClient.ToolCall, context: Context): ToolResult {
         val query = call.args["query"] as? String
             ?: return ToolResult(false, "missing query. Example: searchTools(query=\"download file\")")
@@ -1536,9 +1546,24 @@ class ToolExecutor(private val context: Context) {
             return ToolResult(false, "query is empty. Example: searchTools(query=\"whatsapp notification\")")
         }
 
-        // Normalize query for matching
+        // v4.0.98: Loop detection — if the AI has called searchTools 3+ times with a similar
+        // query, inject a strong CALL NOW hint instead of just returning results.
         val queryLower = query.lowercase().trim()
+        val isSimilarQuery = lastSearchQuery.isNotEmpty() &&
+            (queryLower.contains(lastSearchQuery) || lastSearchQuery.contains(queryLower) ||
+             queryLower.split(Regex("\\s+")).any { it.length > 3 && lastSearchQuery.contains(it) })
+        if (isSimilarQuery) {
+            searchToolsCallCount++
+        } else {
+            searchToolsCallCount = 1
+            lastSearchQuery = queryLower
+        }
+
+        // Normalize query for matching
         val queryWords = queryLower.split(Regex("\\s+")).filter { it.isNotEmpty() }
+
+        // v4.0.98: If we've searched 3+ times for the same thing, inject a strong CALL NOW hint.
+        // (The warning text is appended to the result below, after `sorted` is built.)
 
         // Collect all tools (name + description) from ToolSchemas
         val allSchemas: List<ToolSchemas.Schema> = ToolSchemas.allSchemas()
@@ -1594,6 +1619,14 @@ class ToolExecutor(private val context: Context) {
                 sb.append("... and ${sorted.size - 15} more. Try a more specific query.\n")
             }
             sb.append("\nCall any tool above by its name. If none fit, use createCustomTool.")
+            // v4.0.98: Append loop warning if AI has been searching repeatedly.
+            if (searchToolsCallCount >= 3) {
+                sb.append("\n\n⚠️ STOP SEARCHING — You've searched for this $searchToolsCallCount times. The tools above EXIST. CALL them now directly:")
+                for ((name, _) in sorted.take(3)) {
+                    sb.append("\n  → $name(...)")
+                }
+                sb.append("\nDo NOT call searchTools again. Execute the tool.")
+            }
             ToolResult(true, sb.toString())
         }
     }

@@ -152,11 +152,11 @@ object ScreenTools {
                 // into the AI Agent's own chat input.
                 val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
                 val currentPkg = am.runningAppProcesses?.firstOrNull { it.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND }?.processName ?: "unknown"
-                if (currentPkg == "com.ai.agent") {
-                    // We're about to type into our own app. Try to dismiss focus by hiding keyboard
-                    // and pressing back a couple of times — this is a recovery path.
+                if (currentPkg.startsWith("com.ai.agent")) {
+                    // v4.0.98: Fixed — was checking "com.ai.agent" only, but the actual package is "com.ai.agent.v2".
+                    // Now matches both v1 and v2 package names.
                     android.util.Log.w(TAG, "type() called while AI Agent is foreground — likely a launchApp didn't complete. Attempting recovery.")
-                    return ToolExecutor.ToolResult(false, "type($text) ABORTED: AI Agent app is still foreground. The previous launchApp did not complete. Try calling launchApp again, then readScreen() to verify.")
+                    return ToolExecutor.ToolResult(false, "type($text) ABORTED: AI Agent app ($currentPkg) is still foreground. The previous launchApp did not complete. Try calling launchApp again, then readScreen() to verify.")
                 }
                 val typed = service!!.type(text)
                 delay(400)  // let the IME settle
@@ -193,9 +193,10 @@ object ScreenTools {
                 // Same AI-Agent-foreground guard as type() — don't submit our own chat input.
                 val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
                 val currentPkg = am.runningAppProcesses?.firstOrNull { it.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND }?.processName ?: "unknown"
-                if (currentPkg == "com.ai.agent") {
+                if (currentPkg.startsWith("com.ai.agent")) {
+                    // v4.0.98: Fixed — was checking "com.ai.agent" only, missed "com.ai.agent.v2".
                     android.util.Log.w(TAG, "submitInput() called while AI Agent is foreground — aborting to prevent sending our own chat.")
-                    return ToolExecutor.ToolResult(false, "submitInput ABORTED: AI Agent is foreground. launchApp didn't complete. Try again with launchApp + readScreen first.")
+                    return ToolExecutor.ToolResult(false, "submitInput ABORTED: AI Agent ($currentPkg) is foreground. launchApp didn't complete. Try again with launchApp + readScreen first.")
                 }
                 val submitted = service!!.submitInput()
                 delay(800)  // wait for navigation/results to load

@@ -24,7 +24,9 @@ object FileTools {
     ): ToolExecutor.ToolResult {
         return when (call.name) {
             "listFiles" -> {
-                val path = call.args["path"] as? String ?: "/storage/emulated/0/Aira"
+                // v4.0.98: Auto-resolve relative paths to Aira workspace.
+                val rawPath = call.args["path"] as? String ?: "/storage/emulated/0/Aira"
+                val path = if (rawPath.startsWith("/")) rawPath else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawPath"
                 try {
                     val dir = java.io.File(path)
                     if (!dir.exists()) return ToolExecutor.ToolResult(false, "Directory not found: $path")
@@ -37,7 +39,9 @@ object FileTools {
                 }
             }
             "readFile" -> {
-                val path = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                // v4.0.98: Auto-resolve relative paths.
+                val rawPath = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                val path = if (rawPath.startsWith("/")) rawPath else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawPath"
                 try {
                     val content = java.io.File(path).readText()
                     ToolExecutor.ToolResult(true, content.take(2000))  // limit to 2000 chars
@@ -46,7 +50,9 @@ object FileTools {
                 }
             }
             "writeFile" -> {
-                val path = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                // v4.0.98: Auto-resolve relative paths.
+                val rawPath = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                val path = if (rawPath.startsWith("/")) rawPath else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawPath"
                 val content = call.args["content"] as? String ?: return ToolExecutor.ToolResult(false, "missing content")
                 try {
                     val file = java.io.File(path)
@@ -58,23 +64,31 @@ object FileTools {
                 }
             }
             "copyFile" -> {
-                val src = call.args["source"] as? String ?: return ToolExecutor.ToolResult(false, "missing source")
-                val dst = call.args["destination"] as? String ?: return ToolExecutor.ToolResult(false, "missing destination")
+                // v4.0.98: Auto-resolve relative paths.
+                val rawSrc = call.args["source"] as? String ?: return ToolExecutor.ToolResult(false, "missing source")
+                val rawDst = call.args["destination"] as? String ?: return ToolExecutor.ToolResult(false, "missing destination")
+                val src = if (rawSrc.startsWith("/")) rawSrc else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawSrc"
+                val dst = if (rawDst.startsWith("/")) rawDst else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawDst"
                 try {
                     java.io.File(src).copyTo(java.io.File(dst), overwrite = true)
                     ToolExecutor.ToolResult(true, "Copied $src to $dst")
                 } catch (e: Exception) { ToolExecutor.ToolResult(false, "Copy error: ${e.message}") }
             }
             "moveFile" -> {
-                val src = call.args["source"] as? String ?: return ToolExecutor.ToolResult(false, "missing source")
-                val dst = call.args["destination"] as? String ?: return ToolExecutor.ToolResult(false, "missing destination")
+                // v4.0.98: Auto-resolve relative paths.
+                val rawSrc = call.args["source"] as? String ?: return ToolExecutor.ToolResult(false, "missing source")
+                val rawDst = call.args["destination"] as? String ?: return ToolExecutor.ToolResult(false, "missing destination")
+                val src = if (rawSrc.startsWith("/")) rawSrc else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawSrc"
+                val dst = if (rawDst.startsWith("/")) rawDst else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawDst"
                 try {
                     java.io.File(src).renameTo(java.io.File(dst))
                     ToolExecutor.ToolResult(true, "Moved $src to $dst")
                 } catch (e: Exception) { ToolExecutor.ToolResult(false, "Move error: ${e.message}") }
             }
             "deleteFile" -> {
-                val path = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                // v4.0.98: Auto-resolve relative paths.
+                val rawPath = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                val path = if (rawPath.startsWith("/")) rawPath else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawPath"
                 try {
                     val file = java.io.File(path)
                     val deleted = file.delete()
@@ -82,7 +96,9 @@ object FileTools {
                 } catch (e: Exception) { ToolExecutor.ToolResult(false, "Delete error: ${e.message}") }
             }
             "createDirectory" -> {
-                val path = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                // v4.0.98: Auto-resolve relative paths.
+                val rawPath = call.args["path"] as? String ?: return ToolExecutor.ToolResult(false, "missing path")
+                val path = if (rawPath.startsWith("/")) rawPath else "${com.ai.agent.Config.WORKSPACE_DIR}/$rawPath"
                 try {
                     val dir = java.io.File(path)
                     val created = dir.mkdirs()

@@ -246,7 +246,7 @@ object ContactTools {
                         arrayOf(android.provider.CallLog.Calls.NUMBER, android.provider.CallLog.Calls.CACHED_NAME,
                                android.provider.CallLog.Calls.TYPE, android.provider.CallLog.Calls.DATE,
                                android.provider.CallLog.Calls.DURATION),
-                        null, null, "${android.provider.CallLog.Calls.DATE} DESC LIMIT 20"
+                        null, null, "${android.provider.CallLog.Calls.DATE} DESC"  // v4.0.98: removed "LIMIT 20" — causes "Invalid token LIMIT" on some devices. Cursor is limited manually below.
                     )
                     val calls = mutableListOf<String>()
                     val sdf = java.text.SimpleDateFormat("MMM dd HH:mm", java.util.Locale.getDefault())

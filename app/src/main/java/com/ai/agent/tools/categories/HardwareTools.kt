@@ -251,7 +251,8 @@ object HardwareTools {
                     "Bluetooth toggle did not take effect. " +
                     "Expected: ${if (enabled) "ON" else "OFF"}, " +
                     "Actual: ${if (actualState) "ON" else "OFF"}. " +
-                    "This device may require manual toggle in Settings → Bluetooth.")
+                    "On Xiaomi/MIUI: Security Center → Permissions → Aira → Auto-start → Allow. " +
+                    "MIUI may block Bluetooth toggle even with BLUETOOTH_CONNECT permission granted.")
             }
         } catch (e: SecurityException) {
             ToolExecutor.ToolResult(false, "Permission denied: ${e.message}")
@@ -268,6 +269,18 @@ object HardwareTools {
     private fun toggleWifi(args: Map<String, Any>, context: Context): ToolExecutor.ToolResult {
         val enabled = args["enabled"] as? Boolean
             ?: return ToolExecutor.ToolResult(false, "missing enabled. Example: toggleWifi(enabled=true)")
+
+        // v4.0.98: Warn before turning WiFi OFF — this will disconnect Aira from the LLM API
+        // and kill the agent loop. The AI sometimes toggles WiFi off mid-task and then can't
+        // recover because it can't reach Gemini/OpenAI anymore.
+        if (!enabled) {
+            return ToolExecutor.ToolResult(false,
+                "⚠️ WARNING: Turning WiFi OFF will disconnect Aira from the LLM API. " +
+                "The agent loop will die with 'Unable to resolve host' errors. " +
+                "Only toggle WiFi off if the user explicitly asked. " +
+                "If you must proceed, tell the user first and wait for confirmation. " +
+                "After toggling off, WiFi must be manually re-enabled before Aira can continue.")
+        }
 
         return try {
             val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager

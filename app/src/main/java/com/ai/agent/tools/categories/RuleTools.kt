@@ -27,7 +27,7 @@ object RuleTools {
         return when (call.name) {
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> {
-                val name = call.args["name"] as? String ?: return ToolExecutor.ToolResult(false, "missing name")
+                val name = call.args["name"] as? String ?: return ToolExecutor.ToolResult(false, "missing name. Example: createRule(name=\"Drink water reminder\", triggerType=\"time\", triggerValue=\"09:00\", action=\"speak('Time to drink water!')\")")
                 val triggerType = call.args["triggerType"] as? String
                     ?: return ToolExecutor.ToolResult(false, "missing triggerType (use 'time', 'notification', 'battery_low', or 'charging')")
                 val triggerValue = call.args["triggerValue"] as? String
@@ -69,14 +69,16 @@ object RuleTools {
 
                 // v4.0.96: Parse interval triggerType — accepts natural language like
                 // "every 2 hours", "every 30 minutes", "every 45 mins".
+                // v4.0.98: Also accepts "30 minutes", "2 hours", "30m", "2h" (without "every" prefix).
                 // Converts to a normalized "every Nh" or "every Nm" format stored in triggerValue.
                 var normalizedTriggerValue = triggerValue
                 if (triggerType == "interval") {
-                    val regex = Regex("every\\s+(\\d+)\\s*(hour|hr|hours|minute|min|mins|minutes)", RegexOption.IGNORE_CASE)
+                    // v4.0.98: More lenient regex — "every" prefix is now optional.
+                    val regex = Regex("(?:every\\s+)?(\\d+)\\s*(hour|hr|hours|minute|min|mins|minutes|h|m)", RegexOption.IGNORE_CASE)
                     val match = regex.find(triggerValue)
                     if (match == null) {
                         return ToolExecutor.ToolResult(false,
-                            "invalid interval format. Use 'every N hours' or 'every N minutes', e.g., 'every 2 hours' or 'every 30 minutes'. Got: '$triggerValue'")
+                            "invalid interval format. Use 'N hours' or 'N minutes', e.g., '2 hours', '30 minutes', 'every 2h', '30m'. Got: '$triggerValue'")
                     }
                     val n = match.groupValues[1].toIntOrNull()
                         ?: return ToolExecutor.ToolResult(false, "invalid interval number: ${match.groupValues[1]}")
