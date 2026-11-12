@@ -11,7 +11,7 @@ package com.ai.agent
  */
 object Config {
     // App version (must match app/build.gradle.kts versionName)
-    const val VERSION = "4.0.99"
+    const val VERSION = "4.0.101"
 
     // v4.0.38: Aira's working directory on external storage.
     // All files (skills, downloads, attachments, knowledge, screenshots) live here.

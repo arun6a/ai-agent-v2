@@ -86,20 +86,23 @@ object LevelClassifier {
     fun classifyLevel(userMessage: String): Int {
         val msg = userMessage.lowercase().trim()
         val level3Keywords = listOf(
-            "terminal", "build", "install ", "python", "node", "gradle", "compile",
+            "terminal", "build ", "install ", "python", "node", "gradle", "compile",  // v4.0.101: "build" → "build " (BUG 2 fix)
             "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal",
             "connectterminal", "androidide", "termux", "apk", "java ",
             "remove background", "rembg", "pillow", "opencv", "run script"
         )
         if (level3Keywords.any { msg.contains(it) }) return 3
-        val level1Keywords = listOf(
-            "hi", "hello", "hey", "thanks", "thank you", "what can you do", "help",
+        // v4.0.101 BUG 1 FIX: word-boundary matching for short keywords that substring-match
+        val level1ShortKeywords = listOf("hi", "hey", "help")
+        val level1PhraseKeywords = listOf(
+            "hello", "thanks", "thank you", "what can you do",
             "battery", "brightness", "what time", "current time", "set alarm",
             "set timer", "volume", "wifi", "bluetooth", "create rule",
             "list rule", "delete rule", "modify rule", "remember", "recall",
             "what do you remember", "list notification", "check notification"
         )
-        if (level1Keywords.any { msg.contains(it) }) return 1
+        val wordBoundary = Regex("\\b(?:${level1ShortKeywords.joinToString("|")})\\b")
+        if (wordBoundary.containsMatchIn(msg) || level1PhraseKeywords.any { msg.contains(it) }) return 1
         return 2
     }
 
@@ -116,7 +119,7 @@ object LevelClassifier {
         val msg = userMessage.lowercase().trim()
         if (isTier1NoToolsResult) return 1
         val level3Keywords = listOf(
-            "terminal", "build", "install ", "python", "node", "gradle",
+            "terminal", "build ", "install ", "python", "node", "gradle",  // v4.0.101: "build" → "build " (BUG 2 fix)
             "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal",
             "connectterminal", "androidide", "termux", "apk", "java ",
             "remove background", "rembg", "pillow", "opencv", "run script"
@@ -151,14 +154,30 @@ object LevelClassifier {
 
     fun isConceptualQuestion(msg: String): Boolean {
         val msgLower = msg.lowercase().trim()
+        // v4.0.101 BUG 3 FIX: action requests are not conceptual.
+        if (hasActionIntent(msg)) return false
         if (COMPARISON_PATTERNS.any { msgLower.contains(it) }) return true
         return false
     }
 
     fun hasActionIntent(msg: String): Boolean {
-        val msgLower = msg.lowercase().trim()
+        var msgLower = msg.lowercase().trim()
+        // v4.0.101 BUG 3 FIX: Strip leading pleasantries before checking action verbs.
+        val pleasantries = listOf("can you ", "could you ", "please ", "hey ", "hi ", "hello ")
+        var changed = true
+        while (changed) {
+            changed = false
+            for (p in pleasantries) {
+                if (msgLower.startsWith(p)) {
+                    msgLower = msgLower.substring(p.length)
+                    changed = true
+                    break
+                }
+            }
+        }
         return ACTION_VERBS.any { verb ->
-            msgLower.startsWith(verb + " ") || msgLower.startsWith(verb + "!")
+            msgLower.startsWith(verb + " ") || msgLower.startsWith(verb + "!") ||
+            msgLower.startsWith(verb + "?") || msgLower == verb
         }
     }
 

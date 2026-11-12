@@ -136,10 +136,20 @@ object LevelManager {
 
     fun classifyLevel(userMessage: String): Int {
         val msg = userMessage.lowercase().trim()
-        val level3Keywords = listOf("terminal", "build", "install ", "python", "node", "gradle", "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal", "connectterminal", "androidide", "termux", "apk", "java ", "remove background", "rembg", "pillow", "opencv", "run script")
+        val level3Keywords = listOf("terminal", "build ", "install ", "python", "node", "gradle", "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal", "connectterminal", "androidide", "termux", "apk", "java ", "remove background", "rembg", "pillow", "opencv", "run script")  // v4.0.101: "build" → "build " (BUG 2 fix, no longer matches "building a house")
         if (level3Keywords.any { msg.contains(it) }) return 3
-        val level1Keywords = listOf("hi", "hello", "hey", "thanks", "thank you", "what can you do", "help", "battery", "brightness", "what time", "current time", "set alarm", "set timer", "volume", "wifi", "bluetooth", "create rule", "list rule", "delete rule", "modify rule", "remember", "recall", "what do you remember", "list notification", "check notification")
-        if (level1Keywords.any { msg.contains(it) }) return 1
+        // v4.0.101 BUG 1 FIX: Use word-boundary matching for short keywords that
+        // substring-match inside other words ("hi" in "thinking", "hey" in "they").
+        // Long phrases like "thank you", "set alarm" are safe with contains.
+        val level1ShortKeywords = listOf("hi", "hey", "help")  // words that substring-match
+        val level1PhraseKeywords = listOf("hello", "thanks", "thank you", "what can you do",
+            "battery", "brightness", "what time", "current time", "set alarm", "set timer",
+            "volume", "wifi", "bluetooth", "create rule", "list rule", "delete rule",
+            "modify rule", "remember", "recall", "what do you remember",
+            "list notification", "check notification")
+        // v4.0.101: word-boundary check for short keywords (BUG 1 fix)
+        val wordBoundary = Regex("\\b(?:${level1ShortKeywords.joinToString("|")})\\b")
+        if (wordBoundary.containsMatchIn(msg) || level1PhraseKeywords.any { msg.contains(it) }) return 1
         return 2
     }
 
@@ -168,7 +178,7 @@ object LevelManager {
 
         // Rule 2: Level 3 keywords (terminal/build/script) → Level 3 (full prompt)
         // These tasks need the full system_prompt_smart.txt with thinking instructions
-        val level3Keywords = listOf("terminal", "build", "install ", "python", "node", "gradle",
+        val level3Keywords = listOf("terminal", "build ", "install ", "python", "node", "gradle",
             "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal",
             "connectterminal", "androidide", "termux", "apk", "java ",
             "remove background", "rembg", "pillow", "opencv", "run script")
@@ -257,6 +267,9 @@ object LevelManager {
      */
     fun isConceptualQuestion(msg: String): Boolean {
         val msgLower = msg.lowercase().trim()
+        // v4.0.101 BUG 3 FIX: "can you"/"could you" are ACTION REQUESTS, not comparisons.
+        // If the message has action intent (after skipping pleasantries), it's NOT conceptual.
+        if (hasActionIntent(msg)) return false  // "can you open Chrome?" → action, not conceptual
         // Check for comparison/explanation/prohibition patterns
         if (COMPARISON_PATTERNS.any { msgLower.contains(it) }) return true
         return false
@@ -266,17 +279,36 @@ object LevelManager {
      * v4.0.73 Layer 2: Check if the message has clear action intent.
      *
      * Returns true if the message starts with an action verb.
-     * This confirms the user wants to EXECUTE something, not just talk about it.
+     * v4.0.101 BUG 3 FIX: Skip leading pleasantries ("can you", "could you",
+     * "please", "hey") before checking action verbs. Before this fix,
+     * "can you open Chrome?" didn't start with a verb → no action intent →
+     * classified as conceptual → Level 1 → no tools → user's request can't execute.
      *
      * Examples:
      *   "sendSMS to Mom" → true (starts with "send")
      *   "play BLACKPINK on YouTube" → true (starts with "play")
+     *   "can you open Chrome?" → true (v4.0.101: skips "can you", finds "open")
+     *   "please call Mom" → true (v4.0.101: skips "please", finds "call")
      *   "What's the difference between sendSMS and email" → false (starts with "what")
      */
     fun hasActionIntent(msg: String): Boolean {
-        val msgLower = msg.lowercase().trim()
+        var msgLower = msg.lowercase().trim()
+        // v4.0.101 BUG 3 FIX: Strip leading pleasantries before checking action verbs.
+        val pleasantries = listOf("can you ", "could you ", "please ", "hey ", "hi ", "hello ")
+        var changed = true
+        while (changed) {
+            changed = false
+            for (p in pleasantries) {
+                if (msgLower.startsWith(p)) {
+                    msgLower = msgLower.substring(p.length)
+                    changed = true
+                    break
+                }
+            }
+        }
         return ACTION_VERBS.any { verb ->
-            msgLower.startsWith(verb + " ") || msgLower.startsWith(verb + "!")
+            msgLower.startsWith(verb + " ") || msgLower.startsWith(verb + "!") ||
+            msgLower.startsWith(verb + "?") || msgLower == verb  // v4.0.101: also match exact verb + ? + bare
         }
     }
 
@@ -361,7 +393,7 @@ Reply:"""
 
         // Layer 1: Level 3 keywords (terminal/build/script) → Level 3 (full prompt)
         // These are always action — user wants to build/run/compile
-        val level3Keywords = listOf("terminal", "build", "install ", "python", "node", "gradle",
+        val level3Keywords = listOf("terminal", "build ", "install ", "python", "node", "gradle",
             "compile", "script", "shell", "pkg ", "pip ", "npm ", "git ", "runonterminal",
             "connectterminal", "androidide", "termux", "apk", "java ",
             "remove background", "rembg", "pillow", "opencv", "run script")
