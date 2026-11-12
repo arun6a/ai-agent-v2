@@ -130,16 +130,25 @@ object ToolCallNormalizer {
             )
         }
         val remappedArgs = call.args.toMutableMap()
+        // v4.0.100: GAP-1 fix — ALWAYS remove alias keys, even if canonical exists.
         for ((alias, canonical) in argAliases) {
-            if (alias in remappedArgs && canonical !in remappedArgs) {
-                remappedArgs[canonical] = remappedArgs.remove(alias)!!
+            if (alias in remappedArgs) {
+                if (canonical !in remappedArgs) {
+                    remappedArgs[canonical] = remappedArgs.remove(alias)!!
+                } else {
+                    remappedArgs.remove(alias)  // v4.0.100: discard alias, keep canonical
+                }
             }
         }
 
-        // 2. Tool-specific aliases
+        // 2. Tool-specific aliases — same GAP-1 fix
         toolSpecificAliases[call.name]?.forEach { (alias, canonical) ->
-            if (alias in remappedArgs && canonical !in remappedArgs) {
-                remappedArgs[canonical] = remappedArgs.remove(alias)!!
+            if (alias in remappedArgs) {
+                if (canonical !in remappedArgs) {
+                    remappedArgs[canonical] = remappedArgs.remove(alias)!!
+                } else {
+                    remappedArgs.remove(alias)  // v4.0.100: discard alias, keep canonical
+                }
             }
         }
 

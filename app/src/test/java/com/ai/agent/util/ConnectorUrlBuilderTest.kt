@@ -330,20 +330,21 @@ class ConnectorUrlBuilderTest {
     }
 
     @Test
-    fun `body template leaves missing param untouched - GAP-2`() {
+    fun `body template removes missing params - FIXED v4 0 100 (GAP-2)`() {
+        // v4.0.100: Leftover {placeholders} are now stripped.
         assertEquals(
-            "{\"a\":\"{x}\"}",
+            "{\"a\":\"\"}",
             ConnectorUrlBuilder.renderBodyTemplate("{\"a\":\"{x}\"}", emptyMap())
         )
     }
 
     @Test
-    fun `GAP-1 body template does not JSON-escape quotes`() {
-        // DOCUMENTS BUG: a quote inside a value breaks the JSON body → API 400
+    fun `GAP-1 body template JSON-escapes quotes - FIXED v4 0 100`() {
+        // v4.0.100: Values are now JSON-escaped before substitution.
         val body = ConnectorUrlBuilder.renderBodyTemplate(
             "{\"msg\":\"{message}\"}", mapOf("message" to "He said \"hi\"")
         )
-        assertEquals("{\"msg\":\"He said \"hi\"\"}", body)
+        assertEquals("{\"msg\":\"He said \\\"hi\\\"\"}", body)
     }
 
     @Test

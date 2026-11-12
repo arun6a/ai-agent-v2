@@ -93,15 +93,17 @@ class ToolCallNormalizerTest {
     // === GLOBAL ALIAS QUIRKS ===
 
     @Test
-    fun `GAP-1 alias key stays when canonical already present`() {
+    fun `GAP-1 alias key removed when canonical already present - FIXED v4 0 100`() {
+        // v4.0.100: Alias is now always removed, even when canonical exists.
         val args = n("launchApp", "package" to "com.right", "app" to "com.wrong").args
-        assertEquals(mapOf("package" to "com.right", "app" to "com.wrong"), args)
+        assertEquals(mapOf("package" to "com.right"), args)  // "app" is discarded
     }
 
     @Test
-    fun `GAP-1 first alias wins when two aliases present`() {
+    fun `GAP-1 first alias wins, second removed - FIXED v4 0 100`() {
+        // v4.0.100: First alias becomes canonical, second alias is removed.
         val args = n("launchApp", "app" to "from-app", "pkg" to "from-pkg").args
-        assertEquals(mapOf("package" to "from-app", "pkg" to "from-pkg"), args)
+        assertEquals(mapOf("package" to "from-app"), args)  // "pkg" is discarded
     }
 
     @Test
@@ -133,9 +135,10 @@ class ToolCallNormalizerTest {
     }
 
     @Test
-    fun `recallMemory canonical query wins and alias stays - GAP-1`() {
+    fun `recallMemory canonical query wins, alias discarded - FIXED v4 0 100`() {
+        // v4.0.100: Alias "key" is removed when canonical "query" exists.
         val args = n("recallMemory", "query" to "right", "key" to "wrong").args
-        assertEquals(mapOf("query" to "right", "key" to "wrong"), args)
+        assertEquals(mapOf("query" to "right"), args)  // "key" is discarded
     }
 
     @Test

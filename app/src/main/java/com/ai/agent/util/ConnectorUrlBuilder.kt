@@ -143,13 +143,39 @@ object ConnectorUrlBuilder {
         return extraParams.entries.joinToString("&") { "${it.key}=${encode(it.value.toString())}" }
     }
 
-    /** Render a JSON body template by replacing {param} placeholders (NOT escaped). */
+    /**
+     * Render a JSON body template by replacing {param} placeholders.
+     * v4.0.100: Values are now JSON-escaped before substitution (GAP-1 fix).
+     * Also removes leftover {placeholders} that have no matching arg (GAP-2 fix).
+     */
     fun renderBodyTemplate(template: String, args: Map<String, Any>): String {
         var body = template
+        // v4.0.100: GAP-1 fix — JSON-escape values before substitution
         for ((k, v) in args) {
-            body = body.replace("{$k}", v.toString())
+            val escaped = jsonEscape(v.toString())
+            body = body.replace("{$k}", escaped)
         }
+        // v4.0.100: GAP-2 fix — remove any leftover {placeholders}
+        body = body.replace(Regex("\\{[a-zA-Z0-9_]+\\}"), "")
         return body
+    }
+
+    /** v4.0.100: Escape a string for safe inclusion in a JSON value. */
+    private fun jsonEscape(s: String): String {
+        val sb = StringBuilder()
+        for (ch in s) {
+            when (ch) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                '\b' -> sb.append("\\b")
+                '\u000C' -> sb.append("\\f")
+                else -> if (ch.code < 0x20) sb.append("\\u${ch.code.toString(16).padStart(4, '0')}") else sb.append(ch)
+            }
+        }
+        return sb.toString()
     }
 
     /** API-key header value: "prefix key" when prefix is set, else the raw key. */

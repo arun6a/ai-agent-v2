@@ -2,6 +2,7 @@ package com.ai.agent.util
 
 import com.ai.agent.llm.LLMClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
@@ -216,19 +217,18 @@ class ToolCallNormalizerIdempotencyTest {
     //     (if the other AI fixes GAP-1, these will fail and surface the fix)
 
     @Test
-    fun `GAP-1 stability - alias key stays when canonical present`() {
+    fun `GAP-1 stability - alias key removed when canonical present - FIXED v4 0 100`() {
         val result = normalize(LLMClient.ToolCall("launchApp", mapOf("package" to "right", "app" to "wrong")))
-        // GAP-1: "app" key stays. When fixed (alias removed), this fails → update.
-        assertTrue("app" in result.args)
-        assertEquals("wrong", result.args["app"])
+        // v4.0.100: "app" key is now removed (alias always discarded when canonical exists).
+        assertFalse("app" in result.args)
+        assertEquals("right", result.args["package"])
     }
 
     @Test
-    fun `GAP-1 stability - first alias wins between app and pkg`() {
+    fun `GAP-1 stability - first alias wins, second removed - FIXED v4 0 100`() {
         val result = normalize(LLMClient.ToolCall("launchApp", mapOf("app" to "from-app", "pkg" to "from-pkg")))
-        // "app" is processed first in the mapOf iteration → "package" = "from-app"
+        // v4.0.100: "app" is processed first → "package" = "from-app", "pkg" is discarded.
         assertEquals("from-app", result.args["package"])
-        // GAP-1: "pkg" stays. When fixed, this fails.
-        assertTrue("pkg" in result.args)
+        assertFalse("pkg" in result.args)
     }
 }

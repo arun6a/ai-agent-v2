@@ -63,40 +63,68 @@ object RuleActionParser {
         val args: Map<String, Any>,
     )
 
-    /** Strip rule prefixes. Same chained removePrefix as RuleEngine.cleanAction. */
+    /** Strip rule prefixes. v4.0.100: trim() FIRST, then removePrefix (fixes GAP-7). */
     fun stripPrefix(action: String): String =
-        action.removePrefix("direct:").removePrefix("tool:").trim()
+        action.trim().removePrefix("direct:").removePrefix("tool:").trim()
 
     /** True when the action is a DIRECT (offline, no-LLM) tool call. */
     fun isDirectRule(action: String): Boolean =
-        stripPrefix(action).matches(Regex("^[a-zA-Z_][a-zA-Z0-9_]*\\(.*\\)$"))
+        stripPrefix(action).matches(Regex("^[a-zA-Z_][a-zA-Z0-9_]*\\(.*\\)$", RegexOption.DOT_MATCHES_ALL))  // v4.0.100: DOTALL fix (GAP-5)
 
     /** Split a direct action into individual tool calls. */
     fun splitToolCalls(actionStr: String): List<String> =
         actionStr.split(";").map { it.trim() }.filter { it.isNotEmpty() }
 
     /**
+     * v4.0.100: Quote-aware comma splitter — fixes GAP-1.
+     * Splits on commas ONLY when outside quotes.
+     * `sendSMS("555","hi, there")` → ["555","hi, there"] (was 3 parts before)
+     */
+    private fun splitArgsQuoteAware(argsStr: String): List<String> {
+        val parts = mutableListOf<String>()
+        val current = StringBuilder()
+        var inDoubleQuote = false
+        var inSingleQuote = false
+        for (ch in argsStr) {
+            when {
+                ch == '"' && !inSingleQuote -> { inDoubleQuote = !inDoubleQuote; current.append(ch) }
+                ch == '\'' && !inDoubleQuote -> { inSingleQuote = !inSingleQuote; current.append(ch) }
+                ch == ',' && !inDoubleQuote && !inSingleQuote -> {
+                    parts.add(current.toString().trim())
+                    current.clear()
+                }
+                else -> current.append(ch)
+            }
+        }
+        if (current.isNotEmpty()) parts.add(current.toString().trim())
+        return parts
+    }
+
+    /**
      * Parse one tool call like `setBrightness(50)` or `sendSMS(to="555", msg="hi")`.
      * Returns null when the call doesn't match the tool-call syntax.
+     * v4.0.100: Uses quote-aware splitter (GAP-1 fix) + DOTALL (GAP-5) + unquote keys (GAP-4) + only coerce unquoted values (GAP-2).
      */
     fun parseToolCall(toolCall: String): ParsedToolCall? {
-        val match = Regex("^(\\w+)\\((.*)\\)$").find(toolCall.trim()) ?: return null
+        val match = Regex("^(\\w+)\\((.*)\\)$", RegexOption.DOT_MATCHES_ALL).find(toolCall.trim()) ?: return null  // v4.0.100: DOTALL
         val toolName = match.groupValues[1]
-        val argsStr = match.groupValues[2]
+        val argsStr = match.groupValues[2].trim()
         val args = mutableMapOf<String, Any>()
 
-        // NOTE: phone numbers like "555123" become Int 555123 (GAP-2); only
-        // values that overflow Int (e.g. "+919876543210") survive as String.
         if (argsStr.isNotEmpty()) {
-            val parts = argsStr.split(",").map { it.trim() }
+            // v4.0.100: GAP-1 fix — quote-aware split (was simple split(","))
+            val parts = splitArgsQuoteAware(argsStr)
             parts.forEachIndexed { i, part ->
                 if (part.contains("=")) {
                     val (k, v) = part.split("=", limit = 2)
                     val cleanV = v.trim().trim('"').trim('\'')
-                    args[k.trim()] = cleanV.toIntOrNull() ?: cleanV
+                    // v4.0.100: GAP-2 fix — only coerce UNQUOTED values to Int
+                    val wasQuoted = v.trim().startsWith("\"") || v.trim().startsWith("'")
+                    args[k.trim().trim('"').trim('\'')] = if (wasQuoted) cleanV else (cleanV.toIntOrNull() ?: cleanV)  // GAP-4 fix: unquote keys
                 } else {
                     val cleanV = part.trim().trim('"').trim('\'')
-                    args[i.toString()] = cleanV.toIntOrNull() ?: cleanV
+                    val wasQuoted = part.trim().startsWith("\"") || part.trim().startsWith("'")
+                    args[i.toString()] = if (wasQuoted) cleanV else (cleanV.toIntOrNull() ?: cleanV)
                 }
             }
         }

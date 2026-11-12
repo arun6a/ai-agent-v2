@@ -91,16 +91,15 @@ class RuleActionParserTest {
     }
 
     @Test
-    fun `GAP-7 leading whitespace defeats prefix removal and breaks classification`() {
-        // REAL BUG: removePrefix runs before trim → "  direct:foo(1)" keeps its
-        // prefix → regex fails → rule silently degrades to a SMART rule.
-        assertFalse(RuleActionParser.isDirectRule("  direct:foo(1)"))
+    fun `GAP-7 leading whitespace no longer breaks classification - FIXED v4 0 100`() {
+        // v4.0.100: trim() runs FIRST, then removePrefix.
+        assertTrue(RuleActionParser.isDirectRule("  direct:foo(1)"))
     }
 
     @Test
-    fun `isDirectRule false for multi-line action - GAP-5`() {
-        // regex has no DOTALL → newline inside parens means SMART rule fallback
-        assertFalse(RuleActionParser.isDirectRule("speak(\"line1\nline2\")"))
+    fun `isDirectRule true for multi-line action - FIXED v4 0 100 (DOTALL)`() {
+        // v4.0.100: Added DOT_MATCHES_ALL flag — newlines inside parens are OK now.
+        assertTrue(RuleActionParser.isDirectRule("speak(\"line1\nline2\")"))
     }
 
     @Test
@@ -127,9 +126,9 @@ class RuleActionParserTest {
     }
 
     @Test
-    fun `GAP-7 stripPrefix keeps prefix when leading whitespace present`() {
-        // DOCUMENTS BUG: removePrefix is literal and runs BEFORE trim.
-        assertEquals("direct:foo(1)", RuleActionParser.stripPrefix("  direct:foo(1)  "))
+    fun `GAP-7 stripPrefix trims first then removes prefix - FIXED v4 0 100`() {
+        // v4.0.100: trim() runs FIRST, so leading whitespace no longer defeats removePrefix.
+        assertEquals("foo(1)", RuleActionParser.stripPrefix("  direct:foo(1)  "))
     }
 
     @Test
@@ -212,12 +211,10 @@ class RuleActionParserTest {
     }
 
     @Test
-    fun `GAP-2 short phone number in quotes becomes an Int`() {
-        // DOCUMENTS BUG: "555123" → Int 555123 (fits Int.MAX). A quoted phone
-        // number loses its string type. Long numbers like +919876543210 overflow
-        // Int and survive as String — type depends on the VALUE, not the quoting.
+    fun `GAP-2 short phone number in quotes stays as String - FIXED v4 0 100`() {
+        // v4.0.100: Quoted values are no longer coerced to Int.
         val parsed = RuleActionParser.parseToolCall("sendSMS(\"555123\",\"hi there\")")
-        assertEquals(555123, parsed?.args?.get("0"))
+        assertEquals("555123", parsed?.args?.get("0"))  // String, not Int
         assertEquals("hi there", parsed?.args?.get("1"))
     }
 
@@ -315,33 +312,32 @@ class RuleActionParserTest {
     // === DOCUMENTED BUGS (assert current behavior) ===
 
     @Test
-    fun `GAP-1 comma inside quoted string splits into two args`() {
-        // REAL BUG: sendSMS("555","hi, there") corrupts the message.
-        // Expected after fix: {0: "hi, there"} — asserted here as the broken state.
+    fun `GAP-1 comma inside quoted string stays as one arg - FIXED v4 0 100`() {
+        // v4.0.100: Quote-aware splitter — comma inside quotes stays together.
         val parsed = RuleActionParser.parseToolCall("speak(\"hello, world\")")
-        assertEquals("hello", parsed?.args?.get("0"))
-        assertEquals("world", parsed?.args?.get("1"))
+        assertEquals("hello, world", parsed?.args?.get("0"))
+        assertNull(parsed?.args?.get("1"))  // no second arg
     }
 
     @Test
-    fun `GAP-2 quoted numeric string is coerced to Int`() {
-        // REAL BUG: speak("50") passes Int 50, losing the user's quoting.
+    fun `GAP-2 quoted numeric string stays as String - FIXED v4 0 100`() {
+        // v4.0.100: Only unquoted values are coerced to Int.
         val parsed = RuleActionParser.parseToolCall("speak(\"50\")")
-        assertEquals(50, parsed?.args?.get("0"))
+        assertEquals("50", parsed?.args?.get("0"))  // String, not Int
     }
 
     @Test
-    fun `GAP-3 whitespace-only args produce empty positional arg`() {
-        // REAL QUIRK: foo( ) yields {"0": ""} instead of an empty arg map.
+    fun `GAP-3 whitespace-only args produce empty arg map - FIXED v4 0 100`() {
+        // v4.0.100: Quote-aware splitter returns empty list for whitespace-only args.
         val parsed = RuleActionParser.parseToolCall("foo( )")
-        assertEquals("", parsed?.args?.get("0"))
+        assertTrue(parsed?.args?.isEmpty() == true)
     }
 
     @Test
-    fun `GAP-4 named arg key keeps its quotes`() {
-        // REAL QUIRK: foo("key"=v) → key is the literal `"key"` string.
+    fun `GAP-4 named arg key quotes are stripped - FIXED v4 0 100`() {
+        // v4.0.100: Keys are now unquoted.
         val parsed = RuleActionParser.parseToolCall("foo(\"key\"=v)")
-        assertEquals("v", parsed?.args?.get("\"key\""))
+        assertEquals("v", parsed?.args?.get("key"))  // not "\"key\""
     }
 
     @Test
