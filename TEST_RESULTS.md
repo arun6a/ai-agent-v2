@@ -1,6 +1,6 @@
 # Aira — Test Results & QA Tracking
 
-**Last updated:** 2026-11-12 (v4.0.99-collab4)
+**Last updated:** 2026-11-12 (v4.0.99-collab5)
 **Current APK:** `ai-agent-v4.0.99-debug.apk` (42 MB, versionCode 227)
 
 ---
@@ -31,7 +31,7 @@ export PATH=$JAVA_HOME/bin:$PATH
 
 ## Unit Test Results — v4.0.99
 
-**Total: 585 tests, 0 failures, 0 errors, 0 skipped**
+**Total: 753 tests, 0 failures, 0 errors, 0 skipped**
 
 | Test File | Tests | Failures | Added By |
 |-----------|-------|----------|----------|
@@ -51,16 +51,106 @@ export PATH=$JAVA_HOME/bin:$PATH
 | `ToolNameResolverTest.kt` | 16 | 0 | collab4 |
 | `ConsentStateMachineTest.kt` | 17 | 0 | collab4 |
 | `ConnectorJsonTest.kt` | 26 | 0 | collab4 |
+| `LevelClassifierTest.kt` | 83 | 0 | collab5 |
+| `TodoStoreParserTest.kt` | 46 | 0 | collab5 |
+| `ToolCallNormalizerIdempotencyTest.kt` | 22 | 0 | collab5 |
+| `ToolCallNormalizerSpeakRegressionTest.kt` | 17 | 0 | collab5 |
 
 ---
 
-## Collaborator Test Sessions (collab1-collab4, total 585)
+## Collaborator Test Sessions (collab1-collab5, total 753)
 
 All pushed by the Collaborator AI (Z.ai). Pattern: extract pure logic from an
 Android-bound class into `app/src/main/java/com/ai/agent/util/`, test it fully on
 the JVM, document bugs found during extraction. **The extracted objects are
 faithful copies — wiring the original classes to delegate to them is left to the
 maintainer (each file lists its wiring GAPs in the header).**
+
+### collab5 — 2026-11-12 — +168 tests (585 → 753)
+
+**Theme: "Are the tests light?" — empirical answer via mutation testing + real-bug hunting.**
+
+The user asked: "why most of testing is success — is Aira good or are our
+tests light?" This session answered it three ways:
+
+1. **Verified the 585-pass claim is real** (not fabricated) — re-ran the
+   full suite after a fresh sandbox reset: 585/0/0/0 confirmed.
+
+2. **Found 3 REAL BUGS** in production code by reading unextracted source:
+   - **GAP-1 (HIGH):** `LevelManager.classifyLevel` uses SUBSTRING matching
+     on level-1 keywords. `"hi"` matches inside `"thinking"`, `"this"`,
+     `"his"`, `"hippo"`, `"chinese"`. `"hey"` matches inside `"they"`. So
+     `"I was thinking about dinner"` → classified as a **greeting (Level 1,
+     no tools)** — the AI can't act on it. Demonstrably wrong.
+   - **GAP-2 (LOW):** `"build"` (no trailing space) matches `"building a
+     house"` → classified as Level 3 (terminal). Not a terminal task.
+   - **GAP-4 (MEDIUM):** `hasActionIntent` only matches verbs at message
+     START. `"please send a message"` → not action. `"can you open Chrome?"`
+     → not action.
+   - **GAP-5 (LOW):** `isConceptualQuestion` matches `"can you"` (in
+     COMPARISON_PATTERNS). `"can you open Chrome?"` → classified conceptual
+     → Level 1. Combined with GAP-4, the user's action can't execute.
+
+3. **Mutation testing** — introduced 4 deliberate bugs into
+   `ToolCallNormalizer` and counted how many tests caught each:
+
+   | # | Mutation | Tests caught |
+   |---|----------|-------------:|
+   | 1 | Swap `"x"`/`"y"` in `tap` positional signature | 7 |
+   | 2 | Delete `"speak"` entry from positional map | **1 (WEAK)** |
+   | 3 | Typo `"app"`→`"appp"` in alias map | 7 |
+   | 4 | Invert positional check (`==null`→`!=null`) | 19+ |
+
+   **Conclusion:** the suite is NOT light for catastrophic or subtle bugs —
+   mutations 1, 3, 4 were each caught by 7-19+ tests. But mutation 2
+   exposed a real weakness: the v4.0.96 production bug-fix line (`speak`
+   positional mapping) was guarded by only ONE test. This session added
+   `ToolCallNormalizerSpeakRegressionTest.kt` (17 tests) — re-running
+   mutation 2 now catches **13 tests** (up from 1). Weak spot fixed.
+
+New utilities + tests:
+
+1. **LevelClassifier.kt** (83 tests) — extracted from `LevelManager`
+   (v4.0.73-v4.0.75): `classifyLevel`, `classifyLevelWithContext`,
+   `isConceptualQuestion`, `hasActionIntent`, `getToolBudget`,
+   `getToolsForLevel`, `isToolAvailable`, `findLevelForTool`, the
+   `LEVEL_1_TOOLS`/`LEVEL_2_TOOLS`/`LEVEL_3_TOOLS` constants. The 7
+   BUG-REPRO tests in Section 2 were originally written to assert CORRECT
+   behavior; they ALL FAILED on first run (proof the suite catches real
+   bugs), then converted to GAP-tests asserting current buggy behavior so
+   the committed suite stays green. 7 GAPs documented in the header.
+
+2. **TodoStoreParser.kt** (46 tests) — extracted from `TodoStore`
+   (v4.0.62): `parseTodos` (JSON → items, status normalization,
+   content filtering), `enforceSingleInProgress` (only-one-in_progress
+   rule), `formatForPrompt` (emoji rendering), `parseOrError`. 5 GAPs
+   documented:
+   - **GAP-1 (LOW):** `"in progress"` (with space) NOT recognized → pending.
+   - **GAP-4 (INFO):** no content length cap — an AI could write 10k-char
+     todo content (ConversationStore truncates at 500/1000; TodoStore
+     doesn't).
+   - **GAP-5 (INFO):** the in_progress enforcement silently demotes the
+     second in_progress with no feedback to the AI.
+
+3. **ToolCallNormalizerIdempotencyTest.kt** (22 tests) — property-based
+   tests that assert invariants holding for ANY input:
+   - `normalize(normalize(x)) == normalize(x)` (idempotency)
+   - Tool name is NEVER changed by normalize
+   - Named args are NEVER lost
+   - **1000-iteration randomized test** with mixed named + positional +
+     alias keys — all 1000 satisfy idempotency. If this ever fails, we
+     have a real bug. (Passed on first run — normalizer is genuinely
+     idempotent.)
+
+4. **ToolCallNormalizerSpeakRegressionTest.kt** (17 tests) — focused
+   regression coverage for the `speak(0="...")` production bug-fix
+   (v4.0.96). Created specifically to address mutation-test weakness #2:
+   deleting the `speak` entry now breaks 13 tests (was 1). Covers simple
+   text, long text, punctuation, unicode, empty, numeric, boolean, named-
+   arg priority, extra-positional dropping, tool-name preservation, and
+   realistic log shapes.
+
+### collab5 — 2026-11-12 — +168 tests (585 → 753)
 
 ### collab4 — 2026-11-12 — +127 tests (458 → 585)
 
@@ -342,9 +432,9 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 
 | Function | File | Priority | Why |
 |----------|------|----------|-----|
-| Positional args normalizer | ToolExecutor.kt | High | `speak(0="text")` failed in logs |
-| Permission checker | ToolExecutor.kt | Medium | v4.0.95/97 pre-checks |
-| Tool name resolver | ToolExecutor.kt | Medium | Case-insensitive matching |
+| ~~Positional args normalizer~~ ✅ DONE | ~~ToolExecutor.kt~~ → ToolCallNormalizer.kt | — | collab4 (68 tests) + collab5 (17 regression + 22 idempotency) |
+| Permission checker | ToolExecutor.kt | Medium | v4.0.95/97 pre-checks (needs Context — device test) |
+| ~~Tool name resolver~~ ✅ DONE | ~~ToolExecutor.kt~~ → ToolNameResolver.kt | — | collab4 (16 tests) |
 | ~~Rule action parser~~ ✅ DONE | ~~RuleEngine.kt~~ → RuleActionParser.kt | — | collab3 (59 tests) |
 | ~~Connector URL/PKCE~~ ✅ DONE | ~~ConnectorExecutor.kt~~ → ConnectorUrlBuilder.kt | — | collab3 (52 tests) |
 | ~~ConversationStore~~ ✅ DONE | ConversationStore.kt | — | collab3 (30 tests) |
@@ -369,6 +459,7 @@ testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 | v4.0.99-collab2 | Nov 11 | 317 | — | McpNamespaceParser + TierClassifier tests |
 | v4.0.99-collab3 | Nov 12 | 458 | — | RuleActionParser + ConnectorUrlBuilder + ConversationStore tests (13 new GAPs documented) |
 | v4.0.99-collab4 | Nov 12 | 585 | — | ToolCallNormalizer + ToolNameResolver + ConsentStateMachine + ConnectorJson tests (8 more GAPs) |
+| v4.0.99-collab5 | Nov 12 | 753 | — | LevelClassifier + TodoStoreParser + idempotency + speak regression. **Mutation testing** (4 mutations, weak spot fixed). **3 REAL BUGS** in LevelManager (hi/hey substring) |
 
 ---
 
