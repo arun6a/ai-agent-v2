@@ -15,11 +15,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -226,6 +230,69 @@ fun ThinkingIndicator(modifier: Modifier = Modifier, label: String = "thinking�
             text = label,
             color = custom.fg2,
             fontSize = 12.sp,
+        )
+    }
+}
+
+// ============================================================================
+// v4.1.0: StreamingThinkingCard — shows the LLM's live token-by-token stream
+// while it's reasoning. Text grows as deltas arrive; the card auto-scrolls
+// within max-height so long reasoning stays readable.
+// ============================================================================
+
+@Composable
+fun StreamingThinkingCard(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    val transition = rememberInfiniteTransition(label = "streaming-pulse")
+    val dotAlpha by transition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dot-pulse",
+    )
+
+    Column(
+        modifier = modifier
+            .background(custom.surface2, RoundedCornerShape(16.dp))
+            .border(1.dp, custom.accent.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .animateContentSize(),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .alpha(dotAlpha)
+                    .background(custom.accent, CircleShape),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "thinking…",
+                color = custom.accent,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        Spacer(Modifier.width(0.dp).height(6.dp))
+        // The streaming text — clipped + scrollable so very long reasoning
+        // doesn't blow up the chat layout.
+        Text(
+            text = text,
+            color = custom.fg2,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 220.dp)
+                .verticalScroll(rememberScrollState()),
         )
     }
 }

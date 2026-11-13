@@ -580,6 +580,31 @@ object ToolSchemas {
             mapOf("step" to Param("integer", "Iteration step number to recall", required = true))),
         Schema("summarizeProgress", "[BATCHABLE] [NO VERIFY] Get a summary of progress so far in the current task.",
             mapOf()),
+        // === v4.1.0: AI Capability tools (5) ===
+        Schema("generateImage", "[BATCHABLE] [NO VERIFY] Generate an image from a text description. Uses the configured IMAGE_GEN model if available (Gemini image generation or OpenAI-compatible /images/generations), otherwise falls back to the free Pollinations.ai API (no key needed). Image is saved to /Aira/images/.",
+            mapOf(
+                "prompt" to Param("string", "Text description of the image to generate (be specific: subject, style, colors, composition).", required = true),
+                "size" to Param("string", "Image size: '1024x1024' (default), '512x512', '768x768'. Some providers only support 1024x1024.", required = false),
+            )),
+        Schema("analyzeImage", "[BATCHABLE] [NO VERIFY] Analyze any image file using a Vision Language Model. If a vision model is configured, uses it. Otherwise falls back to the main chat model (if vision-capable) or on-device ML Kit OCR. Returns a text description of the image.",
+            mapOf(
+                "path" to Param("string", "Absolute path to the image file to analyze (e.g., /storage/emulated/0/Aira/images/generated_123.jpg).", required = true),
+                "question" to Param("string", "Question or instruction about the image (default: 'Describe this image in detail').", required = false),
+            )),
+        Schema("transcribeAudio", "[BATCHABLE] [NO VERIFY] Transcribe an audio file to text using the configured AUDIO model's Whisper-compatible endpoint (OpenAI /audio/transcriptions format). Returns the transcribed text. If no audio model is configured, returns a helpful error message.",
+            mapOf(
+                "path" to Param("string", "Absolute path to the audio file (mp3, m4a, wav, ogg, flac, webm).", required = true),
+            )),
+        Schema("generateSpeech", "[BATCHABLE] [NO VERIFY] Generate speech audio from text using AI TTS if an audio model is configured (OpenAI /audio/speech format), otherwise falls back to Android's built-in TTS engine. Audio is saved to /Aira/audio/ as a WAV file.",
+            mapOf(
+                "text" to Param("string", "Text to convert to speech.", required = true),
+                "voice" to Param("string", "Voice name (provider-specific, e.g., 'alloy', 'echo', 'fable' for OpenAI). Default: system default.", required = false),
+            )),
+        Schema("imageSearch", "[BATCHABLE] [NO VERIFY] Search for images on the web using DuckDuckGo (no API key needed). Returns direct image URLs with captions. Use downloadFile to save any of the returned URLs.",
+            mapOf(
+                "query" to Param("string", "Search query for images.", required = true),
+                "count" to Param("number", "Number of results (default: 3, max: 10).", required = false),
+            )),
     )
 
     // -----------------------------------------------------------------------

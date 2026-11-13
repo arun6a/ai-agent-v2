@@ -357,9 +357,10 @@ class OverlayManager(private val context: Context) {
                 val bodyStr = """{"model":"glm-4v","messages":[{"role":"user","content":[{"type":"text","text":"$prompt"},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,$screenshotBase64"}}]}]}"""
                 val body = bodyStr.toRequestBody("application/json".toMediaType())
 
-                Log.i(TAG, "VLM: POST to /api/llm/vision")
+                Log.i(TAG, "VLM: POST to provider endpoint")
                 val request = okhttp3.Request.Builder()
-                    .url(AIProvider.getVisionUrl(context))
+                    // v4.1.0: getVisionUrl removed — use getEndpoint() (same URL LLMClient uses for chat).
+                    .url(AIProvider.getEndpoint(context))
                     .header("Content-Type", "application/json")
                     .post(body)
                     .build()
@@ -584,9 +585,10 @@ class OverlayManager(private val context: Context) {
                 val bodyStr = """{"model":"glm-4v","messages":[{"role":"user","content":[{"type":"text","text":"$prompt"},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,$screenshotBase64"}}]}]}"""
                 val body = bodyStr.toRequestBody("application/json".toMediaType())
 
-                Log.i(TAG, "STEP 2: POST to /api/llm/vision")
+                Log.i(TAG, "STEP 2: POST to provider endpoint")
                 val request = okhttp3.Request.Builder()
-                    .url(AIProvider.getVisionUrl(context))
+                    // v4.1.0: getVisionUrl removed — use getEndpoint() (same URL LLMClient uses for chat).
+                    .url(AIProvider.getEndpoint(context))
                     .header("Content-Type", "application/json")
                     .post(body)
                     .build()

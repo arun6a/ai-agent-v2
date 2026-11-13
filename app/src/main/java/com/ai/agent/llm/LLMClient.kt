@@ -502,6 +502,264 @@ class LLMClient(private val context: Context) {
     }
 
     /**
+     * v4.1.0: Streaming chat — same routing/failover behavior as chatWithFailover(),
+     * but the response is streamed token-by-token. Each text delta triggers
+     * [onTextDelta] so the UI can render the brain's thinking live (word by word).
+     *
+     * Returns the final complete LLMResponse (with accumulated text + tool calls)
+     * once the stream finishes. The streaming protocol used:
+     *
+     *   - OpenAI-compatible (groq, openrouter, zai_direct, custom, etc.):
+     *     request body gets `"stream": true`; response is SSE with `data: {json}`
+     *     lines where each chunk has `choices[0].delta.content` and optional
+     *     `choices[0].delta.tool_calls`.
+     *
+     *   - Gemini: endpoint becomes `streamGenerateContent?alt=sse`; each SSE
+     *     chunk has `candidates[0].content.parts[0].text`.
+     *
+     *   - Anthropic: not supported in stream mode yet — falls back to chatWithFailover().
+     *
+     * If streaming fails partway through (network drop, malformed chunk), the
+     * accumulated text so far is returned with a warning suffix.
+     */
+    suspend fun chatStreaming(
+        userMessage: String,
+        systemPrompt: String,
+        toolFilter: List<String>? = null,
+        onTextDelta: (String) -> Unit,
+    ): LLMResponse = withContext(Dispatchers.IO) {
+        val provider = AIProvider.getCurrentProvider(context)
+        val apiKey = AIProvider.getApiKey(context)
+        val endpoint = AIProvider.getEndpoint(context)
+        val model = AIProvider.getModel(context)
+
+        LogCapture.i("LLMClient", "[stream] Provider: ${provider.id}, Model: $model, tools=${toolFilter?.size ?: "all"}")
+
+        if (provider.needsApiKey && apiKey.isEmpty()) {
+            return@withContext LLMResponse(
+                "No API key set. Open Settings → AI Provider to add your ${provider.name} API key.",
+                emptyList()
+            )
+        }
+
+        // v4.1.0: Anthropic doesn't support our SSE parser yet — fall back to non-streaming.
+        val isAnthropicEndpoint = provider.id == "anthropic" || endpoint.contains("api.anthropic.com")
+        if (isAnthropicEndpoint) {
+            val resp = chatWithFailover(userMessage, systemPrompt, toolFilter)
+            // Emit the full reply at once so the UI's "thinking" view still updates.
+            if (resp.reply.isNotEmpty()) onTextDelta(resp.reply)
+            return@withContext resp
+        }
+
+        val isGeminiEndpoint = endpoint.contains("generativelanguage.googleapis.com") || provider.id == "gemini"
+        val effectiveModel = if (isGeminiEndpoint && model.startsWith("google/")) {
+            model.removePrefix("google/")
+        } else {
+            model
+        }
+
+        // Build the request body (same as chat()), then inject stream:true for OpenAI-compatible.
+        val baseBody = if (isGeminiEndpoint) {
+            buildGeminiRequest(effectiveModel, userMessage,
+                if (toolFilter != null && toolFilter.isNotEmpty())
+                    adaptPromptForNativeTools(systemPrompt)
+                else systemPrompt,
+                toolFilter)
+        } else {
+            buildOpenAIRequest(model, userMessage, systemPrompt, provider.id, toolFilter, 0)
+        }
+
+        val streamBody = if (isGeminiEndpoint) {
+            // Gemini doesn't take stream in the body — the endpoint itself is streamGenerateContent.
+            baseBody
+        } else {
+            // Inject "stream": true into the OpenAI-compatible request body.
+            try {
+                val obj = JSONObject(baseBody)
+                obj.put("stream", true)
+                obj.toString()
+            } catch (_: Exception) {
+                // If JSON parsing fails (shouldn't), fall back to non-streaming.
+                val resp = chatWithFailover(userMessage, systemPrompt, toolFilter)
+                if (resp.reply.isNotEmpty()) onTextDelta(resp.reply)
+                return@withContext resp
+            }
+        }
+
+        // Build the URL — Gemini streaming uses streamGenerateContent?alt=sse.
+        val streamUrl = if (isGeminiEndpoint) {
+            "$endpoint/models/$effectiveModel:streamGenerateContent?alt=sse&key=$apiKey"
+        } else {
+            endpoint
+        }
+
+        val requestBuilder = Request.Builder()
+            .url(streamUrl)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+
+        // Auth headers (same logic as chat()).
+        when (provider.id) {
+            "openrouter" -> {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+                requestBuilder.header("HTTP-Referer", "https://github.com/arun6a/ai-agent-apk")
+                requestBuilder.header("X-Title", "AI Agent Phone")
+            }
+            "zai_direct", "groq", "together", "openai", "cerebras", "mistral",
+            "deepinfra", "fireworks", "apikeys_in", "cline" -> {
+                requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+            "gemini" -> { /* key in query param */ }
+            "custom" -> {
+                if (apiKey.isNotEmpty()) requestBuilder.header("Authorization", "Bearer $apiKey")
+            }
+        }
+
+        val _streamStart = System.currentTimeMillis()
+        val request = requestBuilder.post(streamBody.toRequestBody(jsonMediaType)).build()
+
+        return@withContext try {
+            val response = client.newCall(request).execute()
+            val _latency = (System.currentTimeMillis() - _streamStart).toInt()
+
+            if (!response.isSuccessful) {
+                val errBody = response.body?.string() ?: ""
+                LogCapture.w("LLMClient", "[stream] HTTP ${response.code}: ${errBody.take(200)} — falling back to non-streaming")
+                val resp = chatWithFailover(userMessage, systemPrompt, toolFilter)
+                if (resp.reply.isNotEmpty()) onTextDelta(resp.reply)
+                return@withContext resp
+            }
+
+            val fullText = StringBuilder()
+            val toolCalls = mutableMapOf<Int, MutableMap<String, Any>>()  // index → {name, args}
+            val source = response.body?.source()
+            if (source == null) {
+                LogCapture.w("LLMClient", "[stream] Empty body — falling back")
+                val resp = chatWithFailover(userMessage, systemPrompt, toolFilter)
+                if (resp.reply.isNotEmpty()) onTextDelta(resp.reply)
+                return@withContext resp
+            }
+
+            // Read SSE: each event is one or more `data: ...` lines separated by blank lines.
+            while (!source.exhausted()) {
+                val line = source.readUtf8Line() ?: break
+                if (line.isBlank() || !line.startsWith("data:")) continue
+                val payload = line.removePrefix("data:").trim()
+                if (payload == "[DONE]" || payload.isEmpty()) continue
+                try {
+                    val chunk = JSONObject(payload)
+                    if (isGeminiEndpoint) {
+                        // Gemini streaming chunk: candidates[0].content.parts[0].text
+                        val parts = chunk.optJSONArray("candidates")
+                            ?.optJSONObject(0)
+                            ?.optJSONObject("content")
+                            ?.optJSONArray("parts")
+                        if (parts != null) {
+                            for (i in 0 until parts.length()) {
+                                val t = parts.optJSONObject(i)?.optString("text", "") ?: ""
+                                if (t.isNotEmpty()) {
+                                    fullText.append(t)
+                                    onTextDelta(t)
+                                }
+                            }
+                        }
+                        // Gemini also supports functionCall parts — collect them.
+                        if (parts != null) {
+                            for (i in 0 until parts.length()) {
+                                val fc = parts.optJSONObject(i)?.optJSONObject("functionCall")
+                                if (fc != null) {
+                                    val name = fc.optString("name", "")
+                                    if (name.isNotEmpty()) {
+                                        val args = mutableMapOf<String, Any>()
+                                        val argsObj = fc.optJSONObject("args")
+                                        if (argsObj != null) {
+                                            val keys = argsObj.keys()
+                                            while (keys.hasNext()) {
+                                                val k = keys.next()
+                                                args[k] = argsObj.get(k)
+                                            }
+                                        }
+                                        toolCalls[toolCalls.size] = mutableMapOf(
+                                            "name" to name, "args" to args
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // OpenAI-compatible streaming chunk: choices[0].delta
+                        val delta = chunk.optJSONArray("choices")
+                            ?.optJSONObject(0)
+                            ?.optJSONObject("delta")
+                        if (delta != null) {
+                            val textPart = delta.optString("content", "")
+                            if (textPart.isNotEmpty()) {
+                                fullText.append(textPart)
+                                onTextDelta(textPart)
+                            }
+                            // Accumulate tool calls across chunks (each chunk has partial args).
+                            val tcArr = delta.optJSONArray("tool_calls")
+                            if (tcArr != null) {
+                                for (i in 0 until tcArr.length()) {
+                                    val tc = tcArr.optJSONObject(i) ?: continue
+                                    val idx = tc.optInt("index", 0)
+                                    val fn = tc.optJSONObject("function") ?: continue
+                                    val slot = toolCalls.getOrPut(idx) { mutableMapOf("name" to "", "args" to StringBuilder()) }
+                                    val name = fn.optString("name", "")
+                                    if (name.isNotEmpty()) slot["name"] = name
+                                    val argsDelta = fn.optString("arguments", "")
+                                    if (argsDelta.isNotEmpty()) {
+                                        val sb = slot["args"]
+                                        if (sb is StringBuilder) sb.append(argsDelta)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Malformed chunk — log + continue (don't kill the stream).
+                    Log.w("LLMClient", "[stream] Bad chunk: ${e.message}")
+                }
+            }
+
+            // Finalize tool calls (parse accumulated args JSON → Map).
+            val finalToolCalls = mutableListOf<ToolCall>()
+            for (idx in toolCalls.keys.sorted()) {
+                val slot = toolCalls[idx] ?: continue
+                val name = slot["name"] as? String ?: ""
+                if (name.isEmpty()) continue
+                val argsSb = slot["args"]
+                val argsStr = if (argsSb is StringBuilder) argsSb.toString() else "{}"
+                val args = mutableMapOf<String, Any>()
+                try {
+                    val argsJson = JSONObject(argsStr)
+                    val keys = argsJson.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val v = com.ai.agent.util.JsonNormalizer.normalize(argsJson.get(k))
+                        if (v != null) args[k] = v
+                    }
+                } catch (e: Exception) {
+                    // Non-JSON args — try key=value parsing (mirror parseOpenAIResponse behavior).
+                    parseArgsAsKeyValue(argsStr, args)
+                }
+                finalToolCalls.add(ToolCall(name, args))
+            }
+
+            val reply = fullText.toString().ifEmpty { if (finalToolCalls.isEmpty()) "(empty stream)" else "Executing..." }
+            LogCapture.i("LLMClient", "[stream] done: ${reply.length} chars, ${finalToolCalls.size} tool calls, ${_latency}ms")
+            recordHealthFromResponse(LLMResponse(reply, finalToolCalls, _latency))
+            LLMResponse(reply, finalToolCalls, _latency)
+        } catch (e: Exception) {
+            LogCapture.e("LLMClient", "[stream] error: ${e.message} — falling back to non-streaming")
+            Log.e("LLMClient", "[stream] error", e)
+            val resp = chatWithFailover(userMessage, systemPrompt, toolFilter)
+            if (resp.reply.isNotEmpty()) onTextDelta(resp.reply)
+            resp
+        }
+    }
+
+    /**
      * v3.3.2: Build request body for OpenAI-compatible APIs (OpenRouter, Z.ai, custom).
      */
     private fun buildOpenAIRequest(

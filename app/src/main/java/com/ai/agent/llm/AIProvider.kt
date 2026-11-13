@@ -20,7 +20,6 @@ object AIProvider {
     private const val KEY_API_KEY = "api_key"
     private const val KEY_ENDPOINT = "endpoint"
     private const val KEY_MODEL = "model"
-    private const val KEY_PROXY_BASE_URL = "proxy_base_url"  // Sandbox base URL for vision/web-search proxy
     private const val KEY_BROWSER_MODE = "browser_mode"  // "in_app" | "chrome" | "auto"
 
     // === Provider presets ===
@@ -329,35 +328,8 @@ object AIProvider {
         return getApiKey(context).isNotEmpty()
     }
 
-    // v3.2.4: Removed hardcoded sandbox URL. Proxy base URL is now empty by default.
-    // Users configure it via AI Settings → API Keys (custom provider).
-    // Vision/web-search tools will use the provider's own API if possible.
-    val DEFAULT_PROXY_BASE_URL = ""
-
-    fun getProxyBaseUrl(context: Context): String {
-        return getPrefs(context).getString(KEY_PROXY_BASE_URL, DEFAULT_PROXY_BASE_URL)
-            ?: DEFAULT_PROXY_BASE_URL
-    }
-
-    fun setProxyBaseUrl(context: Context, url: String) {
-        getPrefs(context).edit().putString(KEY_PROXY_BASE_URL, url.trimEnd('/')).apply()
-    }
-
-    /** Full URL for the LLM proxy endpoint (POST /api/llm/proxy). */
-    fun getLlmProxyUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/llm/proxy"
-
-    /**
-     * Full URL for the vision endpoint.
-     * v3.8.10: Uses /api/llm/proxy (same as chat) — the proxy detects image content
-     * and routes to createVision(). Was /api/llm/vision which didn't exist → 404.
-     */
-    fun getVisionUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/llm/proxy"
-
-    /** Full URL for the web-search endpoint (POST /api/web-search). */
-    fun getWebSearchUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/web-search"
+    // v4.1.0: Dead Z.ai proxy references removed.
+    // Vision/web-search tools now call provider APIs directly via getEndpoint().
 
     // === Search Method (v5.1.1) ===
     // Controls which search engine webSearch() uses:

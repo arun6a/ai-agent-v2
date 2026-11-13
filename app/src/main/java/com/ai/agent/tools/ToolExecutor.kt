@@ -22,6 +22,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import com.ai.agent.tools.categories.AppTools
 import com.ai.agent.tools.categories.AsyncTools
+import com.ai.agent.tools.categories.AICapabilityTools  // v4.1.0: AI capability tools (image gen, audio, etc.)
 import com.ai.agent.tools.categories.BleAdvancedTools  // v4.0.77
 import com.ai.agent.tools.categories.BrowserTools
 import com.ai.agent.tools.categories.ContactTools
@@ -160,6 +161,8 @@ class ToolExecutor(private val context: Context) {
             "headlessGoogleSearch", "headlessSearch", "braveSearch",
             "googleSearchApi", "smartSearch",
             "navigateToAppScreen", "listAppScreens",
+            // v4.1.0: AI Capability tools (image gen, image analysis, audio transcription/TTS, image search)
+            "generateImage", "analyzeImage", "transcribeAudio", "generateSpeech", "imageSearch",
         )
     }
 
@@ -329,6 +332,8 @@ class ToolExecutor(private val context: Context) {
             "headlessGoogleSearch", "headlessSearch", "braveSearch",
             "googleSearchApi", "smartSearch",
             "navigateToAppScreen", "listAppScreens",
+            // v4.1.0: AI Capability tools (provider API calls + Pollinations fallback, no accessibility needed)
+            "generateImage", "analyzeImage", "transcribeAudio", "generateSpeech", "imageSearch",
         )
 
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
@@ -893,6 +898,12 @@ class ToolExecutor(private val context: Context) {
             // v4.0.32: Deep link navigation (AI opens app screens)
             "navigateToAppScreen" -> com.ai.agent.tools.categories.DeepLinkTools.execute(call, context, service, database)
             "listAppScreens" -> com.ai.agent.tools.categories.DeepLinkTools.execute(call, context, service, database)
+            // v4.1.0: AI Capability tools (image gen, image analysis, audio transcription/TTS, image search)
+            "generateImage" -> AICapabilityTools.execute(call, context, service, database)
+            "analyzeImage" -> AICapabilityTools.execute(call, context, service, database)
+            "transcribeAudio" -> AICapabilityTools.execute(call, context, service, database)
+            "generateSpeech" -> AICapabilityTools.execute(call, context, service, database)
+            "imageSearch" -> AICapabilityTools.execute(call, context, service, database)
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> RuleTools.execute(call, context, service, database)
             "listRules" -> RuleTools.execute(call, context, service, database)

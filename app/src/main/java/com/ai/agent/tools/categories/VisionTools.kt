@@ -208,7 +208,8 @@ object VisionTools {
                         requestBuilder.header("Authorization", "Bearer $apiKey")
                     }
                     else -> {
-                        requestBuilder.url(AIProvider.getVisionUrl(context))
+                        // v4.1.0: getVisionUrl removed — use getEndpoint() (same URL LLMClient uses for chat).
+                        requestBuilder.url(AIProvider.getEndpoint(context))
                     }
                 }
 
@@ -418,7 +419,8 @@ object VisionTools {
                         requestBuilder.header("Authorization", "Bearer $apiKey")
                     }
                     else -> {
-                        requestBuilder.url(AIProvider.getVisionUrl(context))
+                        // v4.1.0: getVisionUrl removed — use getEndpoint() (same URL LLMClient uses for chat).
+                        requestBuilder.url(AIProvider.getEndpoint(context))
                     }
                 }
 
@@ -443,8 +445,11 @@ object VisionTools {
     /**
      * Check if a (providerId, modelName) combo is vision-capable.
      * Conservative heuristic — when in doubt, return false (fall back to sandbox proxy).
+     *
+     * v4.1.0: changed from `private` to `internal` so AICapabilityTools.analyzeImage
+     * can reuse the same vision-capability check.
      */
-    private fun isVisionCapableModel(providerId: String, model: String): Boolean {
+    internal fun isVisionCapableModel(providerId: String, model: String): Boolean {
         val m = model.lowercase()
         return when (providerId) {
             "openrouter" -> {

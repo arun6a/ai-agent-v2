@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,14 +30,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -52,6 +58,7 @@ import com.ai.agent.ui.screens.ChatMessage
 import com.ai.agent.ui.screens.FileOp
 import com.ai.agent.ui.screens.MessageStatus
 import com.ai.agent.ui.theme.MonoFontFamily
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -269,6 +276,7 @@ fun ChatMessageItem(
                     }
 
                     // v4.0.87: File-op cards (created/copied/moved/deleted by tools in this step)
+                    // v4.1.0: IMAGE_GEN ops render as actual image previews, not file-path chips.
                     if (message.fileOps.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
                         Column(
@@ -276,7 +284,11 @@ fun ChatMessageItem(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             message.fileOps.forEach { op ->
-                                FileOpCard(op)
+                                if (op.kind == FileOp.Kind.IMAGE_GEN) {
+                                    GeneratedImageCard(op)
+                                } else {
+                                    FileOpCard(op)
+                                }
                             }
                         }
                     }
@@ -517,6 +529,9 @@ private fun FileOpCard(op: FileOp) {
         FileOp.Kind.MOVED -> Triple("↔️", "moved", custom.info)
         FileOp.Kind.DELETED -> Triple("🗑️", "deleted", custom.error)
         FileOp.Kind.DIR_CREATED -> Triple("📁", "created", custom.accent)
+        // v4.1.0: IMAGE_GEN ops are rendered via GeneratedImageCard (not FileOpCard),
+        // but Kotlin's `when` exhaustiveness check needs this branch.
+        FileOp.Kind.IMAGE_GEN -> Triple("🖼️", "generated", custom.accent)
     }
     val fileName = op.path.substringAfterLast("/")
     Row(
@@ -557,6 +572,108 @@ private fun FileOpCard(op: FileOp) {
             modifier = Modifier
                 .background(badgeColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
                 .padding(horizontal = 6.dp, vertical = 2.dp),
+        )
+    }
+}
+
+// ============================================================================
+// v4.1.0: GeneratedImageCard — renders an AI-generated image inline in chat.
+// Loads the bitmap from the saved file path and displays it scaled to fit the
+// chat width. Shows the file path + size below the image.
+// ============================================================================
+
+@Composable
+private fun GeneratedImageCard(op: FileOp) {
+    val custom = LocalCustomColors.current
+    val m3 = MaterialTheme.colorScheme
+
+    // Load the bitmap off the main thread. Use produceState so it survives recomposition.
+    val bitmapState = produceState<android.graphics.Bitmap?>(initialValue = null, op.path) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                android.graphics.BitmapFactory.decodeFile(op.path)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+    val bitmap = bitmapState.value
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(custom.ink2, RoundedCornerShape(12.dp))
+            .border(1.dp, custom.inkBorder, RoundedCornerShape(12.dp))
+            .padding(8.dp),
+    ) {
+        // Header row: emerald orb + "AI-generated image" + file size badge
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .background(custom.accent, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "⬡",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "AI-generated image",
+                color = m3.onSurface,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (op.detail.isNotEmpty()) {
+                Text(
+                    text = op.detail,
+                    color = custom.fg3,
+                    fontFamily = MonoFontFamily,
+                    fontSize = 9.sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "AI-generated image at ${op.path}",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.FillWidth,
+            )
+        } else {
+            // Loading / failed placeholder.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp)
+                    .background(custom.ink2, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "Loading image…",
+                    color = custom.fg3,
+                    fontSize = 11.sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        // Footer: full path (mono, muted, truncated)
+        Text(
+            text = op.path,
+            color = custom.fg3,
+            fontFamily = MonoFontFamily,
+            fontSize = 9.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

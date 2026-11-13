@@ -81,7 +81,7 @@ data class FileOp(
     val path: String,
     val detail: String = "",  // e.g. "2.1KB" or "← notes.txt"
 ) {
-    enum class Kind { CREATED, COPIED, MOVED, DELETED, DIR_CREATED }
+    enum class Kind { CREATED, COPIED, MOVED, DELETED, DIR_CREATED, IMAGE_GEN }
 }
 
 /** A file the user has staged to send with the next message. */
@@ -123,6 +123,8 @@ data class ChatUiState(
     // browser is now a separate Compose destination (Routes.BROWSER), not an overlay.
     /** v4.0.87: Proactive suggestion surfaced inline (from ProactiveBus). Null = no banner. */
     val proactiveSuggestion: com.ai.agent.proactive.ProactiveResult.Suggest? = null,
+    /** v4.1.0: Live streaming "thinking" text — updated token-by-token as the LLM streams. */
+    val streamingThinking: String = "",
 )
 
 class ChatViewModel(
@@ -1303,7 +1305,24 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                         filterLevel = newLevel
                     }
 
-                    val llmResponse = llmClient.chatWithFailover(conversation.toString(), execPrompt, contextualToolFilter)
+                    // v4.1.0: Use streaming chat so the UI can render the brain's reasoning
+                    // live, token-by-token, in a "thinking" card above the message list.
+                    // Clear the streaming buffer before each iteration; update it on each delta.
+                    _state.update { it.copy(streamingThinking = "") }
+                    val llmResponse = llmClient.chatStreaming(
+                        userMessage = conversation.toString(),
+                        systemPrompt = execPrompt,
+                        toolFilter = contextualToolFilter,
+                    ) { delta ->
+                        // Append delta to streamingThinking so the UI shows the brain thinking live.
+                        // Throttle state updates: only update if the buffer grew enough to be worth a re-render.
+                        // (Each token = one state update — fine for Compose, which dedups on equality.)
+                        _state.update { s ->
+                            s.copy(streamingThinking = (s.streamingThinking + delta).take(4000))
+                        }
+                    }
+                    // Stream complete — clear the streaming buffer (the final reply will be added below as a step message).
+                    _state.update { it.copy(streamingThinking = "") }
 
                     // v3.8.6: Log the brain's reply text + tool calls so we can SEE what it said.
                     // Without this, we only see tool calls in logs — can't tell if brain planned or not.
@@ -1842,6 +1861,7 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                     isExecuting = false,
                     currentIteration = 0,
                     stopRequested = false,
+                    streamingThinking = "",  // v4.1.0: clear streaming buffer on loop exit
                 )
             }
         }
@@ -2093,6 +2113,16 @@ ALWAYS state index + text + reason before clicking. No exceptions.
                 "createDirectory" -> {
                     val path = r.args["path"] as? String ?: continue
                     ops.add(FileOp(FileOp.Kind.DIR_CREATED, path))
+                }
+                // v4.1.0: generateImage — extract saved image path from the tool output.
+                // The tool returns "✅ Image generated and saved to {path} ({size} bytes)".
+                "generateImage" -> {
+                    val pathMatch = Regex("""saved to (\S+\.(?:jpg|jpeg|png|webp))""", RegexOption.IGNORE_CASE)
+                        .find(r.output)
+                    val path = pathMatch?.groupValues?.getOrNull(1) ?: continue
+                    val sizeMatch = Regex("""\((\d+)\s*bytes\)""").find(r.output)
+                    val detail = sizeMatch?.groupValues?.getOrNull(1)?.let { "${it}B" } ?: ""
+                    ops.add(FileOp(FileOp.Kind.IMAGE_GEN, path, detail))
                 }
             }
         }

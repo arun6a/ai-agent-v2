@@ -354,10 +354,27 @@ fun ChatScreen(
                             }
                         }
 
+                        // v4.1.0: Streaming "thinking" card — shows the live token-by-token
+                        // stream from the LLM while it's reasoning. Renders above the
+                        // message list so the user sees the brain thinking in real time.
+                        if (state.streamingThinking.isNotBlank()) {
+                            item(key = "streaming-thinking") {
+                                com.ai.agent.ui.components.StreamingThinkingCard(
+                                    text = state.streamingThinking,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                )
+                            }
+                        }
+
                         // Inline thinking indicator at the very end while the LLM is responding.
                         if (state.isThinking && (state.messages.isEmpty() || !state.messages.last().isUser)) {
                             val last = state.messages.lastOrNull()
-                            if (last == null || last.text.isNotBlank() || last.toolCalls.isNotEmpty()) {
+                            // v4.1.0: If streamingThinking is active, the streaming card already
+                            // shows the brain's reasoning — skip the static "thinking…" dots.
+                            if (state.streamingThinking.isBlank() &&
+                                (last == null || last.text.isNotBlank() || last.toolCalls.isNotEmpty())) {
                                 item(key = "thinking-tail") {
                                     Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                                         com.ai.agent.ui.components.ThinkingIndicator(label = "thinking…")
