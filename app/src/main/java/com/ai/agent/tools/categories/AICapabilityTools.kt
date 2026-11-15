@@ -65,8 +65,9 @@ object AICapabilityTools {
 
     // === generateImage ===
     private suspend fun generateImage(call: LLMClient.ToolCall, context: Context): ToolExecutor.ToolResult {
-        val prompt = call.args["prompt"] as? String
-            ?: return ToolExecutor.ToolResult(false, "missing prompt")
+        // v4.1.2: Accept both "prompt" and "description" as parameter names (AI uses both)
+        val prompt = (call.args["prompt"] as? String ?: call.args["description"] as? String)
+            ?: return ToolExecutor.ToolResult(false, "missing prompt. Example: generateImage(prompt=\"a cat sitting on a table\")")
         val size = (call.args["size"] as? String)?.takeIf { it.isNotBlank() } ?: "1024x1024"
 
         // Try configured IMAGE_GEN model first, then Pollinations.ai fallback

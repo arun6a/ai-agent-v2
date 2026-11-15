@@ -1358,6 +1358,8 @@ class ToolExecutor(private val context: Context) {
             "createRule" -> mapOf("ruleName" to "name", "rule_name" to "name")
             // createConnector: AI sometimes passes desc instead of description, baseUrl instead of apiBase
             "createConnector" -> mapOf("desc" to "description", "baseUrl" to "apiBase", "base" to "apiBase", "url" to "apiBase")
+            // v4.1.2: generateImage — AI sometimes uses "description" instead of "prompt"
+            "generateImage" -> mapOf("description" to "prompt")
             else -> emptyMap()
         }
         for ((alias, canonical) in toolSpecificAliases) {

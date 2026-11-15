@@ -332,32 +332,14 @@ object AIProvider {
     // v3.2.4: Removed hardcoded sandbox URL. Proxy base URL is now empty by default.
     // Users configure it via AI Settings → API Keys (custom provider).
     // Vision/web-search tools will use the provider's own API if possible.
-    val DEFAULT_PROXY_BASE_URL = ""
+    // v4.1.2: Z.ai proxy references REMOVED. Proxy was already empty by default.
+    // Vision calls go directly to the provider's API (see VisionTools.kt).
+    // Web search uses DuckDuckGo directly (no proxy needed).
+    // Kept getProxyBaseUrl + getVisionUrl as stubs for backward compat.
+    fun getProxyBaseUrl(context: Context): String = ""
 
-    fun getProxyBaseUrl(context: Context): String {
-        return getPrefs(context).getString(KEY_PROXY_BASE_URL, DEFAULT_PROXY_BASE_URL)
-            ?: DEFAULT_PROXY_BASE_URL
-    }
-
-    fun setProxyBaseUrl(context: Context, url: String) {
-        getPrefs(context).edit().putString(KEY_PROXY_BASE_URL, url.trimEnd('/')).apply()
-    }
-
-    /** Full URL for the LLM proxy endpoint (POST /api/llm/proxy). */
-    fun getLlmProxyUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/llm/proxy"
-
-    /**
-     * Full URL for the vision endpoint.
-     * v3.8.10: Uses /api/llm/proxy (same as chat) — the proxy detects image content
-     * and routes to createVision(). Was /api/llm/vision which didn't exist → 404.
-     */
-    fun getVisionUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/llm/proxy"
-
-    /** Full URL for the web-search endpoint (POST /api/web-search). */
-    fun getWebSearchUrl(context: Context): String =
-        getProxyBaseUrl(context).trimEnd('/') + "/api/web-search"
+    /** v4.1.2: Returns the chat endpoint (same as getEndpoint). Used as vision fallback. */
+    fun getVisionUrl(context: Context): String = getEndpoint(context)
 
     // === Search Method (v5.1.1) ===
     // Controls which search engine webSearch() uses:

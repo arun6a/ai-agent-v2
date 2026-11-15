@@ -518,8 +518,8 @@ object ToolSchemas {
         Schema("listAppScreens", "[BATCHABLE] [NO VERIFY] List all available app screens you can navigate to. Call this first to see the options.",
             mapOf()),
         // === v4.1.1: AI Capability tools (5) ===
-        Schema("generateImage", "[BATCHABLE] [NO VERIFY] Generate an image from a text description. Uses configured IMAGE_GEN model (Gemini Imagen or OpenAI DALL-E) if available, otherwise uses free Pollinations.ai API (no key needed). Image is saved to /Aira/images/.",
-            mapOf("prompt" to Param("string", "Text description of the image to generate", required = true),
+        Schema("generateImage", "[BATCHABLE] [NO VERIFY] Generate an image from a text description. Uses configured IMAGE_GEN model (Gemini Imagen or OpenAI DALL-E) if available, otherwise uses free Pollinations.ai API (no key needed). Image is saved to /Aira/images/. The prompt parameter is REQUIRED — pass the full text description of the image you want to generate.",
+            mapOf("prompt" to Param("string", "Text description of the image to generate. This is the FULL prompt — be detailed.", required = true),
                 "size" to Param("string", "Image size: 1024x1024 (default), 512x512, 768x768", required = false))),
         Schema("analyzeImage", "[BATCHABLE] [NO VERIFY] Analyze any image file using VLM. If vision model configured, uses it. Falls back to ML Kit OCR. Returns text description.",
             mapOf("path" to Param("string", "Path to the image file to analyze", required = true),
