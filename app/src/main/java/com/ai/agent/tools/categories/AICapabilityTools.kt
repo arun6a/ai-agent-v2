@@ -72,20 +72,30 @@ object AICapabilityTools {
 
         // Try configured IMAGE_GEN model first, then Pollinations.ai fallback
         val imageGenModel = pickImageGenModel(context)
-        val imageBytes: ByteArray? = try {
-            when {
-                imageGenModel != null && imageGenModel.first.providerId == "gemini" ->
-                    generateImageViaGemini(context, imageGenModel.first, imageGenModel.second, prompt)
-                imageGenModel != null ->
-                    generateImageViaOpenAI(context, imageGenModel.first, imageGenModel.second, prompt, size)
-                else -> {
-                    LogCapture.i(TAG, "No IMAGE_GEN model — using Pollinations.ai")
-                    generateImageViaPollinations(prompt, size)
+        var imageBytes: ByteArray? = null
+
+        // v4.1.3: Try provider's image API first
+        if (imageGenModel != null) {
+            imageBytes = try {
+                when {
+                    imageGenModel.first.providerId == "gemini" ->
+                        generateImageViaGemini(context, imageGenModel.first, imageGenModel.second, prompt)
+                    else ->
+                        generateImageViaOpenAI(context, imageGenModel.first, imageGenModel.second, prompt, size)
                 }
+            } catch (e: Exception) {
+                LogCapture.e(TAG, "Provider image-gen failed: ${e.message}")
+                null
             }
-        } catch (e: Exception) {
-            LogCapture.e(TAG, "generateImage failed: ${e.message}")
-            try { generateImageViaPollinations(prompt, size) } catch (_: Exception) { null }
+            // v4.1.3: If provider returned null (429 quota, API error, etc), fall back to Pollinations
+            if (imageBytes == null) {
+                LogCapture.i(TAG, "Provider image-gen returned null — falling back to Pollinations.ai")
+                imageBytes = try { generateImageViaPollinations(prompt, size) } catch (_: Exception) { null }
+            }
+        } else {
+            // No IMAGE_GEN model configured — use Pollinations.ai directly
+            LogCapture.i(TAG, "No IMAGE_GEN model — using Pollinations.ai")
+            imageBytes = try { generateImageViaPollinations(prompt, size) } catch (_: Exception) { null }
         }
 
         if (imageBytes == null || imageBytes.isEmpty()) {
