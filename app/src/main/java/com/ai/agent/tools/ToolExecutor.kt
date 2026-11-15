@@ -160,6 +160,8 @@ class ToolExecutor(private val context: Context) {
             "headlessGoogleSearch", "headlessSearch", "braveSearch",
             "googleSearchApi", "smartSearch",
             "navigateToAppScreen", "listAppScreens",
+            // v4.1.1: AI Capability tools
+            "generateImage", "analyzeImage", "transcribeAudio", "generateSpeech", "imageSearch",
         )
     }
 
@@ -329,6 +331,8 @@ class ToolExecutor(private val context: Context) {
             "headlessGoogleSearch", "headlessSearch", "braveSearch",
             "googleSearchApi", "smartSearch",
             "navigateToAppScreen", "listAppScreens",
+            // v4.1.1: AI Capability tools (no accessibility needed)
+            "generateImage", "analyzeImage", "transcribeAudio", "generateSpeech", "imageSearch",
         )
 
         // v4.0.26: Custom tools (created via createCustomTool) don't need accessibility.
@@ -892,6 +896,12 @@ class ToolExecutor(private val context: Context) {
             "smartSearch" -> com.ai.agent.tools.categories.HeadlessSearchTools.execute(call, context, service, database)
             // v4.0.32: Deep link navigation (AI opens app screens)
             "navigateToAppScreen" -> com.ai.agent.tools.categories.DeepLinkTools.execute(call, context, service, database)
+            // v4.1.1: AI Capability tools
+            "generateImage" -> com.ai.agent.tools.categories.AICapabilityTools.execute(call, context, service, database)
+            "analyzeImage" -> com.ai.agent.tools.categories.AICapabilityTools.execute(call, context, service, database)
+            "transcribeAudio" -> com.ai.agent.tools.categories.AICapabilityTools.execute(call, context, service, database)
+            "generateSpeech" -> com.ai.agent.tools.categories.AICapabilityTools.execute(call, context, service, database)
+            "imageSearch" -> com.ai.agent.tools.categories.AICapabilityTools.execute(call, context, service, database)
             "listAppScreens" -> com.ai.agent.tools.categories.DeepLinkTools.execute(call, context, service, database)
             // ==================== RULE MANAGEMENT (Proactive Assistant) ====================
             "createRule" -> RuleTools.execute(call, context, service, database)
