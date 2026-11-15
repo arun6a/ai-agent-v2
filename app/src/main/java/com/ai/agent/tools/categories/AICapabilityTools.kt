@@ -120,22 +120,34 @@ object AICapabilityTools {
         ApiKeyStore.load(context)
         val prefs = context.getSharedPreferences("ai_agent_saved_models", Context.MODE_PRIVATE)
         val imageGenId = prefs.getString("image_gen_model_id", "") ?: ""
+        LogCapture.i(TAG, "pickImageGenModel: image_gen_model_id pref = '$imageGenId'")
         if (imageGenId.isNotEmpty()) {
             val m = SavedModelsStore.getAllModels().find { it.id == imageGenId }
             if (m != null) {
+                LogCapture.i(TAG, "pickImageGenModel: found configured model: ${m.modelName} (id=${m.modelId}, provider=${m.providerId})")
                 val resolved = SavedModelsStore.resolveBinding(context, m, false)
-                if (resolved != null) return m to resolved.second
+                if (resolved != null) {
+                    LogCapture.i(TAG, "pickImageGenModel: binding resolved: key=${resolved.second.alias.ifEmpty { resolved.second.providerName }}")
+                    return m to resolved.second
+                } else {
+                    LogCapture.w(TAG, "pickImageGenModel: model found but no binding resolved")
+                }
+            } else {
+                LogCapture.w(TAG, "pickImageGenModel: image_gen_model_id '$imageGenId' not found in saved models. Saved model IDs: ${SavedModelsStore.getAllModels().map { it.id }}")
             }
         }
         val default = SavedModelsStore.getDefaultModel(context)
         if (default != null && ModelCapability.IMAGE_GEN in default.capabilities) {
+            LogCapture.i(TAG, "pickImageGenModel: using default model (has IMAGE_GEN): ${default.modelName}")
             val resolved = SavedModelsStore.resolveBinding(context, default, false)
             if (resolved != null) return default to resolved.second
         }
         for (m in SavedModelsStore.getModelsByCapability(ModelCapability.IMAGE_GEN)) {
+            LogCapture.i(TAG, "pickImageGenModel: trying IMAGE_GEN model: ${m.modelName}")
             val resolved = SavedModelsStore.resolveBinding(context, m, false) ?: continue
             return m to resolved.second
         }
+        LogCapture.i(TAG, "pickImageGenModel: no IMAGE_GEN model found — will use Pollinations.ai")
         return null
     }
 
@@ -145,6 +157,8 @@ object AICapabilityTools {
         val actualModelId = SavedModelsStore.resolveActualModelIdForBinding(context, model, model.activeBindings().first())
         val base = ProviderEndpoints.byId("gemini")?.chatEndpoint ?: "https://generativelanguage.googleapis.com/v1beta"
         val url = "$base/models/$actualModelId:generateContent?key=${key.apiKey}"
+        // v4.1.4: Log which model + key is being used for debugging
+        LogCapture.i(TAG, "Gemini image-gen: model=$actualModelId (saved as ${model.modelName}), key=${key.alias.ifEmpty { key.providerName }} (${key.apiKey.take(10)}...)")
         val body = JSONObject().apply {
             put("contents", JSONArray().put(JSONObject().apply {
                 put("role", "user")
@@ -158,7 +172,11 @@ object AICapabilityTools {
             .post(body.toRequestBody("application/json".toMediaType())).build()
         val response = httpClient.newCall(request).execute()
         val respBody = response.body?.string() ?: ""
-        if (!response.isSuccessful) { LogCapture.w(TAG, "Gemini image-gen failed ${response.code}"); return@withContext null }
+        if (!response.isSuccessful) {
+            // v4.1.4: Log full error details for debugging
+            LogCapture.w(TAG, "Gemini image-gen failed ${response.code} (model=$actualModelId): ${respBody.take(300)}")
+            return@withContext null
+        }
         val parts = JSONObject(respBody).optJSONArray("candidates")?.optJSONObject(0)
             ?.optJSONObject("content")?.optJSONArray("parts") ?: return@withContext null
         for (i in 0 until parts.length()) {
