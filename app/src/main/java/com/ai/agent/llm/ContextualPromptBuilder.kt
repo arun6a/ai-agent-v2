@@ -215,7 +215,8 @@ object ContextualPromptBuilder {
         ToolGroup(
             name = "Media",
             tools = listOf("mediaPlayPause", "mediaNext", "mediaPrevious", "takePhoto", "takeScreenshotToGallery",
-                "generateImage", "analyzeImage", "imageSearch", "transcribeAudio", "generateSpeech"),
+                "generateImage", "analyzeImage", "imageSearch", "transcribeAudio", "generateSpeech",
+                "generateVideo"),
             toolDescs = listOf(
                 "mediaPlayPause() — play/pause media",
                 "mediaNext() / mediaPrevious() — skip tracks",
@@ -226,10 +227,12 @@ object ContextualPromptBuilder {
                 "imageSearch(query, count?) — search for images on the web, returns direct URLs",
                 "transcribeAudio(path) — transcribe audio file to text using Whisper",
                 "generateSpeech(text, voice?) — generate speech audio from text",
+                "generateVideo(prompt, duration?) — generate a video from text (uses VIDEO model or Pollinations.ai keyframe fallback)",
                 "takeScreenshotToGallery() — take screenshot + save to gallery",
             ),
             keywords = listOf("music", "song", "play media", "pause", "next track", "photo", "camera", "screenshot", "picture",
-                "generate image", "draw", "create image", "art", "wallpaper", "logo", "paint", "render"),
+                "generate image", "draw", "create image", "art", "wallpaper", "logo", "paint", "render",
+                "video", "generate video", "create video", "animation", "movie", "clip"),
         ),
         ToolGroup(
             name = "Rules",

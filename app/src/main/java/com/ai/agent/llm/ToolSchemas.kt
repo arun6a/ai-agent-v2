@@ -532,6 +532,10 @@ object ToolSchemas {
         Schema("imageSearch", "[BATCHABLE] [NO VERIFY] Search for images on the web. Returns direct image URLs with captions. Use downloadFile to save them.",
             mapOf("query" to Param("string", "Search query for images", required = true),
                 "count" to Param("number", "Number of results (default: 3, max: 10)", required = false))),
+        // === v4.1.5: Video generation ===
+        Schema("generateVideo", "[BATCHABLE] [NO VERIFY] Generate a video from a text prompt. Uses configured VIDEO model (Gemini Veo) if available, otherwise falls back to Pollinations.ai keyframe. Video is saved to /Aira/videos/. Note: Video generation is slow (30-120s) and free APIs are limited.",
+            mapOf("prompt" to Param("string", "Text description of the video to generate", required = true),
+                "duration" to Param("number", "Video duration in seconds (default: 5, max: 30)", required = false))),
         // === v4.0.85: MCP tools (7) ===
         Schema("searchMcpServers", "[BATCHABLE] [NO VERIFY] Search 47,000+ MCP servers across registries. Returns names, descriptions, URLs, transport types.",
             mapOf("query" to Param("string", "Search query (e.g. 'gmail', 'notion', 'filesystem')", required = true))),

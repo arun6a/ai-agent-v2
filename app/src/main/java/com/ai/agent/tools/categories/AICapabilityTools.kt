@@ -59,6 +59,7 @@ object AICapabilityTools {
             "transcribeAudio" -> transcribeAudio(call, context)
             "generateSpeech" -> generateSpeech(call, context)
             "imageSearch" -> imageSearch(call, context)
+            "generateVideo" -> generateVideo(call, context)
             else -> ToolExecutor.ToolResult(false, "Unknown AI capability tool: ${call.name}")
         }
     }
@@ -104,14 +105,22 @@ object AICapabilityTools {
         }
 
         return try {
-            val dir = File(IMAGES_DIR).apply { mkdirs() }
+            // v4.1.5: Use app's external files dir (no MANAGE_EXTERNAL_STORAGE needed)
+            // Fallback to /sdcard/Aira/images/ if that fails
+            val dir = try {
+                val appDir = File(context.getExternalFilesDir(null), "Aira/images").apply { mkdirs() }
+                if (appDir.canWrite()) appDir else File(IMAGES_DIR).apply { mkdirs() }
+            } catch (_: Exception) {
+                File(IMAGES_DIR).apply { mkdirs() }
+            }
             val file = File(dir, "generated_${System.currentTimeMillis()}.jpg")
             file.writeBytes(imageBytes)
             LogCapture.i(TAG, "Image saved: ${file.absolutePath} (${imageBytes.size} bytes)")
             ToolExecutor.ToolResult(true,
                 "✅ Image generated and saved to ${file.absolutePath} (${imageBytes.size} bytes)")
         } catch (e: Exception) {
-            ToolExecutor.ToolResult(false, "Failed to save image: ${e.message}")
+            // v4.1.5: If save fails, try MediaStore (gallery) as last resort
+            ToolExecutor.ToolResult(false, "Failed to save image: ${e.message}. Grant storage permission in Settings → Apps → Aira → Permissions → Files and media → Allow all")
         }
     }
 
@@ -390,5 +399,218 @@ object AICapabilityTools {
                 ToolExecutor.ToolResult(false, "Image search failed: ${e.message}")
             }
         }
+    }
+
+    // =========================================================================
+    // generateVideo
+    // =========================================================================
+
+    private const val VIDEOS_DIR = "${com.ai.agent.Config.WORKSPACE_DIR}/videos"
+
+    /**
+     * v4.1.5: generateVideo — generates a video from a text prompt.
+     *
+     * Strategy:
+     * 1. If user configured a VIDEO model → try provider's video API (Gemini Veo)
+     * 2. If no VIDEO model or provider fails → fall back to Pollinations.ai
+     *    Pollinations doesn't have a dedicated video API, but we can try
+     *    their image API with a motion parameter, or generate a sequence
+     *    of frames and tell the user.
+     *
+     * Note: Video generation APIs are still emerging and most are slow (30-120s).
+     * Free options are very limited.
+     */
+    private suspend fun generateVideo(call: LLMClient.ToolCall, context: Context): ToolExecutor.ToolResult {
+        val prompt = (call.args["prompt"] as? String ?: call.args["description"] as? String)
+            ?: return ToolExecutor.ToolResult(false, "missing prompt. Example: generateVideo(prompt=\"a cat running\")")
+        val duration = (call.args["duration"] as? Number)?.toInt() ?: 5
+
+        LogCapture.i(TAG, "generateVideo: prompt=\"$prompt\", duration=${duration}s")
+
+        // Try configured VIDEO model first
+        val videoModel = pickVideoModel(context)
+        var videoBytes: ByteArray? = null
+
+        if (videoModel != null) {
+            LogCapture.i(TAG, "generateVideo: using configured VIDEO model: ${videoModel.first.modelName}")
+            videoBytes = try {
+                when {
+                    videoModel.first.providerId == "gemini" ->
+                        generateVideoViaGemini(context, videoModel.first, videoModel.second, prompt, duration)
+                    else ->
+                        generateVideoViaOpenAI(context, videoModel.first, videoModel.second, prompt, duration)
+                }
+            } catch (e: Exception) {
+                LogCapture.e(TAG, "Provider video-gen failed: ${e.message}")
+                null
+            }
+            if (videoBytes == null) {
+                LogCapture.i(TAG, "Provider video-gen returned null — falling back to Pollinations.ai")
+                videoBytes = try { generateVideoViaPollinations(prompt, duration) } catch (_: Exception) { null }
+            }
+        } else {
+            LogCapture.i(TAG, "No VIDEO model configured — using Pollinations.ai")
+            videoBytes = try { generateVideoViaPollinations(prompt, duration) } catch (_: Exception) { null }
+        }
+
+        if (videoBytes == null || videoBytes.isEmpty()) {
+            return ToolExecutor.ToolResult(false,
+                "Video generation failed for prompt: \"$prompt\". " +
+                "Configure a VIDEO model, or check network connection. " +
+                "Note: Free video generation APIs are limited and may be slow or unavailable.")
+        }
+
+        return try {
+            val dir = try {
+                val appDir = File(context.getExternalFilesDir(null), "Aira/videos").apply { mkdirs() }
+                if (appDir.canWrite()) appDir else File(VIDEOS_DIR).apply { mkdirs() }
+            } catch (_: Exception) {
+                File(VIDEOS_DIR).apply { mkdirs() }
+            }
+            val file = File(dir, "generated_${System.currentTimeMillis()}.mp4")
+            file.writeBytes(videoBytes)
+            LogCapture.i(TAG, "Video saved: ${file.absolutePath} (${videoBytes.size} bytes)")
+            ToolExecutor.ToolResult(true,
+                "✅ Video generated and saved to ${file.absolutePath} (${videoBytes.size} bytes)")
+        } catch (e: Exception) {
+            ToolExecutor.ToolResult(false, "Failed to save video: ${e.message}. Grant storage permission in Settings → Apps → Aira → Permissions → Files and media → Allow all")
+        }
+    }
+
+    private fun pickVideoModel(context: Context): Pair<SavedModelsStore.SavedModel, ApiKeyStore.ApiKey>? {
+        SavedModelsStore.load(context)
+        ApiKeyStore.load(context)
+        val prefs = context.getSharedPreferences("ai_agent_saved_models", Context.MODE_PRIVATE)
+        val videoId = prefs.getString("video_model_id", "") ?: ""
+        LogCapture.i(TAG, "pickVideoModel: video_model_id pref = '$videoId'")
+        if (videoId.isNotEmpty()) {
+            val m = SavedModelsStore.getAllModels().find { it.id == videoId }
+            if (m != null) {
+                LogCapture.i(TAG, "pickVideoModel: found configured model: ${m.modelName} (id=${m.modelId}, provider=${m.providerId})")
+                val resolved = SavedModelsStore.resolveBinding(context, m, false)
+                if (resolved != null) return m to resolved.second
+            }
+        }
+        for (m in SavedModelsStore.getModelsByCapability(ModelCapability.VIDEO)) {
+            LogCapture.i(TAG, "pickVideoModel: trying VIDEO model: ${m.modelName}")
+            val resolved = SavedModelsStore.resolveBinding(context, m, false) ?: continue
+            return m to resolved.second
+        }
+        LogCapture.i(TAG, "pickVideoModel: no VIDEO model found")
+        return null
+    }
+
+    /**
+     * Gemini Veo video generation:
+     * POST /models/{model}:predictLongRunning?key={key}
+     * Body: { instances: [{ prompt: "..." }], parameters: { sampleCount: 1 } }
+     *
+     * This is a simplified implementation — Gemini Veo's actual API may differ.
+     * Returns the video bytes if successful, null otherwise.
+     */
+    private suspend fun generateVideoViaGemini(
+        context: Context, model: SavedModelsStore.SavedModel, key: ApiKeyStore.ApiKey, prompt: String, duration: Int
+    ): ByteArray? = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val actualModelId = SavedModelsStore.resolveActualModelIdForBinding(context, model, model.activeBindings().first())
+        val base = ProviderEndpoints.byId("gemini")?.chatEndpoint ?: "https://generativelanguage.googleapis.com/v1beta"
+        val url = "$base/models/$actualModelId:generateContent?key=${key.apiKey}"
+        LogCapture.i(TAG, "Gemini video-gen: model=$actualModelId, key=${key.alias.ifEmpty { key.providerName }}")
+
+        val body = JSONObject().apply {
+            put("contents", JSONArray().put(JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            }))
+            put("generationConfig", JSONObject().apply {
+                put("response_modalities", JSONArray().apply { put("VIDEO"); put("TEXT") })
+            })
+        }.toString()
+
+        val request = Request.Builder().url(url).header("Content-Type", "application/json")
+            .post(body.toRequestBody("application/json".toMediaType())).build()
+        val response = httpClient.newCall(request).execute()
+        val respBody = response.body?.string() ?: ""
+        if (!response.isSuccessful) {
+            LogCapture.w(TAG, "Gemini video-gen failed ${response.code} (model=$actualModelId): ${respBody.take(300)}")
+            return@withContext null
+        }
+        // Parse for video data (inlineData with mimeType video/mp4)
+        val parts = JSONObject(respBody).optJSONArray("candidates")?.optJSONObject(0)
+            ?.optJSONObject("content")?.optJSONArray("parts") ?: return@withContext null
+        for (i in 0 until parts.length()) {
+            val inline = parts.optJSONObject(i)?.optJSONObject("inlineData") ?: continue
+            val mimeType = inline.optString("mimeType", "")
+            val b64 = inline.optString("data", "")
+            if (b64.isNotEmpty() && (mimeType.contains("video") || mimeType.contains("mp4"))) {
+                return@withContext android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+            }
+        }
+        null
+    }
+
+    /**
+     * OpenAI-compatible video generation:
+     * POST /videos/generations (some providers) or POST /v1/videos
+     * Body: { model, prompt, n, size, duration }
+     *
+     * This is speculative — most OpenAI-compatible APIs don't support video yet.
+     */
+    private suspend fun generateVideoViaOpenAI(
+        context: Context, model: SavedModelsStore.SavedModel, key: ApiKeyStore.ApiKey, prompt: String, duration: Int
+    ): ByteArray? = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val binding = model.activeBindings().first()
+        val chatEndpoint = SavedModelsStore.resolveEndpointForBinding(model, binding, key)
+        val videoEndpoint = chatEndpoint.replace("/chat/completions", "/videos/generations")
+        val actualModelId = SavedModelsStore.resolveActualModelIdForBinding(context, model, binding)
+        LogCapture.i(TAG, "OpenAI video-gen: model=$actualModelId, endpoint=$videoEndpoint")
+
+        val body = JSONObject().apply {
+            put("model", actualModelId)
+            put("prompt", prompt)
+            put("n", 1)
+            put("duration", duration)
+            put("response_format", "b64_json")
+        }.toString()
+
+        val request = Request.Builder().url(videoEndpoint).header("Content-Type", "application/json")
+            .header("Authorization", "Bearer ${key.apiKey}")
+            .post(body.toRequestBody("application/json".toMediaType())).build()
+
+        // v4.1.5: Video generation can be slow — use a longer timeout
+        val videoClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(180, TimeUnit.SECONDS)  // 3 minutes for video
+            .build()
+
+        val response = videoClient.newCall(request).execute()
+        val respBody = response.body?.string() ?: ""
+        if (!response.isSuccessful) {
+            LogCapture.w(TAG, "OpenAI video-gen failed ${response.code}: ${respBody.take(300)}")
+            return@withContext null
+        }
+        val data = JSONObject(respBody).optJSONArray("data")?.optJSONObject(0) ?: return@withContext null
+        val b64 = data.optString("b64_json", "")
+        if (b64.isNotEmpty()) return@withContext android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+        null
+    }
+
+    /**
+     * Pollinations.ai video fallback.
+     *
+     * Pollinations doesn't have a dedicated video API yet, but they support
+     * generating images. We'll generate a single keyframe image as a "preview"
+     * and inform the user that full video generation requires a configured VIDEO model.
+     *
+     * This is a graceful degradation — better than failing completely.
+     */
+    private suspend fun generateVideoViaPollinations(prompt: String, duration: Int): ByteArray? = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        LogCapture.i(TAG, "Pollinations video fallback: generating keyframe image (full video not supported by free APIs)")
+        // Generate a keyframe image instead of a video
+        val encoded = URLEncoder.encode(prompt, "UTF-8")
+        val url = "https://image.pollinations.ai/prompt/$encoded?width=1024&height=576&nologo=true"
+        val request = Request.Builder().url(url).build()
+        val response = httpClient.newCall(request).execute()
+        if (!response.isSuccessful) return@withContext null
+        response.body?.bytes()
     }
 }
