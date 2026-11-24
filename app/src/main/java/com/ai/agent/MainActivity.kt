@@ -54,6 +54,9 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
+        // v4.1.6: Initialize persistent log capture — loads previous logs from disk
+        com.ai.agent.util.LogCapture.init(this)
+
         // ===== v2.0.5: Start all v1-equivalent services =====
         // Order matters: folders first so any service that writes to disk has
         // a place to write to; then the foreground service (which owns the

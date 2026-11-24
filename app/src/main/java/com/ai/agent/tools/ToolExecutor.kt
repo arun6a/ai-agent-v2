@@ -1154,7 +1154,8 @@ class ToolExecutor(private val context: Context) {
         var pauseIndex = -1
 
         for ((index, actionRaw) in actionsRaw.withIndex()) {
-            val toolName = actionRaw["name"] as? String ?: continue
+            // v4.1.6: Accept both "name" and "action" as the tool name key (AI uses both)
+            val toolName = (actionRaw["name"] as? String ?: actionRaw["action"] as? String) ?: continue
             // v4.0.96: actionRaw["args"] is now a Map<String, Any> (post-normalizeJsonValue).
             @Suppress("UNCHECKED_CAST")
             val toolArgs = (actionRaw["args"] as? Map<String, Any>) ?: emptyMap()
